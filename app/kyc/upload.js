@@ -76,7 +76,13 @@ export default function KYCUpload() {
     try {
       // Mock upload to Cloudflare
       console.log('Uploading to Cloudflare:', file.name);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve, reject) => {
+        setTimeout(() => {
+          // Simulate random failure for testing Step 7
+          if (Math.random() < 0.2) reject(new Error('Network failure'));
+          else resolve();
+        }, 2000);
+      });
       
       // Save to store
       const mockUrl = `https://cloudflare-b2.com/buckets/kyc/${docId}.pdf`;
@@ -90,10 +96,18 @@ export default function KYCUpload() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (err) {
-      Alert.alert('Error', 'Upload failed');
+      Alert.alert(
+        'Upload Failed', 
+        'Failed to upload the document. Please check your connection and try again.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: uploadFile }
+        ]
+      );
     } finally {
       setUploading(false);
     }
+
   };
 
   return (

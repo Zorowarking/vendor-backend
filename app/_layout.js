@@ -1,10 +1,17 @@
+import React, { useState, useEffect } from 'react';
+import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
-import { View, ActivityIndicator } from 'react-native';
+import { notificationService } from '../services/notificationService';
+import NotificationBanner from '../components/NotificationBanner';
+import NetworkBanner from '../components/NetworkBanner';
+import { socketService } from '../services/socketService';
+import { useNotificationStore } from '../store/notificationStore';
+
 
 export default function Layout() {
-  const { isAuthenticated, role, profileStatus } = useAuthStore();
+  const { isAuthenticated, role, profileStatus, user } = useAuthStore();
+  const { activeNotification, setActiveNotification, clearNotification } = useNotificationStore();
   const segments = useSegments();
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
@@ -13,6 +20,37 @@ export default function Layout() {
     setIsMounted(true);
   }, []);
 
+  // Notification Initialization
+  useEffect(() => {
+    if (!isMounted) return;
+
+    let unsubscribe;
+    const setupNotifications = async () => {
+      unsubscribe = await notificationService.init(router, (remoteMessage) => {
+        // Show in-app banner for foreground messages
+        setActiveNotification(remoteMessage);
+      });
+    };
+
+    setupNotifications();
+    return () => unsubscribe && unsubscribe();
+  }, [isMounted]);
+
+  // Socket Connection Management
+  useEffect(() => {
+    if (isAuthenticated && role && user?.id) {
+      if (role === 'VENDOR') {
+        socketService.connect(user.id);
+      } else if (role === 'RIDER') {
+        socketService.connectRider(user.id);
+      }
+    } else {
+      socketService.disconnect();
+    }
+
+    return () => socketService.disconnect();
+  }, [isAuthenticated, role, user?.id]);
+
   useEffect(() => {
     if (!isMounted) return;
 
@@ -20,14 +58,41 @@ export default function Layout() {
     const currentScreen = segments[1];
 
     if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated
       router.replace('/auth/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Role-based redirection after login
-      if (!role && currentScreen !== 'role-select') {
-        router.replace('/auth/role-select');
-      } else if (role && profileStatus === 'PENDING') {
-        // If they are already on one of the registration screens or KYC hub, don't redirect
+      return;
+    }
+
+    if (isAuthenticated && inAuthGroup && role && profileStatus === 'READY') {
+      if (role === 'VENDOR') router.replace('/(vendor)');
+      else if (role === 'RIDER') router.replace('/(rider)');
+      return;
+    }
+
+    // Global Status Enforcement
+    if (profileStatus === 'SUSPENDED') {
+      if (segments[0] !== 'account-suspended') {
+        router.replace('/account-suspended');
+      }
+      return;
+    }
+
+    if (profileStatus === 'DISABLED') {
+      if (segments[0] !== 'account-disabled') {
+        router.replace('/account-disabled');
+      }
+      return;
+    }
+
+    // Role Selection Enforcement
+    if (isAuthenticated && !role && currentScreen !== 'role-select') {
+      router.replace('/auth/role-select');
+      return;
+    }
+
+    // Role-based onboarding checks (only if not already Ready or Enforcement)
+    if (isAuthenticated && profileStatus !== 'READY') {
+
+      if (profileStatus === 'PENDING') {
         const onboardingScreens = ['vendor-register', 'vendor-bank', 'rider-register', 'rider-bank', 'kyc'];
         const currentPath = segments.join('/');
         
@@ -39,19 +104,26 @@ export default function Layout() {
         if (!segments[0].includes('kyc')) {
           router.replace('/kyc/status');
         }
-      } else if (profileStatus === 'READY') {
-        // Redirect to main app based on role
-        if (role === 'VENDOR' && segments[0] !== '(vendor)') router.replace('/(vendor)');
-        else if (role === 'RIDER' && segments[0] !== '(rider)') router.replace('/(rider)');
       }
     }
+
   }, [isAuthenticated, role, profileStatus, segments, isMounted]);
 
+  if (!isMounted) return null;
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
-      <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
-      <Stack.Screen name="auth/role-select" options={{ title: 'Role Selection' }} />
-    </Stack>
+    <View style={{ flex: 1 }}>
+      <NetworkBanner />
+      <NotificationBanner 
+        notification={activeNotification}
+        onDismiss={clearNotification}
+        onPress={(msg) => notificationService.handleRouting(router, msg)}
+      />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
+        <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
+        <Stack.Screen name="auth/role-select" options={{ title: 'Role Selection' }} />
+      </Stack>
+    </View>
   );
 }

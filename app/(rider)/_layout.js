@@ -3,20 +3,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Colors from '../../constants/Colors';
 import { MaterialTopTabs } from '../../components/MaterialTopTabs';
 import FloatingTabBar from '../../components/FloatingTabBar';
-import VendorHeaderToggle from '../../components/VendorHeaderToggle';
-import { useVendorStore } from '../../store/vendorStore';
+import RiderHeaderToggle from '../../components/RiderHeaderToggle';
+import { useRiderStore } from '../../store/riderStore';
 
-export default function VendorLayout() {
-  const incomingOrders = useVendorStore((state) => state.incomingOrders);
-  const pendingCount = incomingOrders.length;
+export default function RiderLayout() {
+  const activeOrder = useRiderStore((state) => state.activeOrder);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Vendor Panel</Text>
-        <VendorHeaderToggle />
+        <Text style={styles.headerTitle}>Rider Partner</Text>
+        <RiderHeaderToggle />
       </View>
-      
+
       <MaterialTopTabs
         tabBar={(props) => <FloatingTabBar {...props} />}
         screenOptions={{
@@ -26,28 +25,22 @@ export default function VendorLayout() {
         }}
       >
         <MaterialTopTabs.Screen
-          name="index"
+          name="requests"
           options={{
-            title: 'Live Orders',
-            tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
-          }}
-        />
-        <MaterialTopTabs.Screen
-          name="products/index"
-          options={{
-            title: 'Store Menu',
+            title: 'Pickup Requests',
+            tabBarBadge: activeOrder ? '1' : undefined,
           }}
         />
         <MaterialTopTabs.Screen
           name="earnings"
           options={{
-            title: 'Financials',
+            title: 'Rider Earnings',
           }}
         />
         <MaterialTopTabs.Screen
           name="profile"
           options={{
-            title: 'My Store',
+            title: 'Rider Profile',
           }}
         />
       </MaterialTopTabs>

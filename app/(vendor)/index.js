@@ -1,14 +1,23 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Pressable } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Pressable, RefreshControl, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+
 import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
 import { useVendorStore } from '../../store/vendorStore';
 import { useAuthStore } from '../../store/authStore';
-import { socketService } from '../../services/socket';
+import { socketService } from '../../services/socketService';
+
 import { vendorApi } from '../../services/vendorApi';
 import Colors from '../../constants/Colors';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
+import EmptyState from '../../components/EmptyState';
 
+const { width } = Dimensions.get('window');
 const INCOMING_SLA_SECONDS = 300; // 5 minutes
+
 
 function ActiveTimer({ acceptedAt }) {
   const [elapsed, setElapsed] = useState(0);
@@ -108,15 +117,18 @@ function ActiveOrderCard({ order, router }) {
   const handleStatusUpdate = async (newStatus) => {
     try {
       if (newStatus === 'COMPLETED' || newStatus === 'CANCELLED') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         useVendorStore.getState().moveToHistory(order.id);
         useVendorStore.getState().updateOrder(order.id, { status: newStatus });
       } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         await vendorApi.updateOrderStatus(order.id, newStatus);
         useVendorStore.getState().updateOrder(order.id, { status: newStatus });
       }
     } catch (err) {
       Alert.alert('Error', 'Could not update status');
     }
+
   };
 
   return (
@@ -174,13 +186,23 @@ export default function VendorOrdersDashboard() {
   const { user } = useAuthStore();
   const { isOnline, incomingOrders, activeOrders, orderHistory, addIncomingOrder, removeIncomingOrder, addActiveOrder, updateOrder } = useVendorStore();
   const [activeTab, setActiveTab] = useState('ACTIVE'); // 'ACTIVE' or 'HISTORY'
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const soundRef = useRef(null);
+
 
   useEffect(() => {
     if (user?.uid) {
       socketService.connect(user.uid);
       
       const handleNewOrder = async (orderData) => {
+        // Step 4: Ignore new orders while offline
+        const currentIsOnline = useVendorStore.getState().isOnline;
+        if (!currentIsOnline) {
+          console.log('Vendor is offline. Ignoring incoming order.');
+          return;
+        }
+
         try {
           const { sound } = await Audio.Sound.createAsync(
             { uri: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg' }
@@ -192,6 +214,7 @@ export default function VendorOrdersDashboard() {
         }
         addIncomingOrder(orderData);
       };
+
 
       const handleOrderUpdate = (data) => {
         if (data.status === 'CANCELLED') {
@@ -226,6 +249,7 @@ export default function VendorOrdersDashboard() {
   }, [isOnline]);
 
   const handleAccept = async (orderId) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       await vendorApi.acceptOrder(orderId);
       const order = incomingOrders.find(o => o.id === orderId);
@@ -244,6 +268,7 @@ export default function VendorOrdersDashboard() {
       { 
         text: 'Reject', style: 'destructive',
         onPress: async () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           await vendorApi.rejectOrder(orderId, 'Rejected by vendor');
           useVendorStore.getState().moveToHistory(orderId);
           updateOrder(orderId, { status: 'CANCELLED' });
@@ -251,6 +276,13 @@ export default function VendorOrdersDashboard() {
       }
     ]);
   };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Simulate data fetch
+    setTimeout(() => setRefreshing(false), 2000);
+  };
+
 
   const triggerMockOrder = () => {
     addIncomingOrder({
@@ -286,16 +318,31 @@ export default function VendorOrdersDashboard() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {activeTab === 'ACTIVE' ? (
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+      >
+        {loading ? (
+          [1, 2, 3].map(i => (
+            <SkeletonLoader key={i} width={width - 32} height={120} style={{ marginBottom: 16, borderRadius: 12 }} />
+          ))
+        ) : activeTab === 'ACTIVE' ? (
           activeOrders.length === 0 ? (
-            <Text style={styles.emptyText}>No active orders currently.</Text>
+            <EmptyState 
+              icon="restaurant-outline" 
+              title="No active orders" 
+              description="New orders will appear here as they come in. Make sure you're online!"
+            />
           ) : (
             activeOrders.map(order => <ActiveOrderCard key={order.id} order={order} router={router} />)
           )
         ) : (
           orderHistory.length === 0 ? (
-            <Text style={styles.emptyText}>No past orders yet.</Text>
+            <EmptyState 
+              icon="receipt-outline" 
+              title="No history yet" 
+              description="Your completed and cancelled orders will be archived here."
+            />
           ) : (
             orderHistory.map(order => <HistoryOrderCard key={order.id} order={order} router={router} />)
           )
@@ -326,7 +373,8 @@ const styles = StyleSheet.create({
   tabText: { color: Colors.subText, fontWeight: '600' },
   activeTabText: { color: Colors.primary, fontWeight: 'bold' },
   
-  scrollContent: { padding: 16 },
+  scrollContent: { padding: 16, paddingBottom: 160 },
+
   card: { backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3, shadowColor: Colors.black, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 } },
   historyCard: { opacity: 0.8 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },

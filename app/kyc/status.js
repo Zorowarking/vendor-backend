@@ -1,14 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Linking, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Linking, ScrollView, Alert } from 'react-native';
+
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
+
+
 import { useAuthStore } from '../../store/authStore';
+import { notificationService } from '../../services/notificationService';
 // import messaging from '@react-native-firebase/messaging'; // Requires dev build
 
 export default function KYCStatus() {
   const router = useRouter();
-  const { profileStatus, role, setProfileStatus, logout } = useAuthStore();
+  const { profileStatus, role, setProfileStatus, logout, suspensionReason } = useAuthStore();
+
   const [kycStatus, setKycStatus] = useState(profileStatus || 'UNDER_REVIEW');
+
+  useEffect(() => {
+    // If approved, ensure notifications are ready
+    if (kycStatus === 'APPROVED') {
+      notificationService.requestPermissionAndToken();
+    }
+  }, [kycStatus]);
 
   useEffect(() => {
     // Basic FCM Listener setup (Mocked for Expo Go)
@@ -57,7 +71,7 @@ export default function KYCStatus() {
             />
             <Text style={[styles.statusTitle, { color: Colors.error }]}>KYC Rejected</Text>
             <Text style={styles.statusDescription}>
-              Reason: Your ID proof was not clear. Please resubmit clear documents.
+              Reason: {suspensionReason || 'Your document was not clear. Please resubmit clear documents.'}
             </Text>
             <TouchableOpacity 
               style={[styles.actionButton, { backgroundColor: Colors.error }]}
@@ -67,6 +81,7 @@ export default function KYCStatus() {
             </TouchableOpacity>
           </View>
         );
+
     case 'KYC_SUBMITTED':
       case 'UNDER_REVIEW':
       default:
@@ -85,6 +100,7 @@ export default function KYCStatus() {
             <TouchableOpacity 
               style={styles.devApproveButton}
               onPress={() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setKycStatus('APPROVED');
                 setProfileStatus('READY'); // Sets auth state ready for layout parsing
               }}
@@ -94,17 +110,59 @@ export default function KYCStatus() {
 
             <TouchableOpacity 
               style={styles.supportButton}
-              onPress={() => Linking.openURL('mailto:support@app.com')}
+
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Linking.openURL('mailto:support@app.com');
+              }}
             >
               <Text style={styles.supportButtonText}>Contact Support</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={styles.logoutButton}
-              onPress={logout}
+              style={styles.logoutBtn} 
+              onPress={() => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                logout();
+              }}
             >
-              <Text style={styles.logoutButtonText}>Logout</Text>
+              <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+              <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
+
+
+            {/* DEV ONLY MOCK TOOLS */}
+            <View style={styles.devTools}>
+              <Text style={styles.devToolsTitle}>[DEV] Security Testing</Text>
+              <View style={styles.devToolsGrid}>
+                <TouchableOpacity 
+                  style={[styles.devBtn, { borderColor: Colors.warning }]}
+                  onPress={() => {
+                    const { setProfileStatus } = useAuthStore.getState();
+                    setProfileStatus('SUSPENDED', 'Payment irregularities and repeated policy violations.');
+                    Alert.alert('Mock Success', 'Vendor status set to SUSPENDED. Enforcement initiated.');
+                  }}
+                >
+                  <Ionicons name="alert-circle-outline" size={16} color={Colors.warning} />
+                  <Text style={[styles.devBtnText, { color: Colors.warning }]}>Mock Suspend</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.devBtn, { borderColor: Colors.error }]}
+                  onPress={() => {
+                    const { setProfileStatus } = useAuthStore.getState();
+                    setProfileStatus('DISABLED');
+                    Alert.alert('Mock Success', 'Vendor status set to DISABLED. Compliance termination active.');
+                  }}
+                >
+                  <Ionicons name="lock-closed-outline" size={16} color={Colors.error} />
+                  <Text style={[styles.devBtnText, { color: Colors.error }]}>Mock Disable</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={styles.version}>v1.2.5 (Security Phase)</Text>
+
           </View>
         );
     }

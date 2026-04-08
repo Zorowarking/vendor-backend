@@ -6,7 +6,8 @@ export const useAuthStore = create((set) => ({
   role: null, // 'VENDOR' | 'RIDER'
   sessionToken: null,
   isAuthenticated: false,
-  profileStatus: null, // 'PENDING' | 'KYC_SUBMITTED' | 'READY'
+  profileStatus: null, // 'PENDING' | 'UNDER_REVIEW' | 'READY' | 'SUSPENDED' | 'DISABLED'
+  suspensionReason: null,
   kycDocs: {},
 
   login: (userData) => {
@@ -16,6 +17,7 @@ export const useAuthStore = create((set) => ({
       sessionToken: userData.sessionToken,
       isAuthenticated: true,
       profileStatus: userData.profileStatus,
+      suspensionReason: userData.suspensionReason || null,
       kycDocs: {},
     });
     // Persist session if needed
@@ -29,11 +31,12 @@ export const useAuthStore = create((set) => ({
       sessionToken: null,
       isAuthenticated: false,
       profileStatus: null,
+      suspensionReason: null,
       kycDocs: {},
     });
   },
 
-  setProfileStatus: (status) => set({ profileStatus: status }),
+  setProfileStatus: (status, reason = null) => set({ profileStatus: status, suspensionReason: reason }),
   setRole: (role) => set({ role }),
   setKycDoc: (docId, data) => set((state) => ({ kycDocs: { ...state.kycDocs, [docId]: data } })),
 }));

@@ -13,6 +13,19 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "android": {
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION"
+      ]
+    },
+    "ios": {
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries.",
+        "NSLocationAlwaysUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries."
+      }
+    },
     "plugins": [
       "expo-router",
       "expo-document-picker",

@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import * as Haptics from 'expo-haptics';
+
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVendorStore } from '../../../store/vendorStore';
 import { vendorApi } from '../../../services/vendorApi';
@@ -32,8 +34,10 @@ export default function OrderDetailScreen() {
   const handleStatusUpdate = async (newStatus) => {
     try {
       await vendorApi.updateOrderStatus(order.id, newStatus);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       useVendorStore.getState().updateOrder(order.id, { status: newStatus });
       router.back();
+
     } catch (err) {
       Alert.alert('Error', 'Could not update status');
     }
@@ -102,6 +106,7 @@ export default function OrderDetailScreen() {
             <Text style={styles.primaryButtonText}>Start Preparing</Text>
           </TouchableOpacity>
         )}
+
         {order.status === 'PREPARING' && (
           <TouchableOpacity style={styles.successButton} onPress={() => handleStatusUpdate('READY_FOR_PICKUP')}>
             <Text style={styles.successButtonText}>Mark as Ready</Text>
@@ -127,8 +132,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold', color: Colors.black
   },
   container: {
-    padding: 16, backgroundColor: Colors.grey, flexGrow: 1
+    padding: 16, backgroundColor: Colors.grey, flexGrow: 1, paddingBottom: 160
   },
+
   flaggedBanner: {
     backgroundColor: Colors.error + '20',
     borderColor: Colors.error,

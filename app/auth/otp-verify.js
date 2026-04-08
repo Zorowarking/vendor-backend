@@ -5,6 +5,9 @@ import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../services/auth';
 import { Alert, ActivityIndicator } from 'react-native';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { app } from '../../services/firebase';
+
 
 export default function OTPVerifyScreen() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']); // 6 digits
@@ -14,6 +17,8 @@ export default function OTPVerifyScreen() {
   const router = useRouter();
   const { phone } = useLocalSearchParams();
   const inputRefs = useRef([]);
+  const recaptchaVerifier = useRef(null);
+
 
   useEffect(() => {
     let interval;
@@ -54,46 +59,62 @@ export default function OTPVerifyScreen() {
     }
   };
 
+  const isVerifying = useRef(false);
+  const hasSucceeded = useRef(false);
+
   const handleVerify = async (code = otp.join('')) => {
-    if (loading) return;
+    if (loading || isVerifying.current || hasSucceeded.current) return;
 
     if (code.length !== 6) {
       Alert.alert('Invalid OTP', 'Please enter all 6 digits.');
       return;
     }
 
+    isVerifying.current = true;
     setLoading(true);
     console.log('UI: Verifying OTP Code...', code);
     
     try {
-      // In Web SDK, we use the confirmationResult stored in the service
       const confirmationResult = authService._confirmationResult;
       
       if (!confirmationResult) {
         console.error('UI: No confirmationResult found in service!');
         Alert.alert('Error', 'Verification session expired. Please go back and try again.');
         setLoading(false);
+        isVerifying.current = false;
         return;
       }
 
       await authService.verifyOTP(confirmationResult, code);
       console.log('UI: Verification successful!');
-      // The Layout effect will trigger role-select redirect
+      setLoading(false); // Clear spinner
+      hasSucceeded.current = true; // Mark as successful to block ANY future calls
+
+      
+      // We don't reset isVerifying or loading to true here because we want the UI 
+      // to stay disabled until the router redirects the user.
     } catch (err) {
       console.error('UI: Verification Error', err);
-      Alert.alert('Invalid OTP', 'The code you entered is incorrect or has expired.');
-    } finally {
+      // Only show error if we haven't succeeded elsewhere
+      if (!hasSucceeded.current) {
+        Alert.alert('Invalid OTP', 'The code you entered is incorrect or has expired.');
+      }
       setLoading(false);
+      isVerifying.current = false;
     }
   };
+
+
 
   const handleResend = () => {
     if (timer === 0) {
       setTimer(30);
       // Call resend OTP service
-      authService.sendOTP(`+91${phone}`);
+      // Call resend OTP service with the recaptcha verifier
+      authService.sendOTP(`+91${phone}`, recaptchaVerifier.current);
     }
   };
+
 
   return (
     <KeyboardAvoidingView 
@@ -116,33 +137,48 @@ export default function OTPVerifyScreen() {
             <TextInput
               key={index}
               ref={(ref) => (inputRefs.current[index] = ref)}
-              style={styles.otpInput}
+              style={[styles.otpInput, loading && styles.disabledInput]}
               value={digit}
               onChangeText={(value) => handleOtpChange(value, index)}
               onKeyPress={(e) => handleKeyPress(e, index)}
               keyboardType="number-pad"
               maxLength={1}
               autoFocus={index === 0}
+              editable={!loading}
             />
           ))}
         </View>
 
         <View style={styles.resendContainer}>
           <Text style={styles.resendText}>Didn't receive code?</Text>
-          <TouchableOpacity onPress={handleResend} disabled={timer > 0}>
-            <Text style={[styles.resendButton, timer > 0 && styles.disabledText]}>
+          <TouchableOpacity onPress={handleResend} disabled={timer > 0 || loading}>
+            <Text style={[styles.resendButton, (timer > 0 || loading) && styles.disabledText]}>
               {timer > 0 ? `Resend in ${timer}s` : 'Resend OTP'}
             </Text>
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity 
-          style={styles.button}
+          style={[styles.button, loading && styles.disabledButton]}
           onPress={() => handleVerify(otp.join(''))}
+          disabled={loading}
         >
-          <Text style={styles.buttonText}>Verify & Continue</Text>
+          {loading ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={styles.buttonText}>Verify & Continue</Text>
+          )}
         </TouchableOpacity>
+
+        {/* Firebase Recaptcha Modal */}
+        <FirebaseRecaptchaVerifierModal
+          ref={recaptchaVerifier}
+          firebaseConfig={app.options}
+          attemptInvisibleRetries={5}
+        />
+
       </ScrollView>
+
     </KeyboardAvoidingView>
   );
 }
@@ -227,4 +263,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  disabledInput: {
+    opacity: 0.5,
+    backgroundColor: Colors.border,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
 });
+

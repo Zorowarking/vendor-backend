@@ -1,60 +1,178 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Dimensions, 
+  ActivityIndicator,
+  RefreshControl
+} from 'react-native';
+import { LineChart } from 'react-native-chart-kit';
+import * as Haptics from 'expo-haptics';
 import Colors from '../../constants/Colors';
 import { vendorApi } from '../../services/vendorApi';
-import { useVendorStore } from '../../store/vendorStore';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
+import ErrorState from '../../components/ErrorState';
+import EmptyState from '../../components/EmptyState';
+
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function VendorEarnings() {
-  const [loading, setLoading] = useState(false);
-  const { incomingOrders, activeOrders, orderHistory } = useVendorStore();
-  
-  // Calculate live stats from the global session store
-  const allOrders = [...incomingOrders, ...activeOrders, ...orderHistory];
-  
-  const totalOrders = allOrders.length;
-  
-  // Only include completed orders in revenue
-  const completedOrders = orderHistory.filter(o => o.status === 'COMPLETED');
-  const revenue = completedOrders.reduce((sum, order) => sum + (order.total || 0), 0);
-  
-  // Accepted orders are any that passed the PENDING state
-  const accepted = activeOrders.length + completedOrders.length; 
-  
-  const rejected = orderHistory.filter(o => o.status === 'CANCELLED').length;
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [period, setPeriod] = useState('daily');
+  const [data, setData] = useState(null);
 
-  const stats = {
-    totalOrders,
-    accepted,
-    rejected,
-    revenue,
-    avgPrepTime: completedOrders.length > 0 ? '12 min' : '--', // Mock prep time logic
-    rating: '4.8'
+  const [error, setError] = useState(null);
+
+  const fetchData = async (selectedPeriod = period) => {
+    setError(null);
+    try {
+      const result = await vendorApi.getEarnings(selectedPeriod);
+      setData(result);
+    } catch (err) {
+      setError("Failed to load earnings data. Please try again.");
+    } finally {
+
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.headerTitle}>Today's Live Overview</Text>
+  useEffect(() => {
+    fetchData();
+  }, [period]);
 
-      <View style={styles.statsGrid}>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Revenue</Text>
-          <Text style={styles.statValueGood}>${stats.revenue.toFixed(2)}</Text>
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+  };
+
+  const setPeriodWithHaptics = (p) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPeriod(p);
+  };
+
+  if (error) {
+    return <ErrorState message={error} onRetry={() => fetchData()} />;
+  }
+
+  if (loading && !data) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.tabContainer}>
+           {[1, 2, 3].map(i => <SkeletonLoader key={i} width={SCREEN_WIDTH/3.5} height={40} style={{ borderRadius: 8, marginHorizontal: 5 }} />)}
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Total Orders Rcvd</Text>
-          <Text style={styles.statValueNeutral}>{stats.totalOrders}</Text>
+        <View style={styles.content}>
+           <View style={styles.summaryGrid}>
+             <SkeletonLoader width="48%" height={80} style={{ borderRadius: 12 }} />
+             <SkeletonLoader width="48%" height={80} style={{ borderRadius: 12 }} />
+             <SkeletonLoader width="100%" height={100} style={{ borderRadius: 12, marginTop: 12 }} />
+           </View>
+           <SkeletonLoader width={SCREEN_WIDTH - 32} height={220} style={{ borderRadius: 12, marginBottom: 20 }} />
+           <SkeletonLoader width={SCREEN_WIDTH - 32} height={200} style={{ borderRadius: 12 }} />
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Accepted / Rejected</Text>
-          <Text style={styles.statValueNeutral}>{stats.accepted} / {stats.rejected}</Text>
+      </View>
+    );
+  }
+
+
+  const periods = [
+    { label: 'Today', value: 'daily' },
+    { label: 'This Week', value: 'weekly' },
+    { label: 'This Month', value: 'monthly' }
+  ];
+
+  return (
+    <ScrollView 
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: 120 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+    >
+      {/* Period Selector */}
+      <View style={styles.tabContainer}>
+        {periods.map(p => (
+          <TouchableOpacity 
+            key={p.value} 
+            style={[styles.tab, period === p.value && styles.activeTab]}
+            onPress={() => setPeriodWithHaptics(p.value)}
+          >
+            <Text style={[styles.tabText, period === p.value && styles.activeTabText]}>{p.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.content}>
+        {/* Summary Cards */}
+        <View style={styles.summaryGrid}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Revenue</Text>
+            <Text style={styles.summaryValue}>${data.revenue.toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Platform Fee</Text>
+            <Text style={[styles.summaryValue, { color: Colors.error }]}>-${data.commission.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.summaryCard, { width: '100%', marginTop: 12, backgroundColor: Colors.primary }]}>
+            <Text style={[styles.summaryLabel, { color: Colors.white }]}>Net Earnings</Text>
+            <Text style={[styles.summaryValue, { color: Colors.white, fontSize: 28 }]}>${data.net.toFixed(2)}</Text>
+          </View>
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Avg Prep Time</Text>
-          <Text style={styles.statValueWarning}>{stats.avgPrepTime}</Text>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{data.orderCount}</Text>
+            <Text style={styles.statLabel}>Orders</Text>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>${(data.revenue / (data.orderCount || 1)).toFixed(2)}</Text>
+            <Text style={styles.statLabel}>Avg. Order</Text>
+          </View>
         </View>
-        <View style={styles.statBox}>
-          <Text style={styles.statLabel}>Current Rating</Text>
-          <Text style={styles.statValueGood}>{stats.rating} ⭐</Text>
+
+        {/* Chart */}
+        <View style={styles.chartSection}>
+          <Text style={styles.sectionTitle}>Revenue Trend</Text>
+          <LineChart
+            data={data.chartData}
+            width={SCREEN_WIDTH - 32}
+            height={220}
+            chartConfig={{
+              backgroundColor: Colors.white,
+              backgroundGradientFrom: Colors.white,
+              backgroundGradientTo: Colors.white,
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(255, 114, 94, ${opacity})`, // Colors.primary
+              labelColor: (opacity = 1) => `rgba(102, 102, 102, ${opacity})`,
+              style: { borderRadius: 16 },
+              propsForDots: { r: "4", strokeWidth: "2", stroke: Colors.primary }
+            }}
+            bezier
+            style={styles.chart}
+          />
+        </View>
+
+        {/* Detailed Breakdown */}
+        <View style={styles.tableSection}>
+          <Text style={styles.sectionTitle}>Detailed Breakdown</Text>
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableCol, { flex: 1.5 }]}>Date</Text>
+            <Text style={styles.tableCol}>Orders</Text>
+            <Text style={styles.tableCol}>Gross</Text>
+            <Text style={styles.tableCol}>Net</Text>
+          </View>
+          {data.breakdown.map((row, idx) => (
+            <View key={idx} style={styles.tableRow}>
+              <Text style={[styles.tableCell, { flex: 1.5 }]}>{row.date}</Text>
+              <Text style={styles.tableCell}>{row.count}</Text>
+              <Text style={styles.tableCell}>${row.gross.toFixed(2)}</Text>
+              <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>${row.net.toFixed(2)}</Text>
+            </View>
+          ))}
         </View>
       </View>
     </ScrollView>
@@ -62,47 +180,80 @@ export default function VendorEarnings() {
 }
 
 const styles = StyleSheet.create({
-  centerContainer: {
-    flex: 1, justifyContent: 'center', alignItems: 'center'
+  center: {
+    flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.white
   },
   container: {
-    padding: 16, backgroundColor: Colors.grey, flexGrow: 1
+    flex: 1, backgroundColor: Colors.grey
   },
-  headerTitle: {
-    fontSize: 24, fontWeight: 'bold', color: Colors.black, marginBottom: 20
+  tabContainer: {
+    flexDirection: 'row', backgroundColor: Colors.white, padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border
   },
-  devButton: {
-    backgroundColor: Colors.info, padding: 12, borderRadius: 8, alignItems: 'center', marginBottom: 24
+  tab: {
+    flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8
   },
-  devText: {
-    color: Colors.white, fontWeight: 'bold'
+  activeTab: {
+    backgroundColor: Colors.primary + '15'
   },
-  statsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between'
+  tabText: {
+    fontSize: 14, fontWeight: '600', color: Colors.subText
   },
-  statBox: {
-    backgroundColor: Colors.white,
-    width: '48%',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    alignItems: 'center'
+  activeTabText: {
+    color: Colors.primary
+  },
+  content: {
+    padding: 16
+  },
+  summaryGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20
+  },
+  summaryCard: {
+    backgroundColor: Colors.white, width: '48%', padding: 16, borderRadius: 12,
+    elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }
+  },
+  summaryLabel: {
+    fontSize: 12, color: Colors.subText, marginBottom: 4
+  },
+  summaryValue: {
+    fontSize: 22, fontWeight: 'bold', color: Colors.black
+  },
+  statsRow: {
+    flexDirection: 'row', backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 24, alignItems: 'center'
+  },
+  statItem: {
+    flex: 1, alignItems: 'center'
+  },
+  statValue: {
+    fontSize: 20, fontWeight: 'bold', color: Colors.black
   },
   statLabel: {
-    fontSize: 14, color: Colors.subText, marginBottom: 8, textAlign: 'center'
+    fontSize: 12, color: Colors.subText, marginTop: 2
   },
-  statValueGood: {
-    fontSize: 22, fontWeight: 'bold', color: Colors.success
+  divider: {
+    width: 1, height: 30, backgroundColor: Colors.border
   },
-  statValueNeutral: {
-    fontSize: 22, fontWeight: 'bold', color: Colors.text
+  chartSection: {
+    backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 24
   },
-  statValueWarning: {
-    fontSize: 22, fontWeight: 'bold', color: Colors.primary
+  sectionTitle: {
+    fontSize: 18, fontWeight: 'bold', color: Colors.black, marginBottom: 16
+  },
+  chart: {
+    marginVertical: 8, borderRadius: 16, marginLeft: -16
+  },
+  tableSection: {
+    backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 40
+  },
+  tableHeader: {
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 10, marginBottom: 10
+  },
+  tableCol: {
+    flex: 1, fontSize: 12, fontWeight: 'bold', color: Colors.subText, textAlign: 'center'
+  },
+  tableRow: {
+    flexDirection: 'row', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.grey
+  },
+  tableCell: {
+    flex: 1, fontSize: 13, color: Colors.black, textAlign: 'center'
   }
 });

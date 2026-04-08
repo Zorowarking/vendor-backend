@@ -3,21 +3,38 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView } from 'rea
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
+import apiClient from '../../services/api';
+
 
 export default function RoleSelectScreen() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
   const user = useAuthStore((state) => state.user);
 
-  const handleRoleSelection = (role) => {
-    // In a real app, you might update the user's role on the backend
-    // Or just update the local state for onboarding
-    login({ 
-      user, 
-      role, 
-      profileStatus: 'PENDING', 
-      sessionToken: 'mock-token' 
-    });
+  const handleRoleSelection = async (role) => {
+    try {
+      // Persist role selection to the backend
+      const response = await apiClient.post('/api/auth/role', { role });
+      
+      if (response.data.success) {
+        const updatedUser = response.data.user;
+        login({ 
+          user, 
+          role: updatedUser.role, 
+          profileStatus: updatedUser.profileStatus, 
+          sessionToken: useAuthStore.getState().sessionToken 
+        });
+      }
+    } catch (error) {
+      console.warn('Backend role update failed, using local state:', error.message);
+      // Fallback to local state for development resilience
+      login({ 
+        user, 
+        role, 
+        profileStatus: 'PENDING', 
+        sessionToken: useAuthStore.getState().sessionToken 
+      });
+    }
     
     if (role === 'VENDOR') {
       router.push('/auth/vendor-register');
@@ -25,6 +42,7 @@ export default function RoleSelectScreen() {
       router.push('/auth/rider-register');
     }
   };
+
 
   return (
     <View style={styles.container}>

@@ -57,6 +57,9 @@ export default function LoginScreen() {
           />
           <Text style={styles.title}>Vendor & Partner App</Text>
           <Text style={styles.subtitle}>Enter your phone number to continue</Text>
+          <View style={styles.devHint}>
+            <Text style={styles.devHintText}>Dev Tip: Use 99999 99999 / 123456 for bypass</Text>
+          </View>
         </View>
 
         <View style={styles.inputContainer}>
@@ -146,6 +149,18 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: Colors.subText,
+  },
+  devHint: {
+    backgroundColor: Colors.primary + '15',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  devHintText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: 'bold',
   },
   inputContainer: {
     marginBottom: 24,
