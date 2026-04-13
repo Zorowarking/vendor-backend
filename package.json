@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "node -e \"const fs = require('fs'); const path = './node_modules/@unimodules/core'; if (!fs.existsSync(path)) fs.mkdirSync(path, {recursive: true}); fs.writeFileSync(path + '/package.json', JSON.stringify({ name: '@unimodules/core', version: '1.0.0', main: 'index.js' })); fs.writeFileSync(path + '/index.js', 'module.exports = require(\\'expo-modules-core\\');');\""
   },
   "dependencies": {
     "@prisma/client": "^7.7.0",
@@ -29,6 +30,7 @@
     "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.11",
     "expo-location": "~19.0.8",
+    "expo-modules-core": "~3.0.29",
     "expo-notifications": "~0.32.16",
     "expo-router": "~6.0.23",
     "expo-status-bar": "~3.0.9",
@@ -52,6 +54,7 @@
   },
   "private": true,
   "devDependencies": {
+    "babel-preset-expo": "~54.0.10",
     "prisma": "^7.7.0"
   }
 }
