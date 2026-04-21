@@ -31,11 +31,14 @@ const firebaseAuth = async (req, res, next) => {
     } 
 
     // FALLBACK: For development, we'll allow any non-empty token as a valid user
-    // This allows the user to test without having the Firebase Admin keys yet
     console.warn('[BACKEND] Running in MOCK AUTH fallback mode');
+    const mockUid = idToken.substring(0, 10);
+    const mockPhone = req.headers['x-mock-phone'] || `+1000${mockUid.replace(/[^0-9]/g, '').substring(0, 6)}`;
+    
     req.user = {
-      uid: idToken.substring(0, 10), // Deterministic mock UID
-      phoneNumber: 'unknown',
+      uid: mockUid,
+      phoneNumber: mockPhone,
+      name: 'Mock User'
     };
     next();
 

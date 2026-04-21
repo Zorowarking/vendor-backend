@@ -9,6 +9,9 @@ export const useAuthStore = create((set) => ({
   profileStatus: null, // 'PENDING' | 'UNDER_REVIEW' | 'READY' | 'SUSPENDED' | 'DISABLED'
   suspensionReason: null,
   kycDocs: {},
+  vendorRegistrationData: null, // Holds data between Vendor Details and Bank Details screens
+
+  setVendorRegistrationData: (data) => set({ vendorRegistrationData: data }),
 
   login: (userData) => {
     set({

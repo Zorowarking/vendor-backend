@@ -32,12 +32,15 @@ import EmptyState from '../../components/EmptyState';
 const { width } = Dimensions.get('window');
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
+import * as Location from 'expo-location';
+
 export default function RequestsScreen() {
   const router = useRouter();
-  const { isOnline, activeOrder, pickupRequests, addPickupRequest, removePickupRequest, setActiveOrder, currentLocation } = useRiderStore();
+  const { isOnline, activeOrder, pickupRequests, addPickupRequest, removePickupRequest, setActiveOrder, currentLocation, updateCurrentLocation } = useRiderStore();
   const [pulseAnim] = useState(new Animated.Value(1));
   const [timer, setTimer] = useState(60);
   const [currentRequest, setCurrentRequest] = useState(null);
+  const [isSimulating, setIsSimulating] = useState(false);
   
   // Tracking States
   const [loading, setLoading] = useState(false);
@@ -47,6 +50,64 @@ export default function RequestsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState(null);
   const mapRef = useRef(null);
+
+  // START: Real-time Tracking & Simulation logic
+  useEffect(() => {
+    let locationSubscription;
+    
+    const startTracking = async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Permission to access location was denied');
+        return;
+      }
+
+      locationSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10, // update every 10 meters
+        },
+        (location) => {
+          const { latitude, longitude } = location.coords;
+          updateCurrentLocation({ latitude, longitude });
+          if (activeOrder) {
+            socketService.emitLocation(activeOrder.id, latitude, longitude);
+          }
+        }
+      );
+    };
+
+    if (isOnline && activeOrder && !isSimulating) {
+      startTracking();
+    }
+
+    return () => {
+      if (locationSubscription) locationSubscription.remove();
+    };
+  }, [isOnline, activeOrder, isSimulating]);
+
+  // Movement Simulation for testing
+  useEffect(() => {
+    let simInterval;
+    if (isSimulating && activeOrder) {
+       let step = 0;
+       const stepsCount = 100;
+       const start = currentLocation || { latitude: 28.6139, longitude: 77.2090 };
+       const end = { latitude: 28.6500, longitude: 77.2500 }; 
+
+       simInterval = setInterval(() => {
+         const lat = start.latitude + (end.latitude - start.latitude) * (step / stepsCount);
+         const lng = start.longitude + (end.longitude - start.longitude) * (step / stepsCount);
+         
+         updateCurrentLocation({ latitude: lat, longitude: lng });
+         socketService.emitLocation(activeOrder.id, lat, lng);
+         
+         step++;
+         if (step > stepsCount) step = 0; 
+       }, 2000); 
+    }
+    return () => clearInterval(simInterval);
+  }, [isSimulating, activeOrder]);
 
   useEffect(() => {
     fetchProfile();
@@ -61,28 +122,22 @@ export default function RequestsScreen() {
     }
   };
 
-  // Cancellation Modal State
   const [isCancelModalVisible, setIsCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelOverview, setCancelOverview] = useState('');
 
-
-
-  // Mock pickup/delivery locations
-  const pickupLoc = { latitude: 40.7128, longitude: -74.0060 };
-  const deliveryLoc = { latitude: 40.7484, longitude: -73.9857 };
+  const pickupLoc = { latitude: 28.6139, longitude: 77.2090 };
+  const deliveryLoc = { latitude: 28.6500, longitude: 77.2500 };
 
   useEffect(() => {
     if (!isOnline) return;
 
     const cleanup = socketService.onRiderEvents({
       onPickupRequest: (request) => {
-        console.log('New pickup request received via socket:', request.id);
         addPickupRequest(request);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       },
       onOrderUpdate: (update) => {
-        console.log('Order update received via socket:', update);
         if (activeOrder && activeOrder.id === update.orderId) {
           setActiveOrder({ ...activeOrder, ...update });
         }
@@ -92,21 +147,12 @@ export default function RequestsScreen() {
     return cleanup;
   }, [isOnline, activeOrder]);
 
-  // Pulse animation for "Waiting" state
   useEffect(() => {
     if (isOnline && !activeOrder && pickupRequests.length === 0) {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
+          Animated.timing(pulseAnim, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
         ])
       ).start();
     } else {
@@ -114,7 +160,6 @@ export default function RequestsScreen() {
     }
   }, [isOnline, activeOrder, pickupRequests]);
 
-  // Request queue management
   useEffect(() => {
     if (pickupRequests.length > 0 && !currentRequest) {
       setCurrentRequest(pickupRequests[0]);
@@ -122,7 +167,6 @@ export default function RequestsScreen() {
     }
   }, [pickupRequests, currentRequest]);
 
-  // Modal Countdown Timer
   useEffect(() => {
     let interval;
     if (currentRequest) {
@@ -262,9 +306,7 @@ export default function RequestsScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      // Simulate/Trigger re-fetch from storage or API
-      const { fetchEarnings } = useRiderStore.getState(); // Assuming some global refresh
-      // For now, just a clear delay to show it's working
+      // Refresh logic here
       await new Promise(resolve => setTimeout(resolve, 1500));
     } catch (error) {
        console.error('Refresh failed', error);
@@ -446,10 +488,24 @@ export default function RequestsScreen() {
                         activeOrder.status?.replace(/_/g, ' ') || 'ON THE WAY'}
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={handleNavigate} style={styles.navIcon}>
-                    <Ionicons name="navigate-circle" size={44} color={Colors.primary} />
-                    <Text style={styles.navLabel}>Navigate</Text>
-                  </TouchableOpacity>
+                  <View style={styles.navIcon}>
+                    <TouchableOpacity onPress={handleNavigate}>
+                        <Ionicons name="navigate-circle" size={44} color={Colors.primary} />
+                        <Text style={styles.navLabel}>Navigate</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={[styles.navIcon, { marginLeft: 16 }]}>
+                    <TouchableOpacity onPress={() => setIsSimulating(!isSimulating)}>
+                        <Ionicons 
+                          name={isSimulating ? "pause-circle" : "play-circle"} 
+                          size={44} 
+                          color={isSimulating ? Colors.warning : Colors.success} 
+                        />
+                        <Text style={[styles.navLabel, { color: isSimulating ? Colors.warning : Colors.success }]}>
+                          {isSimulating ? 'Stop Sim' : 'Start Sim'}
+                        </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 {/* PRIMARY ACTIONS - Moved to Top */}
@@ -537,21 +593,6 @@ export default function RequestsScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
         >
-          {profile && profile.commissionModel === null && (
-            <TouchableOpacity 
-              style={styles.setupBanner} 
-              onPress={() => router.push('/(rider)/profile')}
-            >
-              <View style={styles.setupIcon}>
-                <Ionicons name="settings-outline" size={24} color={Colors.white} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.setupTitle}>Final Setup Required</Text>
-                <Text style={styles.setupSub}>Pick your commission model to start earning.</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.white} />
-            </TouchableOpacity>
-          )}
 
           <View style={styles.waitingContainer}>
               <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]}>
@@ -697,16 +738,6 @@ const styles = StyleSheet.create({
   offlineTitle: { fontSize: 24, fontWeight: 'bold', color: Colors.black, marginTop: 20 },
   offlineSub: { fontSize: 16, color: Colors.subText, textAlign: 'center', marginTop: 10 },
   
-  waitingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  pulseCircle: { 
-    width: 100, height: 100, borderRadius: 50, 
-    backgroundColor: Colors.primary + '20', 
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 20 
-  },
-  waitingTitle: { fontSize: 20, fontWeight: 'bold', color: Colors.primary },
-  waitingSub: { fontSize: 16, color: Colors.subText, marginTop: 8 },
-
   waitingContainer: { height: Dimensions.get('window').height * 0.7, justifyContent: 'center', alignItems: 'center' },
   pulseCircle: { 
     width: 100, height: 100, borderRadius: 50, 

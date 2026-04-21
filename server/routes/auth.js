@@ -1,91 +1,132 @@
 const express = require('express');
 const router = express.Router();
 const firebaseAuth = require('../middleware/auth');
-
-// Mock Database (In-memory)
-// In a real app, use Prisma, Mongoose, etc.
-const users = {
-  'mock-uid-123': {
-    uid: 'mock-uid-123',
-    phoneNumber: '+919999999999',
-    role: null,
-    profileStatus: 'PENDING',
-    businessName: 'Mock Store'
-  }
-};
+const { prisma, withRetry } = require('../lib/prisma');
 
 /**
  * Sync User Profile
  * Fetches the user from the DB or creates a new one if it doesn't exist
  */
-router.post('/sync', firebaseAuth, (req, res) => {
-  const { uid, phoneNumber } = req.user;
-  
-  console.log(`[AUTH] Syncing user: ${uid} (${phoneNumber})`);
+router.post('/sync', firebaseAuth, async (req, res) => {
+  try {
+    const { uid, phoneNumber } = req.user;
+    
+    // Handle cases where social login has no phone number
+    const safePhone = phoneNumber || `none_${uid.substring(0, 10)}`;
 
-  // Check if user exists
-  if (!users[uid]) {
-    console.log(`[AUTH] Creating new user record for ${uid}`);
-    users[uid] = {
-      uid,
-      phoneNumber,
-      role: null,
-      profileStatus: 'PENDING',
-      createdAt: new Date().toISOString()
-    };
+    // Upsert the profile (create if doesn't exist, update if it does)
+    const profile = await withRetry(() => prisma.profile.upsert({
+      where: { firebaseUid: uid },
+      update: { phoneNumber: safePhone }, // Keep phone updated
+      create: {
+        firebaseUid: uid,
+        phoneNumber: safePhone,
+        role: null,
+        profileStatus: 'PENDING'
+      },
+      include: {
+        vendor: true,
+        rider: true
+      }
+    }));
+
+    console.log(`[AUTH-SYNC] Success! Profile ID: ${profile.id}, Status: ${profile.profileStatus}`);
+
+    res.json({
+      success: true,
+      user: {
+        uid: profile.firebaseUid,
+        phoneNumber: profile.phoneNumber,
+        role: profile.role,
+        profileStatus: profile.profileStatus
+      }
+    });
+  } catch (error) {
+    const util = require('util');
+    console.error('[AUTH] Sync Error:', util.inspect(error, { depth: null }));
+    if (error.cause) console.error('[AUTH] Error Cause:', util.inspect(error.cause, { depth: null }));
+    res.status(500).json({ success: false, error: 'Database sync failed' });
   }
-
-  const user = users[uid];
-  
-  res.json({
-    success: true,
-    user: {
-      uid: user.uid,
-      phoneNumber: user.phoneNumber,
-      role: user.role,
-      profileStatus: user.profileStatus
-    }
-  });
 });
 
 /**
  * Update User Role
  */
-router.post('/role', firebaseAuth, (req, res) => {
-  const { uid } = req.user;
-  const { role } = req.body;
+router.post('/role', firebaseAuth, async (req, res) => {
+  try {
+    const { uid } = req.user;
+    const { role } = req.body;
 
-  if (!['VENDOR', 'RIDER'].includes(role)) {
-    return res.status(400).json({ error: 'Invalid role' });
+    if (!['VENDOR', 'RIDER'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    console.log(`[AUTH] Updating role for ${uid} to ${role}`);
+
+    // Update profile role
+    const profile = await withRetry(() => prisma.profile.update({
+      where: { firebaseUid: uid },
+      data: { role }
+    }));
+
+    // Create a skeleton record in the corresponding table if it doesn't exist
+    if (role === 'VENDOR') {
+      await withRetry(() => prisma.vendor.upsert({
+        where: { phone: profile.phoneNumber },
+        update: { profileId: profile.id },
+        create: {
+          profileId: profile.id,
+          phone: profile.phoneNumber,
+          businessName: 'My Store', // Placeholder
+          ownerName: 'Vendor Owner', // Placeholder
+          businessAddress: 'Address Pending' // Placeholder
+        }
+      }));
+    } else if (role === 'RIDER') {
+      await withRetry(() => prisma.rider.upsert({
+        where: { phone: profile.phoneNumber },
+        update: { profileId: profile.id },
+        create: {
+          profileId: profile.id,
+          phone: profile.phoneNumber,
+          fullName: 'Rider Name' // Placeholder
+        }
+      }));
+    }
+    
+    res.json({
+      success: true,
+      user: {
+        uid: profile.firebaseUid,
+        phoneNumber: profile.phoneNumber,
+        role: profile.role,
+        profileStatus: profile.profileStatus
+      }
+    });
+  } catch (error) {
+    console.error('[AUTH] Role Update Error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update role' });
   }
-
-  if (!users[uid]) {
-    return res.status(404).json({ error: 'User not found during role update' });
-  }
-
-  console.log(`[AUTH] Updating role for ${uid} to ${role}`);
-  users[uid].role = role;
-  
-  res.json({
-    success: true,
-    user: users[uid]
-  });
 });
 
 /**
  * Mock Status Enforcement Test (Update profile status)
- * Accessible only for testing
  */
-router.post('/status-dev', firebaseAuth, (req, res) => {
-  const { uid } = req.user;
-  const { status, reason } = req.body;
+router.post('/status-dev', firebaseAuth, async (req, res) => {
+  try {
+    const { uid } = req.user;
+    const { status } = req.body;
 
-  if (!users[uid]) return res.status(404).json({ error: 'User not found' });
+    const profile = await prisma.profile.update({
+      where: { firebaseUid: uid },
+      data: { profileStatus: status }
+    });
 
-  users[uid].profileStatus = status;
-  if (reason) users[uid].suspensionReason = reason;
-
-  res.json({ success: true, status: users[uid].profileStatus });
+    res.json({ success: true, status: profile.profileStatus });
+  } catch (error) {
+    console.error('[AUTH] Sync error:', error);
+    res.status(500).json({ error: 'Sync failed', details: error.message });
+  }
 });
 
 module.exports = router;

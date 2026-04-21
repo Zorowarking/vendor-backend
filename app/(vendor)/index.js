@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Pressable, RefreshControl, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Pressable, RefreshControl, Dimensions, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -64,7 +64,7 @@ function ActiveTimer({ acceptedAt }) {
   return <Text style={styles.timeSinceText}>{mins} min ago</Text>;
 }
 
-function IncomingOrderModal({ visible, orders, onAccept, onReject, isOutsideHours }) {
+function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, isOutsideHours }) {
   const order = orders[0]; // Show the oldest pending order
   const [timeLeft, setTimeLeft] = useState(INCOMING_SLA_SECONDS);
 
@@ -103,7 +103,10 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, isOutsideHour
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, isBreached && styles.modalBreached]}>
-          <Text style={styles.modalTitle}>New Incoming Order!</Text>
+           <TouchableOpacity style={styles.closeModalBtn} onPress={() => onDismiss(order.id)}>
+             <Ionicons name="close" size={24} color={Colors.subText} />
+           </TouchableOpacity>
+           <Text style={styles.modalTitle}>New Incoming Order!</Text>
           
           {isOutsideHours && (
             <View style={styles.outsideHoursBadge}>
@@ -128,7 +131,15 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, isOutsideHour
           <Text style={styles.totalAmount}>${order.total?.toFixed(2)}</Text>
 
           {isBreached ? (
-            <Text style={styles.breachedWarning}>This order has been flagged. Admin notified.</Text>
+            <View>
+              <Text style={styles.breachedWarning}>This order has been flagged. Admin notified.</Text>
+              <TouchableOpacity 
+                style={[styles.primaryButton, { marginTop: 20, alignSelf: 'center', width: '100%' }]} 
+                onPress={() => onDismiss(order.id)}
+              >
+                <Text style={styles.primaryButtonText}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <View style={styles.actionRowModal}>
               <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
@@ -232,7 +243,7 @@ function ActiveOrderCard({ order, router }) {
   // Accepted, Preparing, Ready
   const handleStatusUpdate = async (newStatus) => {
     try {
-      if (newStatus === 'COMPLETED' || newStatus === 'CANCELLED') {
+      if (newStatus === 'delivered' || newStatus === 'cancelled_by_vendor') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         useVendorStore.getState().moveToHistory(order.id);
         useVendorStore.getState().updateOrder(order.id, { status: newStatus });
@@ -250,7 +261,15 @@ function ActiveOrderCard({ order, router }) {
   return (
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
-        <Text style={styles.orderId}>Order #{order.id}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.orderId}>Order #{order.id}</Text>
+          {(order.isFlagged || order.isFlaggedAdmin) && (
+            <View style={styles.flaggedBadge}>
+              <Ionicons name="flag" size={10} color={Colors.white} />
+              <Text style={styles.flaggedText}>FLAGGED</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.statusBadge}>{order.status}</Text>
       </View>
       <Text style={styles.itemsSummary}>
@@ -260,23 +279,19 @@ function ActiveOrderCard({ order, router }) {
       {order.acceptedAt && <ActiveTimer acceptedAt={order.acceptedAt} />}
 
       <View style={styles.actionRow}>
-        {order.status === 'ACCEPTED' && (
-          <TouchableOpacity style={styles.primaryButton} onPress={() => handleStatusUpdate('PREPARING')}>
+        {order.status === 'accepted' && (
+          <TouchableOpacity style={styles.primaryButton} onPress={() => handleStatusUpdate('preparing')}>
             <Text style={styles.primaryButtonText}>Start Preparing</Text>
           </TouchableOpacity>
         )}
-        {order.status === 'PREPARING' && (
-          <TouchableOpacity style={styles.successButton} onPress={() => handleStatusUpdate('READY_FOR_PICKUP')}>
+        {order.status === 'preparing' && (
+          <TouchableOpacity style={styles.successButton} onPress={() => handleStatusUpdate('ready_for_pickup')}>
             <Text style={styles.successButtonText}>Mark as Ready</Text>
           </TouchableOpacity>
         )}
-        {order.status === 'READY_FOR_PICKUP' && (
+        {order.status === 'ready_for_pickup' && (
           <View style={styles.rowBetween}>
             <Text style={styles.waitingText}>Awaiting Rider...</Text>
-            {/* Dev Mock to complete the order */}
-            <TouchableOpacity style={styles.mockEndButton} onPress={() => handleStatusUpdate('COMPLETED')}>
-               <Text style={styles.mockEndText}>[DEV] Rider Picked Up</Text>
-            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -289,7 +304,7 @@ function HistoryOrderCard({ order, router }) {
     <TouchableOpacity style={[styles.card, styles.historyCard]} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
         <Text style={styles.orderId}>Order #{order.id}</Text>
-        <Text style={[styles.statusBadge, order.status === 'CANCELLED' && styles.statusBadgeDanger]}>{order.status}</Text>
+        <Text style={[styles.statusBadge, order.status === 'cancelled_by_vendor' && styles.statusBadgeDanger]}>{order.status}</Text>
       </View>
       <Text style={styles.customerName}>{order.customerName}</Text>
       <Text style={styles.itemsSummary}>{order.total?.toFixed(2)} USD</Text>
@@ -348,7 +363,7 @@ export default function VendorOrdersDashboard() {
 
 
       const handleOrderUpdate = (data) => {
-        if (data.status === 'CANCELLED') {
+        if (data.status === 'cancelled_by_vendor' || data.status === 'delivered') {
           useVendorStore.getState().moveToHistory(data.id);
         }
         updateOrder(data.id, { status: data.status });
@@ -366,18 +381,11 @@ export default function VendorOrdersDashboard() {
     }
   }, [user]);
 
-  // DEV MOCK: Automatically trigger an order 3 seconds after mounting if online
-  useEffect(() => {
-    if (!isOnline) return;
-    
-    // Check if we already have incoming orders so we don't spam it on re-renders
-    if (incomingOrders.length === 0 && activeOrders.length === 0) {
-      const timer = setTimeout(() => {
-        triggerMockOrder();
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [isOnline]);
+
+
+  const handleDismiss = (orderId) => {
+    removeIncomingOrder(orderId);
+  };
 
   const handleAccept = async (orderId) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -386,7 +394,7 @@ export default function VendorOrdersDashboard() {
       const order = incomingOrders.find(o => o.id === orderId);
       if (order) {
         removeIncomingOrder(orderId);
-        addActiveOrder({ ...order, status: 'ACCEPTED', acceptedAt: new Date().toISOString() });
+        addActiveOrder({ ...order, status: 'accepted', acceptedAt: new Date().toISOString() });
       }
     } catch (e) {
       Alert.alert('Error', 'Failed to accept order');
@@ -402,10 +410,19 @@ export default function VendorOrdersDashboard() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       await vendorApi.rejectOrder(rejectOrderId, reason);
       useVendorStore.getState().moveToHistory(rejectOrderId);
-      updateOrder(rejectOrderId, { status: 'CANCELLED' });
+      updateOrder(rejectOrderId, { status: 'cancelled_by_vendor' });
       setRejectOrderId(null);
     } catch (e) {
-      Alert.alert('Error', 'Failed to reject order');
+      const errorMsg = e.response?.data?.error || 'Failed to reject order';
+      
+      // If order not found, it might be a mock or already deleted. Remove from UI.
+      if (e.response?.status === 404) {
+        useVendorStore.getState().removeIncomingOrder(rejectOrderId);
+        setRejectOrderId(null);
+        return;
+      }
+      
+      Alert.alert('Error', errorMsg);
     }
   };
 
@@ -416,18 +433,7 @@ export default function VendorOrdersDashboard() {
   };
 
 
-  const triggerMockOrder = () => {
-    addIncomingOrder({
-      id: Math.floor(1000 + Math.random() * 9000).toString(),
-      customerName: 'Mock Customer',
-      items: [{ name: 'Chicken Biryani', qty: 2 }, { name: 'Coke', qty: 1 }],
-      total: 25.50,
-      createdAt: new Date().toISOString(),
-      status: 'PENDING',
-      deliveryAddress: '123 Fake Street, Appt 4B',
-      addons: ['Extra Raita', 'No Onions']
-    });
-  };
+
 
   return (
     <View style={styles.container}>
@@ -452,10 +458,6 @@ export default function VendorOrdersDashboard() {
           <Ionicons name="chevron-forward" size={20} color={Colors.white} />
         </TouchableOpacity>
       )}
-
-      <TouchableOpacity style={styles.devButton} onPress={triggerMockOrder}>
-        <Text style={styles.devText}>[DEV MOCK] Trigger Incoming Order</Text>
-      </TouchableOpacity>
 
       <View style={styles.tabsRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'ACTIVE' && styles.activeTab]} onPress={() => setActiveTab('ACTIVE')}>
@@ -503,6 +505,7 @@ export default function VendorOrdersDashboard() {
         orders={incomingOrders} 
         onAccept={handleAccept} 
         onReject={handleReject}
+        onDismiss={handleDismiss}
         isOutsideHours={profile ? !checkOperatingHours(profile.operatingHours) : false}
       />
 
@@ -519,8 +522,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.grey },
   offlineBanner: { backgroundColor: '#333', padding: 12, alignItems: 'center' },
   offlineText: { color: Colors.white, fontWeight: '600', fontSize: 14 },
-  devButton: { padding: 10, backgroundColor: Colors.info, alignItems: 'center' },
-  devText: { color: 'white', fontWeight: 'bold' },
   
   tabsRow: { flexDirection: 'row', backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
   tab: { flex: 1, padding: 16, alignItems: 'center' },
@@ -533,6 +534,22 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3, shadowColor: Colors.black, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 } },
   historyCard: { opacity: 0.8 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+  flaggedBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: Colors.error, 
+    paddingHorizontal: 6, 
+    paddingVertical: 2, 
+    borderRadius: 4, 
+    marginLeft: 8 
+  },
+  flaggedText: { 
+    color: Colors.white, 
+    fontSize: 9, 
+    fontWeight: 'bold', 
+    marginLeft: 3 
+  },
   orderId: { fontSize: 16, fontWeight: 'bold', color: Colors.primary },
   customerName: { fontSize: 18, fontWeight: 'bold', color: Colors.black, marginBottom: 4 },
   itemsSummary: { fontSize: 14, color: Colors.subText, marginBottom: 8 },
@@ -555,14 +572,13 @@ const styles = StyleSheet.create({
   timeSinceText: { color: Colors.subText, fontSize: 12, fontStyle: 'italic', marginBottom: 8 },
 
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
-  mockEndButton: { padding: 8, borderWidth: 1, borderColor: Colors.info, borderRadius: 4 },
-  mockEndText: { color: Colors.info, fontSize: 12, fontWeight: 'bold' },
 
   // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: Colors.white, borderRadius: 16, padding: 24, elevation: 10 },
   modalBreached: { borderColor: Colors.error, borderWidth: 2 },
   modalTitle: { fontSize: 24, fontWeight: 'bold', color: Colors.black, marginBottom: 16, textAlign: 'center' },
+  closeModalBtn: { position: 'absolute', right: 16, top: 16, zIndex: 10, padding: 4 },
   totalAmount: { fontSize: 22, fontWeight: 'bold', color: Colors.success, marginBottom: 16 },
   actionRowModal: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   rejectButtonModal: { flex: 1, paddingVertical: 14, borderRadius: 8, borderWidth: 1, borderColor: Colors.error, marginRight: 8, alignItems: 'center' },

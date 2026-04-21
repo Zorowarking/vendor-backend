@@ -38,18 +38,18 @@ export default function Layout() {
 
   // Socket Connection Management
   useEffect(() => {
-    if (isAuthenticated && role && user?.id) {
+    if (isAuthenticated && role && user?.uid) {
       if (role === 'VENDOR') {
-        socketService.connect(user.id);
+        socketService.connect(user.uid);
       } else if (role === 'RIDER') {
-        socketService.connectRider(user.id);
+        socketService.connectRider(user.uid);
       }
     } else {
       socketService.disconnect();
     }
 
     return () => socketService.disconnect();
-  }, [isAuthenticated, role, user?.id]);
+  }, [isAuthenticated, role, user?.uid]);
 
   useEffect(() => {
     if (!isMounted) return;

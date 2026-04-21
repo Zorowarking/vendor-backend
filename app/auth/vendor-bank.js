@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
+import { vendorApi } from '../../services/vendorApi';
 
 export default function VendorBankScreen() {
   const [bankData, setBankData] = useState({
@@ -13,24 +14,45 @@ export default function VendorBankScreen() {
     upiId: '',
   });
   const [isAccVisible, setIsAccVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
-  const params = useLocalSearchParams();
   const setProfileStatus = useAuthStore((state) => state.setProfileStatus);
+  const vendorRegistrationData = useAuthStore((state) => state.vendorRegistrationData);
 
   const handleInputChange = (name, value) => {
     setBankData({ ...bankData, [name]: value });
   };
 
-  const handleSubmit = () => {
-    if (!bankData.holderName || !bankData.bankName || !bankData.accountNumber || !bankData.ifscCode) {
-      Alert.alert('Error', 'Please fill in required fields');
+  const handleSubmit = async () => {
+    if (!vendorRegistrationData) {
+      Alert.alert('Session Expired', 'Please go back and re-enter your business details first.');
+      router.back();
       return;
     }
-    
-    // In a real app, call API POST /auth/vendor-details or similar
-    
-    // Move to KYC - Keep status as PENDING until KYC is submitted
-    router.push('/kyc');
+
+    if (!bankData.holderName || !bankData.bankName || !bankData.accountNumber || !bankData.ifscCode) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Combine vendor registration data with bank details and call PUT /api/vendor/profile
+      const payload = {
+        ...vendorRegistrationData,
+        bankData
+      };
+
+      await vendorApi.updateProfile(payload);
+
+      // Stay as PENDING — KYC screen will handle the next step
+      router.push('/kyc');
+    } catch (error) {
+      console.error('Vendor registration error:', error);
+      Alert.alert('Error', 'Could not save details to server. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -105,10 +127,15 @@ export default function VendorBankScreen() {
             </View>
 
             <TouchableOpacity 
-              style={styles.nextButton}
+              style={[styles.nextButton, isSubmitting && { opacity: 0.7 }]}
               onPress={handleSubmit}
+              disabled={isSubmitting}
             >
-              <Text style={styles.nextButtonText}>Submit & Proceed to KYC</Text>
+              {isSubmitting ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.nextButtonText}>Submit & Proceed to KYC</Text>
+              )}
             </TouchableOpacity>
           </View>
         </ScrollView>

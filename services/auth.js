@@ -113,7 +113,29 @@ export const authService = {
         throw new Error('Recaptcha verifier is required for Web SDK Phone Auth');
       }
 
-      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+      // Bugfix for Firebase JS SDK v9+ compatibility with expo-firebase-recaptcha
+      // We wrap the verifier in a proxy-like object that implements the full interface
+      const applicationVerifier = {
+        type: 'recaptcha',
+        verify: async () => {
+          console.log('--- VERIFIER: STARTING VERIFICATION ---');
+          try {
+            return await recaptchaVerifier.verify();
+          } catch (e) {
+            console.error('--- VERIFIER: VERIFY ERROR ---', e);
+            throw e;
+          }
+        },
+        _reset: () => {
+          console.log('--- VERIFIER: RESET CALLED ---');
+          if (typeof recaptchaVerifier?._reset === 'function') {
+            recaptchaVerifier._reset();
+          }
+        }
+      };
+
+      console.log('--- CALLING signInWithPhoneNumber WITH PATCHED VERIFIER ---');
+      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, applicationVerifier);
       console.log('--- OTP SENT SUCCESSFULLY ---');
       return confirmationResult;
     } catch (error) {

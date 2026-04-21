@@ -15,7 +15,7 @@ export default function KYCStatus() {
   const router = useRouter();
   const { profileStatus, role, setProfileStatus, logout, suspensionReason } = useAuthStore();
 
-  const [kycStatus, setKycStatus] = useState(profileStatus || 'UNDER_REVIEW');
+  const [kycStatus, setKycStatus] = useState(profileStatus?.toUpperCase() || 'UNDER_REVIEW');
 
   useEffect(() => {
     // If approved, ensure notifications are ready
@@ -91,9 +91,10 @@ export default function KYCStatus() {
               source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1043/1043424.png' }} 
               style={styles.statusIcon} 
             />
-            <Text style={styles.statusTitle}>Verification in Progress</Text>
+               <Text style={styles.statusTitle}>Verification in Progress</Text>
             <Text style={styles.statusDescription}>
               Your documents are under review. This usually takes 24-48 hours. We'll notify you once your account is activated.
+              {profileStatus === 'mock_approved' && ' (Auto-approved for Developer testing)'}
             </Text>
             
             {/* DEV MOCK BUTTON */}
@@ -102,7 +103,7 @@ export default function KYCStatus() {
               onPress={() => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setKycStatus('APPROVED');
-                setProfileStatus('READY'); // Sets auth state ready for layout parsing
+                setProfileStatus('APPROVED'); // Standardized for UI
               }}
             >
               <Text style={styles.devApproveText}>[DEV MOCK] Approve KYC</Text>
@@ -120,14 +121,14 @@ export default function KYCStatus() {
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={styles.logoutBtn} 
+              style={styles.logoutButton} 
               onPress={() => {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
                 logout();
               }}
             >
               <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-              <Text style={styles.logoutBtnText}>Logout</Text>
+              <Text style={styles.logoutButtonText}>Logout</Text>
             </TouchableOpacity>
 
 

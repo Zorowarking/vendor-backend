@@ -1,238 +1,109 @@
 import apiClient from './api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const getClient = () => apiClient;
 
-const MOCK_PRODUCTS_KEY = 'vendor_mock_products_v1';
-
-// Initial default products
-const DEFAULT_PRODUCTS = [
-  { id: '1', name: 'Margherita Pizza', price: 12.99, category: 'Pizza', type: 'Veg', isAvailable: true, image: 'https://images.unsplash.com/photo-1604382354936-07c5d9983bd3', addOns: [], reviewStatus: 'APPROVED' },
-  { id: '2', name: 'Pepperoni Pizza', price: 14.99, category: 'Pizza', type: 'Non-Veg', isAvailable: true, image: 'https://images.unsplash.com/photo-1628840042765-356cda07504e', addOns: [], reviewStatus: 'APPROVED' },
-  { id: '3', name: 'Veggie Burger', price: 9.99, category: 'Burgers', type: 'Veg', isAvailable: false, image: 'https://images.unsplash.com/photo-1512152272829-e3139592d56f', addOns: [], reviewStatus: 'APPROVED' },
-];
-
-let mockProducts = [...DEFAULT_PRODUCTS];
-
-// Helper to persist mocks
-const syncMocks = async () => {
-  try {
-    await AsyncStorage.setItem(MOCK_PRODUCTS_KEY, JSON.stringify(mockProducts));
-  } catch (e) {
-    console.error('Failed to sync mocks to storage');
-  }
-};
-
-// Immediately load from storage if available
-AsyncStorage.getItem(MOCK_PRODUCTS_KEY).then(data => {
-  if (data) mockProducts = JSON.parse(data);
-});
-
 export const vendorApi = {
-  toggleStatus: async (isOnline) => {
-    try {
-      const response = await apiClient.put('/vendor/status/toggle', { isOnline });
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.toggleStatus mock fallback:', error.message);
-      return { success: true, isOnline };
-    }
+  submitKyc: async (data) => {
+    const response = await apiClient.post('/api/vendor/kyc', data);
+    return response.data;
+  },
+
+  toggleStatus: async (isOnline, dismissBubble = false) => {
+    const response = await apiClient.put('/api/vendor/status/toggle', { isOnline, dismissBubble });
+    return response.data;
   },
   
-  getEarnings: async (period = 'today') => {
+  getEarnings: async (period = 'daily') => {
     try {
-      const response = await apiClient.get(`/vendor/earnings?period=${period}`);
+      const response = await apiClient.get(`/api/vendor/earnings?period=${period}`);
       return response.data;
-    } catch (error) {
-      console.warn('vendorApi.getEarnings mock fallback:', error.message);
-      return { 
-        revenue: 1250.75, 
-        commission: 125.07, 
-        net: 1125.68, 
-        orderCount: 42,
-        chartData: {
-          labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-          datasets: [{ data: [20, 45, 28, 80, 99, 43, 50] }]
-        },
-        breakdown: [
-          { date: '2026-04-07', count: 12, gross: 350.00, commission: 35.00, net: 315.00 },
-          { date: '2026-04-06', count: 15, gross: 420.50, commission: 42.05, net: 378.45 },
-        ]
-      };
+    } catch (e) {
+      if (e.response?.status === 404) return { revenue: 0, orderCount: 0, chartData: null, breakdown: [] };
+      throw e;
     }
   },
 
   getProducts: async () => {
     try {
       const client = getClient();
-      const response = await client.get('/vendor/products');
+      const response = await client.get('/api/vendor/products');
       const data = response.data;
-      
-      // Strict array check to prevent UI crashes
       if (Array.isArray(data)) return data;
       if (data && Array.isArray(data.products)) return data.products;
-      if (data && Array.isArray(data.data)) return data.data;
-      
       return [];
-    } catch (error) {
-      // Return local cache from storage to ensure it's up to date
-      try {
-        const dataStr = await AsyncStorage.getItem(MOCK_PRODUCTS_KEY);
-        if (dataStr) {
-          const parsed = JSON.parse(dataStr);
-          if (Array.isArray(parsed)) return parsed;
-        }
-      } catch (e) {
-        console.error('Failed to load mock products from storage');
-      }
-      return [...(DEFAULT_PRODUCTS || [])];
+    } catch (e) {
+      if (e.response?.status === 404) return [];
+      throw e;
     }
+  },
+
+  getTemplates: async () => {
+    const response = await apiClient.get('/api/vendor/products/templates');
+    return response.data;
   },
 
   addProduct: async (data) => {
-    try {
-      const client = getClient();
-      const response = await client.post('/vendor/products', data);
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.addProduct mock fallback (persisting to storage):', error.message);
-      const newProduct = { 
-        ...data, 
-        id: Date.now().toString(),
-        reviewStatus: 'PENDING' // New products always go to review
-      };
-      mockProducts = [newProduct, ...mockProducts];
-      await syncMocks();
-      return { success: true, id: newProduct.id, product: newProduct };
-    }
+    const client = getClient();
+    const response = await client.post('/api/vendor/products', data);
+    return response.data;
   },
 
   updateProduct: async (id, data) => {
-    try {
-      const client = getClient();
-      const response = await client.put(`/vendor/products/${id}`, data);
-      return response.data;
-    } catch (error) {
-      const existing = mockProducts.find(p => p.id === id);
-      let newStatus = existing?.reviewStatus || 'APPROVED';
-      
-      if (existing) {
-        // Check if anything other than price or isAvailable changed
-        const criticalFields = ['name', 'description', 'category', 'type', 'image', 'addOns'];
-        const changedCritical = criticalFields.some(field => {
-          if (field === 'addOns') {
-            return JSON.stringify(existing[field]) !== JSON.stringify(data[field]);
-          }
-          return existing[field] !== data[field] && data[field] !== undefined;
-        });
-
-        if (changedCritical) {
-          newStatus = 'PENDING';
-        }
-      }
-
-      mockProducts = mockProducts.map(p => p.id === id ? { ...p, ...data, reviewStatus: newStatus } : p);
-      await syncMocks();
-      return { 
-        success: true, 
-        reviewTriggered: newStatus === 'PENDING' && existing?.reviewStatus !== 'PENDING',
-        status: newStatus 
-      };
-    }
+    const client = getClient();
+    const response = await client.put(`/api/vendor/products/${id}`, data);
+    return response.data;
   },
 
   deleteProduct: async (id) => {
-    try {
-      const response = await apiClient.delete(`/vendor/products/${id}`);
-      return response.data;
-    } catch (error) {
-      mockProducts = mockProducts.filter(p => p.id !== id);
-      await syncMocks();
-      return { success: true };
-    }
+    const response = await apiClient.delete(`/api/vendor/products/${id}`);
+    return response.data;
   },
 
   toggleProductAvailability: async (id, isAvailable) => {
-    try {
-      const response = await apiClient.put(`/vendor/products/${id}`, { isAvailable });
-      return response.data;
-    } catch (error) {
-      mockProducts = mockProducts.map(p => p.id === id ? { ...p, isAvailable } : p);
-      await syncMocks();
-      return { success: true };
-    }
+    const response = await apiClient.put(`/api/vendor/products/${id}`, { isAvailable });
+    return response.data;
   },
 
   getProfile: async () => {
     try {
-      const response = await apiClient.get('/vendor/profile');
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.getProfile mock fallback:', error.message);
-      return {
-        businessName: 'Gourmet Pizza Co.',
-        ownerName: 'John Doe',
-        phone: '+1 234 567 8900',
-        email: 'john@gourmetpizza.com',
-        category: 'Italian',
-        description: 'Authentic stone-baked pizzas with fresh ingredients.',
-        operatingHours: '10:00 AM - 11:00 PM',
-        location: { latitude: 40.7128, longitude: -74.0060, address: '123 Pizza St, New York' },
-        logo: 'https://images.unsplash.com/photo-1594212699903-ec8a3eea50f6',
-        banner: 'https://images.unsplash.com/photo-1513104890138-7c749659a591',
-        bankDetails: { accountNumber: '****6789', bankName: 'Global Bank' },
-        kycStatus: 'Approved',
-        complianceFlags: [],
-        commissionModel: null // null triggers the "Complete Setup" prompt
-      };
+      const response = await apiClient.get('/api/vendor/profile');
+      return response.data.vendor;
+    } catch (e) {
+      if (e.response?.status === 404) return null;
+      throw e;
     }
   },
 
+
   updateProfile: async (data) => {
-    try {
-      const client = getClient();
-      const response = await client.put('/vendor/profile', data);
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.updateProfile mock fallback:', error.message);
-      return { success: true };
-    }
+    const client = getClient();
+    const response = await client.put('/api/vendor/profile', data);
+    return response.data;
   },
 
   uploadImage: async (uri) => {
-    // Transparent Mock: Use the local URI for immediate UI feedback in development
-    console.log('[DEV MOCK] Uploading image...', uri);
-    await new Promise(resolve => setTimeout(resolve, 800));
+    // Note: The backend doesn't have an S3/Firebase Storage implementation yet.
+    // This is kept transparent until the URL storage driver is selected.
     return { url: uri, success: true };
   },
 
   acceptOrder: async (orderId) => {
-    try {
-      const response = await apiClient.put(`/vendor/orders/${orderId}/accept`);
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.acceptOrder mock fallback:', error.message);
-      return { success: true };
-    }
+    const response = await apiClient.put(`/api/vendor/orders/${orderId}/accept`);
+    return response.data;
   },
 
-  rejectOrder: async (orderId, reason) => {
-    try {
-      const response = await apiClient.put(`/vendor/orders/${orderId}/reject`, { reason });
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.rejectOrder mock fallback:', error.message);
-      return { success: true };
-    }
+  rejectOrder: async (orderId, reason, otherNotes) => {
+    const response = await apiClient.put(`/api/vendor/orders/${orderId}/reject`, { reason, otherNotes });
+    return response.data;
+  },
+
+  contactSupport: async (orderId) => {
+    const response = await apiClient.put(`/api/vendor/orders/${orderId}/contact-support`);
+    return response.data;
   },
 
   updateOrderStatus: async (orderId, status) => {
-    try {
-      const response = await apiClient.put(`/vendor/orders/${orderId}/status`, { status });
-      return response.data;
-    } catch (error) {
-      console.warn('vendorApi.updateOrderStatus mock fallback:', error.message);
-      return { success: true };
-    }
+    const response = await apiClient.put(`/api/vendor/orders/${orderId}/status`, { status });
+    return response.data;
   }
 };

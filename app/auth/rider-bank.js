@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Keyboa
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
+import { riderApi } from '../../services/riderApi';
 
 export default function RiderBankScreen() {
   const [bankData, setBankData] = useState({
@@ -21,16 +22,24 @@ export default function RiderBankScreen() {
     setBankData({ ...bankData, [name]: value });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!bankData.holderName || !bankData.bankName || !bankData.accountNumber || !bankData.ifscCode) {
       Alert.alert('Error', 'Please fill in required fields');
       return;
     }
     
-    // In a real app, call API POST /auth/rider-details or similar
-    
-    // Move to KYC - Keep status as PENDING until KYC is submitted
-    router.push('/kyc');
+    try {
+      await riderApi.updateProfile({
+        fullName: params.fullName,
+        vehicleType: 'Two Wheeler',
+        vehicleNumber: params.vehicleNumber,
+        preferredZone: params.workingZone,
+        bankData: bankData
+      });
+      router.push('/kyc/rider-kyc');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to save rider details');
+    }
   };
 
   return (

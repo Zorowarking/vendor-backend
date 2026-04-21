@@ -1,0 +1,178 @@
+const express = require('express');
+const router = express.Router();
+const firebaseAuth = require('../middleware/auth');
+const requireCustomer = require('../middleware/customer');
+const CartService = require('../services/cartService');
+const { prisma } = require('../lib/prisma');
+
+/**
+ * MODULE 5 — ORDER & PAYMENT
+ */
+
+// POST /orders — initiate payment, validate cart, age verification, guest login
+router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const { deliveryPreference, addressId } = req.body;
+
+    // 1. Validate Guest Login - enforce logged in status at checkout (already done via firebaseAuth + requireCustomer)
+    
+    // 2. Delivery preference must be explicitly set
+    if (!deliveryPreference) {
+      return res.status(400).json({ error: 'Delivery preference must be explicitly selected.' });
+    }
+
+    // 3. Get Cart
+    const cart = await CartService.getCart({ customerId: req.customer.id });
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+
+    // VENDOR GATEKEEPER CHECK (Pre-Payment)
+    const vendor = await prisma.vendor.findUnique({ where: { id: cart.vendorId } });
+    if (!vendor || vendor.onlineStatus !== 'online') {
+      return res.status(403).json({ 
+        error: 'VENDOR_OFFLINE', 
+        message: 'This vendor is currently offline and not accepting orders.' 
+      });
+    }
+
+    const { checkVendorAvailability } = require('../lib/availability');
+    const { isOpen, nextOpen } = checkVendorAvailability(vendor.operatingHours);
+    if (!isOpen) {
+      return res.status(403).json({ 
+        error: 'VENDOR_CLOSED', 
+        message: `This vendor is currently closed. They will be back online ${nextOpen || 'soon'}.`
+      });
+    }
+
+    // 4. Validate Age Verification for restricted products
+    const hasRestrictedProducts = cart.items.some(item => {
+        // We'd need to check the product record or the flag on cart item
+        return item.ageVerified === false; // If any item marked as restricted but missing verification in cart
+    });
+
+    if (hasRestrictedProducts) {
+        // Check profile verification
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        if (!req.customer.ageVerifiedAt || req.customer.ageVerifiedAt < thirtyDaysAgo) {
+            return res.status(403).json({ 
+                error: 'AGE_VERIFICATION_REQUIRED', 
+                message: 'Age verification expired or missing. Please verify to purchase restricted products.' 
+            });
+        }
+    }
+
+    // 5. Validate Address
+    // Validate if it's a UUID string to prevent Prisma crash
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(addressId)) {
+        return res.status(400).json({ error: 'Invalid address ID format' });
+    }
+    address = await prisma.address.findUnique({ where: { id: addressId, customerId: req.customer.id } });
+
+    if (!address) return res.status(400).json({ error: 'Valid delivery address required' });
+
+    // 6. Initiate Payment (Mock)
+    // In real app, call Stripe/Razorpay here
+    const paymentIntentId = `pi_${Math.random().toString(36).substring(7)}`;
+
+    // Store checkout session data in Redis or Temp table if needed, 
+    // but here we'll just wait for the webhook to use the cart
+    
+    res.json({
+      success: true,
+      paymentIntentId,
+      amount: cart.total,
+      currency: 'INR',
+      clientSecret: 'mock_secret_123',
+      message: 'Payment initiated. Awaiting confirmation.'
+    });
+
+  } catch (error) {
+    console.error('[CHECKOUT] error:', error);
+    res.status(500).json({ error: 'Checkout initiation failed' });
+  }
+});
+
+// GET /orders — customer order history
+router.get('/', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const orders = await prisma.order.findMany({
+      where: { customerId: req.customer.id },
+      include: { 
+        vendor: {
+            select: { businessName: true, logoUrl: true }
+        },
+        items: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, orders });
+  } catch (error) {
+    console.error('[ORDERS-FETCH] 500 Error:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch order history', 
+      details: error.message,
+      hint: 'Ensure npx prisma db push has been run'
+    });
+  }
+});
+
+// GET /orders/:id — order detail and current status
+router.get('/:id', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await prisma.order.findUnique({
+      where: { id, customerId: req.customer.id },
+      include: { 
+        vendor: true, 
+        rider: true,
+        items: true,
+        statusHistory: {
+            orderBy: { changedAt: 'asc' }
+        },
+        tracking: {
+            orderBy: { recordedAt: 'asc' }
+        }
+      }
+    });
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json({ success: true, order });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch order details' });
+  }
+});
+
+/**
+ * MODULE 7 — LIVE ORDER TRACKING
+ */
+router.get('/:id/tracking', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await prisma.order.findUnique({
+      where: { id, customerId: req.customer.id },
+      include: { rider: true }
+    });
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.riderId) return res.status(200).json({ success: true, status: order.status, message: 'Rider not yet assigned' });
+
+    res.json({
+      success: true,
+      status: order.status,
+      rider: {
+        name: order.rider.fullName,
+        phone: order.rider.phone,
+        location: {
+          lat: order.rider.currentLat,
+          lng: order.rider.currentLng
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch tracking info' });
+  }
+});
+
+module.exports = router;

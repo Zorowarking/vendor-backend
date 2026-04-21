@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  # ─── Redis (BullMQ job queues) ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: vantyrn_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Vantyrn Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .          # Build context is the repo root (contains /server + /prisma)
+      dockerfile: server/Dockerfile
+    container_name: vantyrn_backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.server        # Server-only secrets (DATABASE_URL, FIREBASE_SERVICE_ACCOUNT, etc.)
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis   # Point to the Redis service name, not localhost
+      - REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy

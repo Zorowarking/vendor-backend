@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Act
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
+import { vendorApi } from '../../services/vendorApi';
+import { riderApi } from '../../services/riderApi';
 
 export default function KYCIndex() {
   const router = useRouter();
@@ -57,21 +59,29 @@ export default function KYCIndex() {
       return;
     }
 
+    const kycPayload = {
+      govIdType: 'Government ID',
+      govIdUrl: kycDocs.gov_id?.url,
+      businessProofType: 'Business Proof',
+      businessProofUrl: kycDocs.biz_proof?.url,
+      panUrl: kycDocs.pan?.url,
+      addressProofUrl: kycDocs.address_proof?.url,
+      drivingLicenseUrl: kycDocs.dl?.url,
+      vehicleRegUrl: kycDocs.rc?.url
+    };
+
     setIsSubmitting(true);
     try {
-      // Collect all document URLs
-      const docUrls = Object.keys(kycDocs).reduce((acc, id) => ({
-        ...acc,
-        [id]: kycDocs[id].url
-      }), {});
-
-      // Mock API call to POST /vendor/kyc or /rider/kyc
-      console.log(`Submitting KYC for ${role} with URLs:`, docUrls);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (isVendor) {
+        await vendorApi.submitKyc(kycPayload);
+      } else {
+        await riderApi.submitKyc(kycPayload);
+      }
       
       setProfileStatus('UNDER_REVIEW');
       router.push('/kyc/status');
     } catch (err) {
+      console.error('KYC Submission Error:', err);
       Alert.alert('Error', 'Failed to submit KYC. Please try again.');
     } finally {
       setIsSubmitting(false);

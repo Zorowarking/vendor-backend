@@ -41,14 +41,10 @@ export default function ProductsList() {
       console.log('Fetching products...');
       const data = await vendorApi.getProducts();
       
-      const isInitialLoad = !products || products.length === 0;
-      
-      if (isInitialLoad || isManualRefresh) {
-        console.log('Syncing products to store:', data?.length);
-        setProducts(data);
-      } else {
-        console.log('Skipping auto-refresh to preserve local session data');
-      }
+      // Always sync to ensure Fresh Data from the database on every tab focus
+      console.log('Syncing products to store:', data?.length);
+      setProducts(data);
+
     } catch (err) {
       setError("Failed to load products. Please check your connection.");
     } finally {
@@ -133,8 +129,9 @@ export default function ProductsList() {
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
         <Text style={styles.productCategory}>{item.category} • {item.type}</Text>
-        <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
+        <Text style={styles.productPrice}>${(item.price || 0).toFixed(2)}</Text>
       </View>
+
       <View style={styles.actionContainer}>
         <Switch
           value={item.isAvailable}

@@ -51,9 +51,9 @@ class SocketService {
     });
 
     this.socket.on('connect_error', (err) => {
-      // Silence noisy errors during mock testing
+      // Silence noisy errors during production or clean logs
       if (err.message.includes('timeout') || err.message.includes('xhr poll error')) {
-        console.warn('Socket: Offline Mode (No backend detected). Using mock data fallback.');
+        console.warn('Socket: Offline Mode (No backend detected).');
       } else {
         console.error('Socket connection error:', err.message);
       }

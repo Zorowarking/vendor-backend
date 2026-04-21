@@ -1,0 +1,24 @@
+# Ignore everything in the root by default
+**
+
+# Allow the server source and config
+!server/
+!server/**
+!prisma/
+!prisma/**
+!prisma.config.js
+!package.json
+!package-lock.json
+
+# But always exclude these from the Docker build context
+node_modules/
+server/node_modules/
+.git/
+.expo/
+.env
+.env.server
+*.log
+android/
+ios/
+dist/
+web-build/

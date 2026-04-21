@@ -131,8 +131,9 @@ export default function AddProduct() {
       }
 
       Alert.alert('Submitted', 'Product submitted for review. It will be activated once approved by the admin.', [
-        { text: 'OK', onPress: () => router.back() }
+        { text: 'OK', onPress: () => setTimeout(() => router.back(), 100) }
       ]);
+
     } catch (error) {
       console.error('Add Product Error:', error);
       Alert.alert('Error', 'Failed to add product');

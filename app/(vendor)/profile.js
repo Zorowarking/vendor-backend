@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
+
 import { 
   View, 
   Text, 
@@ -48,12 +50,18 @@ export default function VendorProfile() {
     phone: ''
   });
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
+  const [errorStatus, setErrorStatus] = useState(null);
+  
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
+
 
   const fetchProfile = async () => {
     try {
+      setErrorStatus(null);
       const data = await vendorApi.getProfile();
       setProfile(data);
       // Initialize edit form with current data
@@ -67,11 +75,14 @@ export default function VendorProfile() {
         phone: data.phone
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch profile');
+      console.error('[PROFILE] Fetch Error:', error);
+      setErrorStatus(error?.response?.status || 500);
+      Alert.alert('Sync Error', 'We couldn\'t fetch your latest profile data.');
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleUpdateCommission = async (model) => {
     try {
@@ -152,6 +163,33 @@ export default function VendorProfile() {
     );
   };
 
+  const renderValue = (val) => {
+    if (!val) return 'Not set';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object') {
+      // If it's the operating hours object, format it simply
+      if (val.Monday || val.current) {
+        return 'Schedule Set (Click Edit to View)';
+      }
+      return JSON.stringify(val);
+    }
+    return String(val);
+  };
+
+  if (!loading && errorStatus) {
+
+    return (
+      <View style={styles.center}>
+        <Ionicons name="cloud-offline-outline" size={64} color={Colors.error} />
+        <Text style={{ marginTop: 16, fontSize: 18, fontWeight: 'bold' }}>Error loading profile</Text>
+        <Text style={{ marginTop: 8, color: Colors.subText }}>Check your connection and try again.</Text>
+        <TouchableOpacity style={styles.saveButton} onPress={fetchProfile}>
+          <Text style={styles.saveButtonText}>Retry Sync</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (loading || !profile) {
     return (
       <View style={styles.container}>
@@ -164,6 +202,7 @@ export default function VendorProfile() {
       </View>
     );
   }
+
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
@@ -215,8 +254,9 @@ export default function VendorProfile() {
             <Ionicons name="time" size={20} color={Colors.subText} />
             <View style={styles.infoText}>
               <Text style={styles.infoLabel}>Operating Hours</Text>
-              <Text style={styles.infoValue}>{profile.operatingHours}</Text>
+              <Text style={styles.infoValue}>{renderValue(profile.operatingHours)}</Text>
             </View>
+
           </View>
 
           <View style={styles.infoRow}>
@@ -434,9 +474,11 @@ export default function VendorProfile() {
                   <Text style={styles.inputLabel}>Hours</Text>
                   <TextInput
                     style={styles.textInput}
-                    value={editForm.operatingHours}
+                    value={typeof editForm.operatingHours === 'object' ? JSON.stringify(editForm.operatingHours) : editForm.operatingHours}
                     onChangeText={(val) => setEditForm(prev => ({ ...prev, operatingHours: val }))}
+                    placeholder="e.g. 09:00 - 22:00"
                   />
+
                 </View>
               </View>
 

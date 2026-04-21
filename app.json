@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "vendor",
-    "slug": "vendor",
+    "name": "Vendor New",
+    "slug": "vendor-new-1",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -35,6 +35,9 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "updates": {
+      "enabled": false
     }
   }
 }

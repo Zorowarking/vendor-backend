@@ -93,7 +93,11 @@ export default function VendorRegisterScreen() {
       Alert.alert('Required Fields', 'Business Name, Owner Name, Address, and Location Pin are mandatory.');
       return;
     }
-    router.push({ pathname: '/auth/vendor-bank', params: { ...formData } });
+    
+    // Save to global state instead of URL params to avoid data loss due to string limits
+    useAuthStore.getState().setVendorRegistrationData(formData);
+
+    router.push('/auth/vendor-bank');
   };
 
   return (
