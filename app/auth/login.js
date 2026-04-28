@@ -19,14 +19,16 @@ export default function LoginScreen() {
   const recaptchaVerifier = React.useRef(null);
 
   const [loading, setLoading] = useState(false);
+  const [loginFailCount, setLoginFailCount] = useState(0);
+  const [googleFailedCount, setGoogleFailedCount] = useState(0);
+  const [isBotChecking, setIsBotChecking] = useState(false);
+  const [showRecaptcha, setShowRecaptcha] = useState(false);
 
   // Google Auth Request Hook
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    // By providing nothing to makeRedirectUri, it automatically figures out we are on
-    // localhost when running via 'npx expo start --web', allowing Google Auth to work.
     redirectUri: makeRedirectUri(),
   });
 
@@ -35,6 +37,9 @@ export default function LoginScreen() {
     if (response?.type === 'success') {
       const { id_token } = response.params;
       handleGoogleLogin(id_token);
+    } else if (response?.type === 'error' || response?.type === 'cancel') {
+      console.log('UI: Google Login Cancelled or Failed');
+      setGoogleFailedCount(prev => prev + 1);
     }
   }, [response]);
 
@@ -44,9 +49,10 @@ export default function LoginScreen() {
       console.log('UI: Starting Google Login...');
       await authService.googleLogin(idToken);
       console.log('UI: Google Login Success');
-      // Layout.js handles redirection based on auth state
+      setGoogleFailedCount(0); // Reset on success
     } catch (err) {
       console.error('UI: Google Login Failed', err);
+      setGoogleFailedCount(prev => prev + 1);
     } finally {
       setLoading(false);
     }
@@ -54,6 +60,16 @@ export default function LoginScreen() {
 
   const handleSendOTP = async () => {
     if (loading) return;
+
+    // Bot protection for Google/General failures
+    if (loginFailCount >= 3) {
+      Alert.alert(
+        'Security Check',
+        'Multiple failed attempts detected. Please complete the verification to continue.',
+        [{ text: 'OK', onPress: () => setShowRecaptcha(true) }]
+      );
+      if (!showRecaptcha) return;
+    }
     
     if (phoneNumber.length !== 10) {
       Alert.alert('Invalid Number', 'Please enter a valid 10-digit phone number');
@@ -64,19 +80,22 @@ export default function LoginScreen() {
     console.log('UI: Requesting OTP for', phoneNumber);
     
     try {
-      // In Web SDK, we must provide a phone number in E.164 format and a recaptcha verifier
       const fullPhone = `+91${phoneNumber}`;
+      // Use the verifier. Modal is configured for invisible retries.
       const confirmationResult = await authService.sendOTP(fullPhone, recaptchaVerifier.current);
       
-      // Store confirmationResult globally or pass it to OTP screen
       authService._confirmationResult = confirmationResult;
+      setLoginFailCount(0); // Reset on success
 
       console.log('UI: OTP Request Success, Navigating...');
-      // Navigate to OTP verify
       router.push({ pathname: '/auth/otp-verify', params: { phone: phoneNumber } });
     } catch (err) {
       console.error('UI: OTP Request Failed', err);
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+      setLoginFailCount(prev => prev + 1);
+      // If it's a captcha failure, we might want to force it visible next time
+      if (err.code === 'auth/captcha-check-failed') {
+        setShowRecaptcha(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -127,11 +146,19 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Firebase Recaptcha Modal */}
+        {/* Firebase Recaptcha Modal (Invisible by default) */}
         <FirebaseRecaptchaVerifierModal
           ref={recaptchaVerifier}
           firebaseConfig={app.options}
-          attemptInvisibleRetries={5}
+          attemptInvisibleRetries={10}
+          onVerify={() => {
+            const wasGoogleCheck = isBotChecking;
+            setIsBotChecking(false);
+            setGoogleFailedCount(0);
+            if (wasGoogleCheck) {
+              setTimeout(() => promptAsync(), 500);
+            }
+          }}
         />
 
         <View style={styles.dividerContainer}>
@@ -142,8 +169,17 @@ export default function LoginScreen() {
 
         <TouchableOpacity 
           style={styles.googleButton}
-          onPress={() => promptAsync()}
-          disabled={!request || loading}
+          onPress={() => {
+            if (googleFailedCount >= 2 && !isBotChecking) {
+              setIsBotChecking(true);
+              Alert.alert('Security Check', 'Too many attempts. Please verify you are human.', [
+                { text: 'Verify', onPress: () => recaptchaVerifier.current?.verify() }
+              ]);
+              return;
+            }
+            promptAsync();
+          }}
+          disabled={!request || loading || isBotChecking}
         >
           <Image 
             source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} 

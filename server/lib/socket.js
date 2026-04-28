@@ -17,10 +17,9 @@ const initSocket = (server) => {
   // Namespaces
   const customerNs = io.of('/customer');
   const vendorNs = io.of('/vendor');
-  const riderNs = io.of('/rider');
   const adminNs = io.of('/admin');
 
-  // Customer connections (Listen for location updates and order updates)
+  // Customer connections
   customerNs.on('connection', (socket) => {
     console.log('[SOCKET] Customer connected:', socket.id);
     
@@ -34,26 +33,8 @@ const initSocket = (server) => {
   vendorNs.on('connection', (socket) => {
     console.log('[SOCKET] Vendor connected:', socket.id);
     
-    // Vendor authenticates and joins their own room to receive incoming orders
     socket.on('join_vendor_room', (vendorId) => {
       socket.join(`vendor_${vendorId}`);
-    });
-  });
-
-  // Rider connections
-  riderNs.on('connection', (socket) => {
-    console.log('[SOCKET] Rider connected:', socket.id);
-
-    // Rider updates their location for a specific order
-    socket.on('rider:location', ({ orderId, lat, lng }) => {
-      console.log(`[SOCKET] Rider location update for order ${orderId}: ${lat}, ${lng}`);
-      emitLocationUpdate(orderId, lat, lng);
-      
-      // Also update DB asynchronously for persistence (optional, but good for refresh)
-      prisma.rider.updateMany({
-        where: { orders: { some: { id: orderId } } },
-        data: { currentLat: lat, currentLng: lng }
-      }).catch(err => console.error('[SOCKET] DB Update Error:', err));
     });
   });
 
@@ -66,7 +47,7 @@ const initSocket = (server) => {
 };
 
 /**
- * Emit Location Update
+ * Emit Location Update (for third-party delivery tracking integration)
  */
 const emitLocationUpdate = (orderId, lat, lng) => {
   if (!io) return;
@@ -101,11 +82,33 @@ const emitVendorStatusUpdate = (vendorId, isOnline) => {
   console.log(`[SOCKET] Vendor status update broadcasted: Vendor ${vendorId} is now ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
 };
 
+/**
+ * Emit Product Status Update to Vendor
+ */
+const emitProductStatusUpdate = (vendorId, productId, status) => {
+  if (!io) return;
+  io.of('/vendor').to(`vendor_${vendorId}`).emit('product_status_update', { productId, status });
+  console.log(`[SOCKET] Product status update sent to Vendor ${vendorId}: Product ${productId} is now ${status}`);
+};
+
+/**
+ * Emit Account Status Update to Vendor/Rider
+ */
+const emitAccountStatusUpdate = (userId, status) => {
+  if (!io) return;
+  // Try both vendor and rider namespaces/rooms just in case
+  io.of('/vendor').to(`vendor_${userId}`).emit('account_status_update', { status });
+  io.of('/rider').to(`rider_${userId}`).emit('account_status_update', { status });
+  console.log(`[SOCKET] Account status update sent to User ${userId}: ${status}`);
+};
+
 module.exports = {
   initSocket,
   emitLocationUpdate,
   emitOrderStatusUpdate,
   emitIncomingOrder,
   emitVendorStatusUpdate,
+  emitProductStatusUpdate,
+  emitAccountStatusUpdate,
   getIo: () => io
 };

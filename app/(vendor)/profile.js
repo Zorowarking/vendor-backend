@@ -28,6 +28,7 @@ import { vendorApi } from '../../services/vendorApi';
 import { useAuthStore } from '../../store/authStore';
 import { useVendorStore } from '../../store/vendorStore';
 import { SkeletonLoader } from '../../components/SkeletonLoader';
+import MapModal from '../../components/MapModal';
 
 
 export default function VendorProfile() {
@@ -47,8 +48,20 @@ export default function VendorProfile() {
     operatingHours: '',
     ownerName: '',
     email: '',
-    phone: ''
+    phone: '',
+    deliveryRadius: ''
   });
+  
+  const [isBankModalVisible, setIsBankModalVisible] = useState(false);
+  const [bankForm, setBankForm] = useState({
+    holderName: '',
+    bankName: '',
+    accountNumber: '',
+    ifscCode: '',
+    upiId: ''
+  });
+
+  const [isMapModalVisible, setIsMapModalVisible] = useState(false);
 
   const [errorStatus, setErrorStatus] = useState(null);
   
@@ -72,8 +85,18 @@ export default function VendorProfile() {
         operatingHours: data.operatingHours,
         ownerName: data.ownerName,
         email: data.email,
-        phone: data.phone
+        phone: data.phone,
+        deliveryRadius: data.deliveryRadius?.toString() || '0'
       });
+      if (data.bankDetails) {
+        setBankForm({
+          holderName: data.bankDetails.holderName || '',
+          bankName: data.bankDetails.bankName || '',
+          accountNumber: '', // Keep empty for security when editing
+          ifscCode: data.bankDetails.ifscCode || '',
+          upiId: data.bankDetails.upiId || ''
+        });
+      }
     } catch (error) {
       console.error('[PROFILE] Fetch Error:', error);
       setErrorStatus(error?.response?.status || 500);
@@ -110,6 +133,49 @@ export default function VendorProfile() {
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
       Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveBank = async () => {
+    if (!bankForm.accountNumber || !bankForm.holderName) {
+      Alert.alert('Error', 'Account number and holder name are required to update bank details.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await vendorApi.updateProfile({ 
+        ...profile, 
+        bankData: bankForm 
+      });
+      await fetchProfile(); // Refresh
+      setIsBankModalVisible(false);
+      Alert.alert('Success', 'Bank details updated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update bank details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmLocation = async (coords) => {
+    setLoading(true);
+    try {
+      const updatedProfile = { 
+        ...profile, 
+        location: {
+          ...profile.location,
+          latitude: coords.latitude,
+          longitude: coords.longitude
+        }
+      };
+      await vendorApi.updateProfile(updatedProfile);
+      setProfile(updatedProfile);
+      setIsMapModalVisible(false);
+      Alert.alert('Success', 'Store location updated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update location');
     } finally {
       setLoading(false);
     }
@@ -279,13 +345,26 @@ export default function VendorProfile() {
             <Ionicons name="mail" size={20} color={Colors.subText} />
             <View style={styles.infoText}>
               <Text style={styles.infoLabel}>Email</Text>
-              <Text style={styles.infoValue}>{profile.email}</Text>
+              <Text style={styles.infoValue}>{profile.email || 'Not Set'}</Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Ionicons name="bicycle" size={20} color={Colors.subText} />
+            <View style={styles.infoText}>
+              <Text style={styles.infoLabel}>Delivery Radius</Text>
+              <Text style={styles.infoValue}>{profile.deliveryRadius} km</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Location</Text>
+            <TouchableOpacity onPress={() => setIsMapModalVisible(true)}>
+              <Text style={styles.editBtn}>Edit Pin</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.addressText}>{profile.location.address}</Text>
           <View style={styles.mapContainer}>
             <MapView
@@ -303,6 +382,16 @@ export default function VendorProfile() {
             </MapView>
           </View>
         </View>
+
+        <MapModal 
+          visible={isMapModalVisible}
+          onClose={() => setIsMapModalVisible(false)}
+          onConfirm={handleConfirmLocation}
+          initialLocation={{
+            latitude: profile.location.latitude,
+            longitude: profile.location.longitude
+          }}
+        />
 
                 <View style={styles.section}>
           <Text style={styles.sectionTitle}>Platform Commission Model</Text>
@@ -348,74 +437,40 @@ export default function VendorProfile() {
               <Text style={styles.badgeText}>{profile.kycStatus}</Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/kyc/status')}>
-              <Text style={styles.linkText}>View Details</Text>
+              <Text style={styles.linkText}>Update Docs</Text>
             </TouchableOpacity>
           </View>
-
-          {profile.complianceFlags.length > 0 ? (
-            <View style={styles.flagsContainer}>
-              {profile.complianceFlags.map((flag, idx) => (
-                <View key={idx} style={styles.flagChip}>
-                  <Ionicons name="warning" size={14} color={Colors.error} />
-                  <Text style={styles.flagText}>{flag}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.successText}>No compliance issues found.</Text>
-          )}
+          <Text style={styles.sectionSubtitle}>Identification documents and business licenses.</Text>
         </View>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Bank Details</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => setIsBankModalVisible(true)}>
               <Text style={styles.editBtn}>Update</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.infoRow}>
             <Ionicons name="card" size={20} color={Colors.subText} />
             <View style={styles.infoText}>
-              <Text style={styles.infoLabel}>{profile.bankDetails.bankName}</Text>
-              <Text style={styles.infoValue}>{profile.bankDetails.accountNumber}</Text>
+              <Text style={styles.infoLabel}>{profile.bankDetails?.bankName || 'No Bank Linked'}</Text>
+              <Text style={styles.infoValue}>
+                {profile.bankDetails?.accountNumber 
+                  ? `**** **** ${profile.bankDetails.accountNumber.slice(-4)}` 
+                  : 'Not Set'}
+              </Text>
             </View>
           </View>
+          <Text style={styles.sectionSubtitle}>Account numbers are masked for your security.</Text>
         </View>
+
+
 
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.error} />
           <Text style={styles.logoutBtnText}>Logout</Text>
         </TouchableOpacity>
 
-        {/* DEV ONLY MOCK TOOLS */}
-        <View style={styles.devTools}>
-          <Text style={styles.devToolsTitle}>[DEV] Security Testing</Text>
-          <View style={styles.devToolsGrid}>
-            <TouchableOpacity 
-              style={[styles.devBtn, { borderColor: Colors.warning }]}
-              onPress={() => {
-                const { setProfileStatus } = useAuthStore.getState();
-                setProfileStatus('SUSPENDED', 'Payment irregularities and repeated policy violations.');
-                Alert.alert('Mock Success', 'Vendor status set to SUSPENDED. Enforcement initiated.');
-              }}
-            >
-              <Ionicons name="alert-circle-outline" size={16} color={Colors.warning} />
-              <Text style={[styles.devBtnText, { color: Colors.warning }]}>Mock Suspend</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.devBtn, { borderColor: Colors.error }]}
-              onPress={() => {
-                const { setProfileStatus } = useAuthStore.getState();
-                setProfileStatus('DISABLED');
-                Alert.alert('Mock Success', 'Vendor status set to DISABLED. Compliance termination active.');
-              }}
-            >
-              <Ionicons name="lock-closed-outline" size={16} color={Colors.error} />
-              <Text style={[styles.devBtnText, { color: Colors.error }]}>Mock Disable</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         <Text style={styles.version}>v1.2.5 (Security Phase)</Text>
 
@@ -511,12 +566,98 @@ export default function VendorProfile() {
                 />
               </View>
 
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Delivery Radius (km)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.deliveryRadius}
+                  onChangeText={(val) => setEditForm(prev => ({ ...prev, deliveryRadius: val }))}
+                  keyboardType="numeric"
+                  placeholder="e.g. 5"
+                />
+              </View>
+
               <TouchableOpacity 
                 style={[styles.saveButton, loading && styles.disabledButton]} 
                 onPress={handleSaveDetails}
                 disabled={loading}
               >
                 {loading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Edit Bank Details Modal */}
+      <Modal
+        visible={isBankModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsBankModalVisible(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Update Bank Details</Text>
+              <TouchableOpacity onPress={() => setIsBankModalVisible(false)}>
+                <Ionicons name="close" size={24} color={Colors.black} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Account Holder Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bankForm.holderName}
+                  onChangeText={(val) => setBankForm(prev => ({ ...prev, holderName: val }))}
+                  placeholder="Full Name"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Bank Name</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bankForm.bankName}
+                  onChangeText={(val) => setBankForm(prev => ({ ...prev, bankName: val }))}
+                  placeholder="e.g. HDFC"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>Account Number</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bankForm.accountNumber}
+                  onChangeText={(val) => setBankForm(prev => ({ ...prev, accountNumber: val }))}
+                  placeholder="Enter New Account Number"
+                  keyboardType="number-pad"
+                  secureTextEntry={true}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.inputLabel}>IFSC Code</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={bankForm.ifscCode}
+                  onChangeText={(val) => setBankForm(prev => ({ ...prev, ifscCode: val }))}
+                  placeholder="IFSC Code"
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.saveButton, loading && styles.disabledButton]} 
+                onPress={handleSaveBank}
+                disabled={loading}
+              >
+                {loading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveButtonText}>Update Bank Details</Text>}
               </TouchableOpacity>
             </ScrollView>
           </View>

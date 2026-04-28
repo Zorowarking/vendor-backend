@@ -36,9 +36,12 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
       });
     }
 
+    // Only check operating hours if not explicitly 'online' (though onlineStatus check above already covers this for now)
+    // We prioritize manual 'online' status as a force-open override.
     const { checkVendorAvailability } = require('../lib/availability');
     const { isOpen, nextOpen } = checkVendorAvailability(vendor.operatingHours);
-    if (!isOpen) {
+    
+    if (vendor.onlineStatus !== 'online' && !isOpen) {
       return res.status(403).json({ 
         error: 'VENDOR_CLOSED', 
         message: `This vendor is currently closed. They will be back online ${nextOpen || 'soon'}.`
@@ -68,7 +71,7 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     if (!uuidRegex.test(addressId)) {
         return res.status(400).json({ error: 'Invalid address ID format' });
     }
-    address = await prisma.address.findUnique({ where: { id: addressId, customerId: req.customer.id } });
+    const address = await prisma.address.findUnique({ where: { id: addressId, customerId: req.customer.id } });
 
     if (!address) return res.status(400).json({ error: 'Valid delivery address required' });
 
@@ -95,10 +98,24 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
 });
 
 // GET /orders — customer order history
-router.get('/', firebaseAuth, requireCustomer, async (req, res) => {
+router.get('/', firebaseAuth, async (req, res) => {
   try {
+    // If not authenticated via Firebase, or no customer record exists, return empty list
+    if (!req.user?.uid) {
+      return res.json({ success: true, orders: [] });
+    }
+
+    const profile = await prisma.profile.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { customer: true }
+    });
+
+    if (!profile || profile.role !== 'CUSTOMER' || !profile.customer) {
+      return res.json({ success: true, orders: [] });
+    }
+
     const orders = await prisma.order.findMany({
-      where: { customerId: req.customer.id },
+      where: { customerId: profile.customer.id },
       include: { 
         vendor: {
             select: { businessName: true, logoUrl: true }
@@ -112,8 +129,7 @@ router.get('/', firebaseAuth, requireCustomer, async (req, res) => {
     console.error('[ORDERS-FETCH] 500 Error:', error.message);
     res.status(500).json({ 
       error: 'Failed to fetch order history', 
-      details: error.message,
-      hint: 'Ensure npx prisma db push has been run'
+      details: error.message
     });
   }
 });
@@ -165,8 +181,8 @@ router.get('/:id/tracking', firebaseAuth, requireCustomer, async (req, res) => {
         name: order.rider.fullName,
         phone: order.rider.phone,
         location: {
-          lat: order.rider.currentLat,
-          lng: order.rider.currentLng
+          lat: Number(order.rider.latitude),
+          lng: Number(order.rider.longitude)
         }
       }
     });

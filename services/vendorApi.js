@@ -1,3 +1,4 @@
+import axios from 'axios';
 import apiClient from './api';
 
 const getClient = () => apiClient;
@@ -82,9 +83,40 @@ export const vendorApi = {
   },
 
   uploadImage: async (uri) => {
-    // Note: The backend doesn't have an S3/Firebase Storage implementation yet.
-    // This is kept transparent until the URL storage driver is selected.
-    return { url: uri, success: true };
+    try {
+      const fileName = uri.split('/').pop();
+      const extension = fileName.split('.').pop();
+      // Handle both images and PDFs for KYC
+      const contentType = extension === 'pdf' ? 'application/pdf' : `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+
+      console.log(`[API] Requesting presigned URL for ${fileName} (${contentType})`);
+
+      // 1. Get presigned URL from our backend
+      const { uploadUrl, publicUrl } = await apiClient.get('/api/storage/presigned-url', {
+        params: { 
+          fileName,
+          contentType 
+        }
+      }).then(res => res.data);
+
+      console.log(`[API] Got upload URL. Sending binary to R2...`);
+
+      // 2. Upload file directly to R2
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      await axios.put(uploadUrl, blob, {
+        headers: {
+          'Content-Type': contentType
+        }
+      });
+
+      console.log(`[API] Upload successful. Public URL: ${publicUrl}`);
+      return { url: publicUrl, success: true };
+    } catch (error) {
+      console.error('[API] Image upload failed:', error);
+      throw error;
+    }
   },
 
   acceptOrder: async (orderId) => {
@@ -104,6 +136,11 @@ export const vendorApi = {
 
   updateOrderStatus: async (orderId, status) => {
     const response = await apiClient.put(`/api/vendor/orders/${orderId}/status`, { status });
+    return response.data;
+  },
+  
+  getOrders: async () => {
+    const response = await apiClient.get('/api/vendor/orders');
     return response.data;
   }
 };

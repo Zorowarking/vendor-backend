@@ -1,16 +1,16 @@
-const { prisma } = require('../lib/prisma');
+const { getOrCreateCustomerProfile } = require('../lib/prisma');
 
 /**
  * Middleware to verify that the profile associated with the Firebase UID has a 'CUSTOMER' role.
  * Must be used after firebaseAuth middleware.
+ * Self-heals by creating a profile if one doesn't exist.
  */
 const requireCustomer = async (req, res, next) => {
   try {
     const { uid } = req.user;
-    const profile = await prisma.profile.findUnique({
-      where: { firebaseUid: uid },
-      include: { customer: true }
-    });
+    
+    // Self-healing: Get or create the profile
+    const profile = await getOrCreateCustomerProfile(req.user);
 
     if (!profile || profile.role !== 'CUSTOMER') {
       return res.status(403).json({ 

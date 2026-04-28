@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { vendorApi } from './vendorApi';
-import { riderApi } from './riderApi';
 import { useAuthStore } from '../store/authStore';
 import { useNotificationStore } from '../store/notificationStore';
 
@@ -88,8 +87,6 @@ export const notificationService = {
 
       if (role === 'VENDOR') {
         await vendorApi.updateProfile({ fcmToken: token });
-      } else if (role === 'RIDER') {
-        await riderApi.updateProfile({ fcmToken: token });
       }
       
       await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
@@ -113,19 +110,11 @@ export const notificationService = {
         if (role === 'VENDOR') router.replace('/(vendor)');
         break;
       case 'order_flagged':
-        // Route to specific flagged order
         if (role === 'VENDOR' && orderId) router.replace(`/(vendor)/orders/${orderId}`);
         else if (role === 'VENDOR') router.replace('/(vendor)');
         break;
-      case 'pickup_request':
-        if (role === 'RIDER') router.replace('/(rider)/requests');
-        break;
-      case 'order_update':
-        // Map to requests handles active tracking
-        if (role === 'RIDER') router.replace('/(rider)/requests');
-        break;
       case 'kyc_approved':
-        router.replace(role === 'VENDOR' ? '/(vendor)' : '/(rider)');
+        router.replace('/(vendor)');
         break;
       case 'kyc_rejected':
         router.replace('/kyc/status');

@@ -29,11 +29,13 @@ const updateFloatingBubble = async (vendorId, isActive, activeOrderCount = 0) =>
   if (!admin.apps.length) return;
 
   try {
-    // In a real app, you'd fetch the FCM token for the vendor profile.
-    // Assuming you have it linked in profile or a separate devices table:
-    // const fcmToken = await getVendorFcmToken(vendorId);
-    const fcmToken = 'MOCK_TOKEN_OR_FETCH_FROM_DB'; // Placeholder
-
+    // Fetch the FCM token for the vendor profile.
+    const vendor = await require('./prisma').prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { fcmToken: true }
+    });
+    
+    const fcmToken = vendor?.fcmToken;
     if (!fcmToken || fcmToken === 'MOCK_TOKEN_OR_FETCH_FROM_DB') return;
 
     await admin.messaging().send({

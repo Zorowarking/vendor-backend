@@ -43,9 +43,8 @@ router.post('/sync', firebaseAuth, async (req, res) => {
     });
   } catch (error) {
     const util = require('util');
-    console.error('[AUTH] Sync Error:', util.inspect(error, { depth: null }));
-    if (error.cause) console.error('[AUTH] Error Cause:', util.inspect(error.cause, { depth: null }));
-    res.status(500).json({ success: false, error: 'Database sync failed' });
+    console.error('[AUTH] Sync Error:', error);
+    res.status(500).json({ success: false, error: 'Database sync failed', details: error.message });
   }
 });
 
@@ -105,7 +104,7 @@ router.post('/role', firebaseAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('[AUTH] Role Update Error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update role' });
+    res.status(500).json({ success: false, error: 'Failed to update role', details: error.message });
   }
 });
 

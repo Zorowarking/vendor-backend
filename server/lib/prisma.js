@@ -110,7 +110,7 @@ async function getOrCreateCustomerProfile(user) {
         console.log(`[PRISMA] Identity adopt: Link phone ${normalizedPhone} to new UID ${uid}`);
         return await prisma.profile.update({
           where: { id: p.id },
-          data: { firebaseUid: uid },
+          data: { firebaseUid: uid, role: 'CUSTOMER' },
           include: { customer: true }
         });
       }
@@ -123,22 +123,15 @@ async function getOrCreateCustomerProfile(user) {
         data: {
           firebaseUid: uid,
           phoneNumber: normalizedPhone,
-          role: 'CUSTOMER'
+          role: 'CUSTOMER',
+          profileStatus: 'ACTIVE'
         },
         include: { customer: true }
       });
     } catch (createError) {
       if (createError.code === 'P2002') {
-        console.warn(`[PRISMA] Race condition detected for UID ${uid}. Re-fetching...`);
-        // Someone else created it in the few milliseconds between our check and our create.
-        // Return the one that now exists.
         return await prisma.profile.findFirst({
-          where: {
-            OR: [
-              { firebaseUid: uid },
-              { phoneNumber: normalizedPhone }
-            ]
-          },
+          where: { OR: [{ firebaseUid: uid }, { phoneNumber: normalizedPhone }] },
           include: { customer: true }
         });
       }
@@ -146,36 +139,37 @@ async function getOrCreateCustomerProfile(user) {
     }
   });
 
-  // 2. Ensure Customer record exists (with Retry for reliability)
+  // 2. Ensure Customer record exists
   if (!profile.customer) {
     console.log(`[PRISMA] Creating missing customer record for UID: ${uid}`);
-    const newCustomer = await withRetry(() => prisma.customer.create({
-      data: {
-        profileId: profile.id,
-        phone: profile.phoneNumber,
-        fullName: name || 'Customer'
-      }
-    }));
-    profile.customer = newCustomer;
+    // Check if customer exists by phone but no profileId
+    let customer = await prisma.customer.findUnique({
+        where: { phone: normalizedPhone }
+    });
+
+    if (customer) {
+        customer = await prisma.customer.update({
+            where: { id: customer.id },
+            data: { profileId: profile.id }
+        });
+    } else {
+        customer = await prisma.customer.create({
+            data: {
+                profileId: profile.id,
+                phone: normalizedPhone,
+                fullName: name || 'Customer'
+            }
+        });
+    }
+    profile.customer = customer;
   } else {
-    // 3. Sync profile/customer if phone number was mock (+1000) or differs
-    const needsPhoneSync = profile.phoneNumber !== normalizedPhone && normalizedPhone !== 'unknown';
-    if (needsPhoneSync || (name && profile.customer.fullName === 'Customer')) {
-        console.log(`[PRISMA] Syncing profile phone to ${normalizedPhone}`);
-        const updatedProfile = await prisma.profile.update({
+    // 3. Sync if needed
+    if (profile.phoneNumber !== normalizedPhone && normalizedPhone !== 'unknown') {
+        profile = await prisma.profile.update({
             where: { id: profile.id },
             data: { phoneNumber: normalizedPhone },
             include: { customer: true }
         });
-        
-        await prisma.customer.update({
-            where: { id: profile.customer.id },
-            data: { 
-                phone: normalizedPhone,
-                fullName: name || profile.customer.fullName
-            }
-        });
-        profile = updatedProfile;
     }
   }
 

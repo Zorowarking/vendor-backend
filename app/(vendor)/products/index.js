@@ -22,6 +22,7 @@ import { useVendorStore } from '../../../store/vendorStore';
 import { SkeletonLoader } from '../../../components/SkeletonLoader';
 import EmptyState from '../../../components/EmptyState';
 import ErrorState from '../../../components/ErrorState';
+import { socketService } from '../../../services/socketService';
 
 
 const { width } = Dimensions.get('window');
@@ -60,6 +61,22 @@ export default function ProductsList() {
       fetchProducts();
     }, [fetchProducts])
   );
+
+  // Real-time updates via Socket.IO
+  useEffect(() => {
+    const handleProductUpdate = ({ productId, status }) => {
+      console.log(`[SOCKET] Received product update: ${productId} -> ${status}`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      setProducts(prev => {
+        if (!prev) return prev;
+        return prev.map(p => p.id === productId ? { ...p, reviewStatus: status } : p);
+      });
+    };
+
+    socketService.onProductStatusUpdate(handleProductUpdate);
+    return () => socketService.offProductStatusUpdate(handleProductUpdate);
+  }, [setProducts]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -134,14 +151,14 @@ export default function ProductsList() {
 
       <View style={styles.actionContainer}>
         <Switch
-          value={item.isAvailable}
-          onValueChange={() => item.reviewStatus === 'PENDING' ? Alert.alert('Under Review', 'This item cannot be activated until admin approval.') : toggleAvailability(item.id, item.isAvailable)}
+          value={item.isActive}
+          onValueChange={() => item.reviewStatus === 'pending_review' ? Alert.alert('Under Review', 'This item is under review and cannot be activated yet.') : toggleAvailability(item.id, item.isActive)}
           trackColor={{ false: Colors.border, true: Colors.success + '40' }}
-          thumbColor={item.isAvailable ? Colors.success : Colors.subText}
-          disabled={item.reviewStatus === 'PENDING'}
+          thumbColor={item.isActive ? Colors.success : Colors.subText}
+          disabled={item.reviewStatus === 'pending_review'}
         />
-        <Text style={[styles.availabilityText, { color: item.reviewStatus === 'PENDING' ? Colors.warning : (item.isAvailable ? Colors.success : Colors.subText) }]}>
-          {item.reviewStatus === 'PENDING' ? 'Review Pending' : (item.isAvailable ? 'Active' : 'Inactive')}
+        <Text style={[styles.availabilityText, { color: item.reviewStatus === 'pending_review' ? Colors.warning : (item.isActive ? Colors.success : Colors.subText) }]}>
+          {item.reviewStatus === 'pending_review' ? 'Review Pending' : (item.isActive ? 'Active' : 'Inactive')}
         </Text>
       </View>
     </TouchableOpacity>

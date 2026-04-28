@@ -5,7 +5,7 @@ const { prisma, withRetry } = require('../lib/prisma');
  */
 class CartService {
   /**
-   * Config for add-on charges (normally fetched from an admin config table)
+   * Config for add-on charges
    */
   static CONFIG = {
     FREE_ADDON_LIMIT: 3,
@@ -35,7 +35,7 @@ class CartService {
             include: { items: true }
           });
         } else {
-          // Attempt to adopt guest cart if upgrading, otherwise create new
+          // Attempt to adopt guest cart if upgrading
           if (customerId && guestId) {
             cart = await prisma.cart.findFirst({
               where: { guestId },
@@ -53,7 +53,7 @@ class CartService {
             cart = await prisma.cart.create({
               data: {
                 customerId,
-                guestId: customerId ? null : guestId, // Avoid unique constraint
+                guestId: customerId ? null : guestId,
                 vendorId,
                 expiresAt
               },
@@ -62,17 +62,13 @@ class CartService {
           }
         }
 
-        console.log('[CART-SERVICE] Cart context established. ID:', cart.id);
-
         // 2. Validate Single Vendor Rule
         if (cart.vendorId && cart.vendorId !== vendorId && cart.items.length > 0) {
-          console.warn('[CART-SERVICE] Cross-vendor block triggered');
           throw { status: 409, message: 'Cross-vendor add blocked. Clear cart or checkout first.' };
         }
 
         // 3. Update vendorId if cart was empty
         if (cart.items.length === 0 && cart.vendorId !== vendorId) {
-          console.log('[CART-SERVICE] Updating empty cart vendor to:', vendorId);
           await prisma.cart.update({
             where: { id: cart.id },
             data: { vendorId }
@@ -85,7 +81,6 @@ class CartService {
         // 5. Upsert Cart Item
         const existingItem = cart.items.find(item => item.productId === productId);
         if (existingItem) {
-          console.log('[CART-SERVICE] Updating existing item:', existingItem.id);
           return await prisma.cartItem.update({
             where: { id: existingItem.id },
             data: {
@@ -95,7 +90,6 @@ class CartService {
             }
           });
         } else {
-          console.log('[CART-SERVICE] Creating new cart item for product:', productId);
           return await prisma.cartItem.create({
             data: {
               cartId: cart.id,
@@ -117,7 +111,6 @@ class CartService {
    */
   static async getCart(identifier) {
     const { customerId, guestId } = identifier;
-    console.log('[CART-SERVICE] Fetching cart for:', identifier);
     
     try {
         let cart = await prisma.cart.findFirst({
@@ -125,16 +118,13 @@ class CartService {
           include: { items: true }
         });
 
-        // AUTO-ADOPTION: If no customer cart exists but there's a guest cart, migrate it
         if (!cart && customerId && guestId) {
-          console.log('[CART-SERVICE] No customer cart, checking for guest cart migration:', guestId);
           cart = await prisma.cart.findFirst({
             where: { guestId },
             include: { items: true }
           });
 
           if (cart) {
-            console.log('[CART-SERVICE] Migrating guest cart to customer account:', cart.id);
             cart = await prisma.cart.update({
               where: { id: cart.id },
               data: { customerId, guestId: null },
@@ -143,24 +133,18 @@ class CartService {
           }
         }
 
-        if (!cart) {
-            console.log('[CART-SERVICE] No cart found for provided identifiers');
-            return null;
-        }
+        if (!cart) return null;
 
-        // Fetch vendor details separately to get the Company/Restaurant Name
         const vendor = cart.vendorId ? await prisma.vendor.findUnique({
           where: { id: cart.vendorId }
         }) : null;
 
-        console.log('[CART-SERVICE] Cart found, fetching products for IDs:', cart.items.map(i => i.productId));
         const productIds = cart.items.map(item => item.productId);
         const products = await prisma.product.findMany({
           where: { id: { in: productIds } },
           include: { addOns: true }
         });
 
-        console.log('[CART-SERVICE] Products fetched:', products.length);
         const productMap = products.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
 
         let subtotal = 0;
@@ -168,12 +152,9 @@ class CartService {
 
         const items = cart.items.map(item => {
           const product = productMap[item.productId];
-          
-          if (!product) {
-            return { ...item, name: 'Unknown Product', basePrice: 0, total: 0 };
-          }
+          if (!product) return { ...item, name: 'Unknown Product', basePrice: 0, total: 0 };
 
-          const basePrice = product.basePrice ? Number(product.basePrice) : 0;
+          const basePrice = Number(product.basePrice || 0);
           const itemSubtotal = basePrice * item.quantity;
           
           let itemAddonCharge = 0;
@@ -184,24 +165,19 @@ class CartService {
             itemAddonCharge = chargeableUnits * this.CONFIG.PER_UNIT_CHARGE;
           }
 
-          const subtotalItem = Number(itemSubtotal);
-          const addonChargeItem = Number(itemAddonCharge);
-
-          // LATEST FIX: ACCUMULATE TOTALS
-          subtotal += subtotalItem;
-          totalAddonCharges += addonChargeItem;
+          subtotal += itemSubtotal;
+          totalAddonCharges += itemAddonCharge;
 
           return {
             ...item,
+            ageVerified: item.ageVerifiedCheckbox,
             name: product.name || 'Product',
-            price: basePrice,           // Unit price before addons
-            unitPrice: basePrice + (addonChargeItem / item.quantity), // Computed unit price
-            addonCharge: addonChargeItem,
-            total: subtotalItem + addonChargeItem
+            price: basePrice,
+            unitPrice: basePrice + (itemAddonCharge / item.quantity),
+            addonCharge: itemAddonCharge,
+            total: itemSubtotal + itemAddonCharge
           };
         });
-
-        console.log('[CART-SERVICE] Calculation complete. Subtotal:', subtotal, 'Addons:', totalAddonCharges);
 
         return {
           id: cart.id,
@@ -213,9 +189,18 @@ class CartService {
           total: subtotal + totalAddonCharges
         };
     } catch (err) {
-        console.error('[CART-SERVICE] CRITICAL ERROR during calculation:', err.message);
-        console.error(err.stack);
+        console.error('[CART-SERVICE] Error in getCart:', err);
         throw err;
+    }
+  }
+
+  static async clearCart(identifier) {
+    const { customerId, guestId } = identifier;
+    const cart = await prisma.cart.findFirst({
+        where: customerId ? { customerId } : { guestId }
+    });
+    if (cart) {
+        await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     }
   }
 }

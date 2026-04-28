@@ -79,12 +79,20 @@ export default function VendorEarnings() {
     );
   }
 
+  // Final safety check to prevent "Cannot read property of null"
+  if (!data) return null;
 
   const periods = [
     { label: 'Today', value: 'daily' },
     { label: 'This Week', value: 'weekly' },
     { label: 'This Month', value: 'monthly' }
   ];
+
+  // Prepare safe chart data
+  const chartData = data.chartData || {
+    labels: ['-'],
+    datasets: [{ data: [0] }]
+  };
 
   return (
     <ScrollView 
@@ -110,26 +118,26 @@ export default function VendorEarnings() {
         <View style={styles.summaryGrid}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total Revenue</Text>
-            <Text style={styles.summaryValue}>${data.revenue.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>${Number(data.revenue || 0).toFixed(2)}</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Platform Fee</Text>
-            <Text style={[styles.summaryValue, { color: Colors.error }]}>-${data.commission.toFixed(2)}</Text>
+            <Text style={[styles.summaryValue, { color: Colors.error }]}>-${Number(data.commission || 0).toFixed(2)}</Text>
           </View>
           <View style={[styles.summaryCard, { width: '100%', marginTop: 12, backgroundColor: Colors.primary }]}>
             <Text style={[styles.summaryLabel, { color: Colors.white }]}>Net Earnings</Text>
-            <Text style={[styles.summaryValue, { color: Colors.white, fontSize: 28 }]}>${data.net.toFixed(2)}</Text>
+            <Text style={[styles.summaryValue, { color: Colors.white, fontSize: 28 }]}>${Number(data.net || 0).toFixed(2)}</Text>
           </View>
         </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{data.orderCount}</Text>
+            <Text style={styles.statValue}>{data.orderCount || 0}</Text>
             <Text style={styles.statLabel}>Orders</Text>
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>${(data.revenue / (data.orderCount || 1)).toFixed(2)}</Text>
+            <Text style={styles.statValue}>${(Number(data.revenue || 0) / (data.orderCount || 1)).toFixed(2)}</Text>
             <Text style={styles.statLabel}>Avg. Order</Text>
           </View>
         </View>
@@ -138,7 +146,7 @@ export default function VendorEarnings() {
         <View style={styles.chartSection}>
           <Text style={styles.sectionTitle}>Revenue Trend</Text>
           <LineChart
-            data={data.chartData}
+            data={chartData}
             width={SCREEN_WIDTH - 32}
             height={220}
             chartConfig={{
@@ -157,23 +165,25 @@ export default function VendorEarnings() {
         </View>
 
         {/* Detailed Breakdown */}
-        <View style={styles.tableSection}>
-          <Text style={styles.sectionTitle}>Detailed Breakdown</Text>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableCol, { flex: 1.5 }]}>Date</Text>
-            <Text style={styles.tableCol}>Orders</Text>
-            <Text style={styles.tableCol}>Gross</Text>
-            <Text style={styles.tableCol}>Net</Text>
-          </View>
-          {data.breakdown.map((row, idx) => (
-            <View key={idx} style={styles.tableRow}>
-              <Text style={[styles.tableCell, { flex: 1.5 }]}>{row.date}</Text>
-              <Text style={styles.tableCell}>{row.count}</Text>
-              <Text style={styles.tableCell}>${row.gross.toFixed(2)}</Text>
-              <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>${row.net.toFixed(2)}</Text>
+        {data.breakdown && data.breakdown.length > 0 && (
+          <View style={styles.tableSection}>
+            <Text style={styles.sectionTitle}>Detailed Breakdown</Text>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableCol, { flex: 1.5 }]}>Date</Text>
+              <Text style={styles.tableCol}>Orders</Text>
+              <Text style={styles.tableCol}>Gross</Text>
+              <Text style={styles.tableCol}>Net</Text>
             </View>
-          ))}
-        </View>
+            {data.breakdown.map((row, idx) => (
+              <View key={idx} style={styles.tableRow}>
+                <Text style={[styles.tableCell, { flex: 1.5 }]}>{row.date}</Text>
+                <Text style={styles.tableCell}>{row.count}</Text>
+                <Text style={styles.tableCell}>${Number(row.gross || 0).toFixed(2)}</Text>
+                <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>${Number(row.net || 0).toFixed(2)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     </ScrollView>
   );

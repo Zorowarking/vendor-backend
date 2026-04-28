@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../constants/Colors';
 
-import { useRiderStore } from '../store/riderStore';
+
 
 const { width } = Dimensions.get('window');
 
@@ -12,7 +12,6 @@ const { width } = Dimensions.get('window');
  * This supports Ionicons, badges, and the rounded floating design.
  */
 export default function FloatingTabBar({ state, descriptors, navigation }) {
-  const { activeOrder } = useRiderStore();
 
   return (
     <View style={styles.container}>
@@ -25,32 +24,16 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
             // 1. Basic Filters
             if (options.href === null || name.includes('[') || !options.title) return false;
 
-            // 2. Role Detection & Specific Whitelisting
-            // If the navigator contains 'requests', it's the Rider Layout.
-            // If it contains 'products/index', it's the Vendor Layout.
-            const isRider = state.routes.some(r => r.name === 'requests');
-            
             const vendorWhitelist = ['index', 'products/index', 'earnings', 'profile'];
-            const riderWhitelist = ['requests', 'earnings', 'profile'];
-
-            if (isRider) {
-              return riderWhitelist.includes(name);
-            } else {
-              return vendorWhitelist.includes(name);
-            }
+            return vendorWhitelist.includes(name);
           })
           .map((route) => {
             const { options } = descriptors[route.key];
             const isFocused = state.routes[state.index].key === route.key;
 
-            // Updated Icon Mapping
             const getIconName = (routeName, focused) => {
-              if (routeName === 'requests' && activeOrder) {
-                 return focused ? 'car' : 'car-outline'; // Active Delivery
-              }
               const map = {
-                'index': focused ? 'receipt' : 'receipt-outline', // Vendor Orders
-                'requests': focused ? 'bicycle' : 'bicycle-outline',
+                'index': focused ? 'receipt' : 'receipt-outline',
                 'products/index': focused ? 'restaurant' : 'restaurant-outline',
                 'earnings': focused ? 'wallet' : 'wallet-outline',
                 'profile': focused ? 'person-circle' : 'person-circle-outline',
@@ -62,7 +45,6 @@ export default function FloatingTabBar({ state, descriptors, navigation }) {
             const getLabel = (routeName) => {
               const map = {
                 'index': 'Orders',
-                'requests': activeOrder ? 'Tracking' : 'Delivery',
                 'products/index': 'Menu',
                 'earnings': 'Earn',
                 'profile': 'Profile',

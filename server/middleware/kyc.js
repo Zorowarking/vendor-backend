@@ -19,7 +19,7 @@ const requireKyc = async (req, res, next) => {
     let isApproved = false;
     let fallbackStatus = 'PENDING';
 
-    const APPROVED_STATUSES = ['approved', 'active', 'mock_approved'];
+    const APPROVED_STATUSES = ['APPROVED', 'ACTIVE'];
 
     if (profile.role === 'VENDOR' && profile.vendor) {
       fallbackStatus = profile.vendor.accountStatus;
@@ -31,6 +31,7 @@ const requireKyc = async (req, res, next) => {
 
     // Reject if KYC not in an approved state
     if (!isApproved) {
+      console.warn(`[KYC] Access Denied for UID ${uid}: Role=${profile.role}, Status=${fallbackStatus}`);
       return res.status(403).json({ error: 'KYC not approved', status: fallbackStatus });
     }
 

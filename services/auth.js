@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import { Alert } from 'react-native';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.107:3001';
 
 const MOCK_TEST_NUMBER = '+919999999999';
 const MOCK_OTP = '123456';

@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const useVendorStore = create()(
   persist(
     (set, get) => ({
-      isOnline: false,
+      onlineStatus: 'offline', // 'online', 'offline', 'stop_new_orders'
       incomingOrders: [], // Orders waiting for acceptance
       activeOrders: [],   // Accepted, Preparing, Ready
       orderHistory: [],   // Completed, Cancelled
@@ -25,7 +25,13 @@ export const useVendorStore = create()(
         };
       }),
       
-      setOnlineStatus: (status) => set({ isOnline: status }),
+      setOnlineStatus: (status) => set({ onlineStatus: status }),
+      
+      setOrders: (active, history) => set({ 
+        activeOrders: active.filter(o => o.status !== 'pending_vendor'),
+        incomingOrders: active.filter(o => o.status === 'pending_vendor'),
+        orderHistory: history 
+      }),
       
       addIncomingOrder: (order) => set((state) => {
         if (state.incomingOrders.find(o => o.id === order.id)) return state;
@@ -61,7 +67,7 @@ export const useVendorStore = create()(
       setVendorStats: (stats) => set({ vendorStats: stats }),
 
       clearStore: () => set({
-        isOnline: false,
+        onlineStatus: 'offline',
         incomingOrders: [],
         activeOrders: [],
         orderHistory: [],

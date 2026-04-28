@@ -7,6 +7,7 @@ const { prisma, withRetry } = require('../lib/prisma');
 const fcm = require('../lib/fcm');
 const { vendorPollingQueue, orderSlaQueue } = require('../lib/bullmq');
 const { emitOrderStatusUpdate, emitVendorStatusUpdate } = require('../lib/socket');
+const { getPresignedUploadUrl } = require('../lib/storage');
 
 // ==========================================
 // HELPER: Check if current time is within vendor's operating hours
@@ -76,16 +77,18 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
     }));
 
     console.log(`[VENDOR] KYC record created: ${kycRecord.id}`);
-
-    // MOCK KYC APPROVAL AUTOMATICALLY AS REQUESTED BY USER
+    
+    // Status remains default (kyc_submitted) or could be explicitly set to under_review
     await withRetry(() => prisma.vendor.update({
       where: { id: profile.vendor.id },
-      data: { accountStatus: 'mock_approved' } // Mock approved for development
+      data: { accountStatus: 'KYC_SUBMITTED' }
     }));
 
-    console.log(`[VENDOR] Vendor ${profile.vendor.id} auto-approved (mock)`);
-
-    res.json({ success: true, message: 'KYC submitted and auto-approved for testing', kycId: kycRecord.id });
+    res.json({ 
+      success: true, 
+      message: 'KYC submitted successfully. Your account is now under review by our admin team.', 
+      kycId: kycRecord.id 
+    });
   } catch (error) {
     console.error('[VENDOR] KYC Critical Error:', error);
     res.status(500).json({ 
@@ -169,8 +172,10 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       category: v.businessCategory,
       phone: v.phone,
       email: v.email,
+      deliveryRadius: parseFloat(v.deliveryRadius) || 0,
       logo: v.logoUrl || 'https://via.placeholder.com/150',
       banner: v.bannerUrl || 'https://via.placeholder.com/800x200',
+      profilePic: v.profilePicUrl || 'https://via.placeholder.com/150',
       operatingHours: v.operatingHours || 'Not configured',
       kycStatus: v.accountStatus,
       commissionModel: v.commissionModel || 'DEDUCTED',
@@ -203,7 +208,10 @@ router.get('/profile', firebaseAuth, async (req, res) => {
 router.put('/profile', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
-    const { businessName, ownerName, address, category, description, location, operatingHours, bankData } = req.body;
+    const { 
+      businessName, ownerName, address, category, description, location, 
+      operatingHours, bankData, fcmToken, email, deliveryRadius, logo, banner, profilePic 
+    } = req.body;
 
     let profile = await withRetry(() => prisma.profile.findUnique({ where: { firebaseUid: uid }, include: { vendor: true } }));
     if (!profile) {
@@ -244,8 +252,22 @@ router.put('/profile', firebaseAuth, async (req, res) => {
         businessName, ownerName, businessAddress: address, businessCategory: category, storeDescription: description,
         latitude: parsedLocation?.latitude || null, longitude: parsedLocation?.longitude || null,
         operatingHours: parsedHours || null,
+        fcmToken: fcmToken || undefined,
+        email: email || undefined,
+        deliveryRadius: deliveryRadius ? parseFloat(deliveryRadius) : undefined,
+        logoUrl: logo || undefined,
+        bannerUrl: banner || undefined,
+        profilePicUrl: profilePic || undefined
       }
     }));
+
+    // Update Profile FCM Token too
+    if (fcmToken) {
+      await withRetry(() => prisma.profile.update({
+        where: { id: profile.id },
+        data: { fcmToken }
+      }));
+    }
 
     if (bankData && bankData.accountNumber) {
       await withRetry(() => prisma.vendorBankDetails.upsert({
@@ -278,7 +300,12 @@ router.put('/status/toggle', firebaseAuth, requireKyc, async (req, res) => {
     const { isOnline, dismissBubble } = req.body;
 
     const profile = await prisma.profile.findUnique({ where: { firebaseUid: uid }, include: { vendor: true } });
+    if (!profile?.vendor) {
+        console.error(`[VENDOR] Status toggle failed: Vendor not found for UID ${uid}`);
+        return res.status(404).json({ error: 'Vendor profile not found' });
+    }
     const vendorId = profile.vendor.id;
+    console.log(`[VENDOR] Toggling status for ${profile.vendor.businessName} (${vendorId}) to ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
 
     const activeOrdersCount = await prisma.order.count({
       where: { vendorId, status: { in: ['preparing', 'ready_for_pickup', 'accepted'] } }
@@ -415,6 +442,41 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
   }
 });
 
+// Get Vendor Orders (Active & History)
+router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
+  try {
+    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const orders = await prisma.order.findMany({
+      where: { vendorId: profile.vendor.id },
+      include: { 
+        items: true,
+        customer: { select: { fullName: true, phone: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Format for frontend
+    const formattedOrders = orders.map(o => ({
+      ...o,
+      customerName: o.customer?.fullName || 'Customer',
+      total: parseFloat(o.totalAmount),
+      items: o.items.map(i => ({ qty: i.quantity, name: i.productName }))
+    }));
+
+    // Split into active (pending, accepted, preparing, ready) and history
+    const activeStatuses = ['pending_vendor', 'accepted', 'preparing', 'ready_for_pickup', 'pending_vendor_response'];
+    const active = formattedOrders.filter(o => activeStatuses.includes(o.status));
+    const history = formattedOrders.filter(o => !activeStatuses.includes(o.status));
+
+    res.json({ success: true, active, history });
+  } catch (error) {
+    console.error('[VENDOR] Fetch orders CRITICAL error:', error);
+    res.status(500).json({ error: 'Failed to fetch orders', details: error.message });
+  }
+});
+
 // ==========================================
 // MODULE B5: Order Status Updates
 // ==========================================
@@ -489,9 +551,10 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       description, 
       category, 
       productType: type, 
-      basePrice: parseFloat(price) || 0, // EXPLICIT CAST FOR DECIMAL
-      isRestricted: isRestricted === 'true' || isRestricted === true, // HANDLE STRING FORM DATA
-      isActive: isAvailable !== undefined ? (isAvailable === 'true' || isAvailable === true) : true
+      basePrice: parseFloat(price) || 0,
+      isRestricted: isRestricted === 'true' || isRestricted === true,
+      isActive: false, // NEW PRODUCTS ARE INACTIVE BY DEFAULT
+      reviewStatus: 'pending_review'
     };
 
 
@@ -531,6 +594,51 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
     }
 });
 
+// DEV ONLY: Admin approval simulation
+router.put('/products/:id/approve-dev', firebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // approved, rejected, etc.
+    const { emitProductStatusUpdate } = require('../lib/socket');
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: { reviewStatus: status || 'APPROVED' }
+    });
+
+    emitProductStatusUpdate(product.vendorId, id, status || 'APPROVED');
+    res.json({ success: true, product });
+  } catch (error) {
+    res.status(500).json({ error: 'Dev approval failed', details: error.message });
+  }
+});
+
+
+// DEV ONLY: Admin approval simulation for vendor account
+router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // approved, rejected, suspended, etc.
+    const { emitAccountStatusUpdate } = require('../lib/socket');
+
+    const vendor = await prisma.vendor.update({
+      where: { id },
+      data: { accountStatus: status || 'APPROVED' }
+    });
+
+    // Also update Profile status for consistency
+    await prisma.profile.update({
+      where: { id: vendor.profileId },
+      data: { profileStatus: (status || 'APPROVED').toUpperCase() }
+    });
+
+    emitAccountStatusUpdate(vendor.id, status || 'APPROVED');
+    res.json({ success: true, vendor });
+  } catch (error) {
+    res.status(500).json({ error: 'Dev approval failed', details: error.message });
+  }
+});
+
 
 router.delete('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
   try {
@@ -568,6 +676,21 @@ router.get('/earnings', firebaseAuth, requireKyc, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch earnings' });
+  }
+});
+
+// ==========================================
+// MODULE B9: Storage & Uploads
+// ==========================================
+router.post('/storage/upload-url', firebaseAuth, async (req, res) => {
+  try {
+    const { fileName, contentType } = req.body;
+    if (!fileName || !contentType) return res.status(400).json({ error: 'fileName and contentType required' });
+
+    const data = await getPresignedUploadUrl(fileName, contentType);
+    res.json({ success: true, ...data });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate upload URL' });
   }
 });
 

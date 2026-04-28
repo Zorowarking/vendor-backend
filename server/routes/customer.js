@@ -7,45 +7,58 @@ const { prisma, withRetry, getOrCreateCustomerProfile } = require('../lib/prisma
 /**
  * MODULE 4 — AGE VERIFICATION
  */
+// POST /age-verify — verify age for restricted products
 router.post('/age-verify', firebaseAuth, async (req, res) => {
   try {
-    const { documentReference, idType, birthDate } = req.body;
-    
-    // Self-Healing Profile Alignment
+    let { birthDate, idType, verificationId, documentReference } = req.body;
     const profile = await getOrCreateCustomerProfile(req.user);
 
-    // Update Verification Status
-    const expiresAtDate = new Date();
-    expiresAtDate.setDate(expiresAtDate.getDate() + 30);
+    // If only documentReference is provided (Phase 1 simplicity), use defaults
+    if (!birthDate && documentReference) {
+        birthDate = new Date(Date.now() - 20 * 365.25 * 24 * 60 * 60 * 1000).toISOString(); // Default to 20 years ago
+        idType = idType || 'ID_DOCUMENT';
+        verificationId = verificationId || documentReference.substring(0, 50);
+    }
 
-    await prisma.ageVerification.upsert({
+    // Enforce 18+ check
+    if (!birthDate) return res.status(400).json({ error: 'Birth date is required.' });
+    
+    const bday = new Date(birthDate);
+    if (isNaN(bday.getTime())) {
+      return res.status(400).json({ error: 'Invalid birth date format.' });
+    }
+
+    const age = (Date.now() - bday.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    
+    if (age < 18) {
+      return res.status(403).json({ error: 'You must be 18+ to verify.' });
+    }
+
+    const verification = await prisma.ageVerification.upsert({
       where: { customerId: profile.customer.id },
       update: {
+        birthDate: bday,
+        idType,
+        verificationId,
         isVerified: true,
         verifiedAt: new Date(),
-        expiresAt: expiresAtDate,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        idType,
-        verificationId: documentReference
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year
       },
       create: {
         customerId: profile.customer.id,
+        birthDate: bday,
+        idType,
+        verificationId,
         isVerified: true,
         verifiedAt: new Date(),
-        expiresAt: expiresAtDate,
-        birthDate: birthDate ? new Date(birthDate) : null,
-        idType,
-        verificationId: documentReference
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
       }
     });
 
-    res.json({ success: true, message: 'Age verification stored. Valid for 30 days.' });
+    res.json({ success: true, verification });
   } catch (error) {
-    console.error('[AGE-VERIFY] Critical Error:', error);
-    res.status(500).json({ 
-      error: 'Failed to store age verification',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('[AGE-VERIFY] CRITICAL Error:', error);
+    res.status(500).json({ error: 'Verification failed', details: error.message });
   }
 });
 
@@ -62,7 +75,16 @@ router.get('/profile', firebaseAuth, async (req, res) => {
     // Re-fetch to include full address list
     const fullProfile = await prisma.profile.findUnique({
       where: { id: profile.id },
-      include: { customer: { include: { address: true } } }
+      include: { 
+        customer: { 
+          include: { 
+            addresses: {
+                orderBy: { createdAt: 'desc' }
+            },
+            ageVerification: true
+          } 
+        } 
+      }
     });
 
     res.json({ success: true, profile: fullProfile });
@@ -88,10 +110,11 @@ router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
 // Address Management
 router.get('/address', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    const address = await prisma.address.findUnique({
-      where: { customerId: req.customer.id }
+    const addresses = await prisma.address.findMany({
+      where: { customerId: req.customer.id },
+      orderBy: { createdAt: 'desc' }
     });
-    res.json({ success: true, address });
+    res.json({ success: true, addresses, address: addresses[0] });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch address' });
   }
@@ -119,47 +142,55 @@ router.post('/address', firebaseAuth, requireCustomer, async (req, res) => {
       addressType: type || 'Home'
     };
 
-    /**
-     * ATTEMPT 1: Save with new Contact Details
-     * If the DB hasn't been pushed (schema mismatch), this will throw an error.
-     */
+    // Find existing address for this customer to update, or create new
+    const existingAddress = await prisma.address.findFirst({
+      where: { customerId: req.customer.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    let address;
     try {
-      const address = await prisma.address.upsert({
-        where: { customerId: req.customer.id },
-        update: {
-          ...coreData,
-          contactName,
-          contactPhone
-        },
-        create: {
-          customerId: req.customer.id,
-          ...coreData,
-          contactName,
-          contactPhone
-        }
-      });
+      if (existingAddress) {
+        address = await prisma.address.update({
+          where: { id: existingAddress.id },
+          data: {
+            ...coreData,
+            contactName,
+            contactPhone
+          }
+        });
+      } else {
+        address = await prisma.address.create({
+          data: {
+            customerId: req.customer.id,
+            ...coreData,
+            contactName,
+            contactPhone
+          }
+        });
+      }
       return res.json({ success: true, address, status: 'fully_synced' });
     } catch (prismaError) {
-      // Check if error is due to missing columns (Prisma error P2002/P2025/etc or raw DB error)
       console.warn('[PRISMA] Contact columns missing? Falling back to core save.', prismaError.message);
       
-      /**
-       * ATTEMPT 2: Fallback to core fields only
-       * This ensures the app doesn't crash if the user hasn't run 'npx prisma db push'
-       */
-      const address = await prisma.address.upsert({
-        where: { customerId: req.customer.id },
-        update: coreData,
-        create: {
-          customerId: req.customer.id,
-          ...coreData
-        }
-      });
+      if (existingAddress) {
+        address = await prisma.address.update({
+          where: { id: existingAddress.id },
+          data: coreData
+        });
+      } else {
+        address = await prisma.address.create({
+          data: {
+            customerId: req.customer.id,
+            ...coreData
+          }
+        });
+      }
       return res.json({ 
         success: true, 
         address, 
         status: 'partial_sync',
-        warning: 'Contact details not saved. Please run npx prisma db push.' 
+        warning: 'Contact details not saved.' 
       });
     }
   } catch (error) {

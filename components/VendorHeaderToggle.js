@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { notificationService } from '../services/notificationService';
 
 export default function VendorHeaderToggle() {
-  const isOnline = useVendorStore((state) => state.isOnline);
+  const onlineStatus = useVendorStore((state) => state.onlineStatus);
   const activeOrders = useVendorStore((state) => state.activeOrders);
   const setOnlineStatus = useVendorStore((state) => state.setOnlineStatus);
 
@@ -16,54 +16,81 @@ export default function VendorHeaderToggle() {
   const handleToggle = async (newValue) => {
     if (!newValue) {
       // User wants to go offline
-      const hasActiveOrders = activeOrders.length > 0;
+      const hasActiveOrders = (activeOrders || []).length > 0;
       
-      const alertTitle = hasActiveOrders ? 'Active Orders in Progress' : 'Go Offline?';
-      const alertMsg = hasActiveOrders 
-        ? 'You have active orders. Going offline won\'t cancel them but you won\'t receive new ones. Continue?'
-        : 'You won\'t receive new orders while offline. Continue?';
-
-      Alert.alert(
-        alertTitle,
-        alertMsg,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Go Offline', 
-            style: 'destructive',
-            onPress: () => updateStatus(false) 
-          }
-        ]
-      );
+      if (hasActiveOrders) {
+        Alert.alert(
+          'Active Orders in Progress',
+          'You will stop receiving new orders. Complete your current order to go Offline.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Stop New Orders', 
+              onPress: () => updateStatus(false) 
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Go Offline?',
+          'You won\'t receive new orders while offline. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Go Offline', 
+              style: 'destructive',
+              onPress: () => updateStatus(false) 
+            }
+          ]
+        );
+      }
     } else {
       // User wants to go online
       await updateStatus(true);
     }
   };
 
-  const updateStatus = async (status) => {
+  const updateStatus = async (isOnlineRequested) => {
+    const previousStatus = onlineStatus;
     // Optimistic UI update
-    setOnlineStatus(status);
+    setOnlineStatus(isOnlineRequested ? 'online' : 'offline');
+    
     try {
-      await vendorApi.toggleStatus(status);
+      const response = await vendorApi.toggleStatus(isOnlineRequested);
+      if (response.success) {
+        setOnlineStatus(response.status); // This handles 'online', 'offline', or 'stop_new_orders'
+        if (response.status === 'stop_new_orders') {
+          Alert.alert('Status Updated', response.message);
+        }
+      }
     } catch (error) {
       // Revert if API fails
-      setOnlineStatus(!status);
-      Alert.alert('Error', 'Failed to change status. Please try again.');
+      setOnlineStatus(previousStatus);
+      const errorMsg = error.response?.data?.error || error.response?.data?.details || error.message;
+      Alert.alert('Status Error', errorMsg || 'Failed to change status. Please try again.');
     }
   };
 
+  const getStatusDisplay = () => {
+    switch (onlineStatus) {
+      case 'online': return { text: 'Online', color: Colors.success, isSwitchOn: true };
+      case 'stop_new_orders': return { text: 'Stop New Orders', color: Colors.warning, isSwitchOn: false };
+      case 'offline': default: return { text: 'Offline', color: Colors.subText, isSwitchOn: false };
+    }
+  };
+
+  const statusDisplay = getStatusDisplay();
+
   return (
     <View style={styles.container}>
-
-      <Text style={[styles.statusText, isOnline ? styles.onlineText : styles.offlineText]}>
-        {isOnline ? 'Online' : 'Offline'}
+      <Text style={[styles.statusText, { color: statusDisplay.color }]}>
+        {statusDisplay.text}
       </Text>
       <Switch
-        value={isOnline}
+        value={statusDisplay.isSwitchOn}
         onValueChange={handleToggle}
-        trackColor={{ false: Colors.border, true: Colors.success + '80' }} // adding slight transparency for track
-        thumbColor={isOnline ? Colors.success : Colors.subText}
+        trackColor={{ false: Colors.border, true: Colors.success + '80' }}
+        thumbColor={statusDisplay.isSwitchOn ? Colors.success : Colors.subText}
         ios_backgroundColor={Colors.border}
       />
     </View>

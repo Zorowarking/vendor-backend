@@ -40,7 +40,6 @@ const mockWorker = { on: () => {} };
 // ============================
 
 let vendorPollingQueue = mockQueue;
-let riderPollingQueue = mockQueue;
 let orderSlaQueue = mockQueue;
 
 // Try to initialize BullMQ after a brief delay to allow Redis to connect
@@ -56,7 +55,6 @@ setTimeout(async () => {
       const fcm = require('./fcm');
 
       vendorPollingQueue = new Queue('vendorPolling', { connection });
-      riderPollingQueue = new Queue('riderPolling', { connection });
       orderSlaQueue = new Queue('orderSla', { connection });
 
       // Worker: Poll Vendor active orders when in 'Stop New Orders'
@@ -76,25 +74,6 @@ setTimeout(async () => {
         } else {
           console.log(`[BULLMQ] Vendor ${vendorId} still has ${activeOrdersCount} order(s). Polling again in 60s.`);
           await vendorPollingQueue.add('checkPending', { vendorId }, { delay: 60000 });
-        }
-      }, { connection });
-
-      // Worker: Poll Rider active deliveries when in 'Stop New Orders'
-      const riderWorker = new Worker('riderPolling', async (job) => {
-        const { riderId } = job.data;
-        const activeDeliveries = await prisma.order.count({
-          where: {
-            riderId: riderId,
-            status: { in: ['on_the_way_to_pickup', 'order_picked_up', 'out_for_delivery'] }
-          }
-        });
-
-        if (activeDeliveries === 0) {
-          console.log(`[BULLMQ] Rider ${riderId} has 0 active deliveries. Going offline.`);
-          await prisma.rider.update({ where: { id: riderId }, data: { onlineStatus: 'offline' } });
-        } else {
-          console.log(`[BULLMQ] Rider ${riderId} still has active deliveries. Polling again in 60s.`);
-          await riderPollingQueue.add('checkPending', { riderId }, { delay: 60000 });
         }
       }, { connection });
 
@@ -123,7 +102,7 @@ setTimeout(async () => {
         }
       }, { connection });
 
-      [vendorWorker, riderWorker, orderSlaWorker].forEach(worker => {
+      [vendorWorker, orderSlaWorker].forEach(worker => {
         worker.on('error', err => {
           console.error('[BULLMQ] Worker error:', err.message);
         });
@@ -140,6 +119,5 @@ setTimeout(async () => {
 
 module.exports = {
   get vendorPollingQueue() { return vendorPollingQueue; },
-  get riderPollingQueue()  { return riderPollingQueue;  },
   get orderSlaQueue()      { return orderSlaQueue;      },
 };

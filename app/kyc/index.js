@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
 import { vendorApi } from '../../services/vendorApi';
-import { riderApi } from '../../services/riderApi';
 
 export default function KYCIndex() {
   const router = useRouter();
@@ -23,13 +22,7 @@ export default function KYCIndex() {
     { id: 'gov_id', title: 'Government ID', subtitle: 'Passport, License, or National ID', required: true },
     { id: 'biz_proof', title: 'Business Proof', subtitle: 'Registration, GST, or Trade License', required: true },
     { id: 'pan', title: 'PAN Card', subtitle: 'Optional for tax purposes', required: false },
-    { id: 'address_proof', title: 'Address Proof', subtitle: 'Utility bill or Rent agreement', required: false },
-  ];
-
-  const riderDocs = [
-    { id: 'gov_id', title: 'Government ID', subtitle: 'Aadhar, PAN, or Voter ID', required: true },
-    { id: 'dl', title: 'Driving License', subtitle: 'Mandatory for vehicle-based delivery', required: true },
-    { id: 'rc', title: 'Vehicle Registration', subtitle: 'If using own vehicle', required: true },
+    { id: 'address_proof', title: 'Address Proof', subtitle: 'Utility bill or Rent agreement', required: true },
   ];
 
   // Safety check: If role is missing, don't default to Rider
@@ -48,8 +41,7 @@ export default function KYCIndex() {
     );
   }
 
-  const isVendor = role === 'VENDOR';
-  const docs = isVendor ? vendorDocs : riderDocs;
+  const docs = vendorDocs;
 
   const handleSubmitKYC = async () => {
     // Check required docs
@@ -72,11 +64,7 @@ export default function KYCIndex() {
 
     setIsSubmitting(true);
     try {
-      if (isVendor) {
-        await vendorApi.submitKyc(kycPayload);
-      } else {
-        await riderApi.submitKyc(kycPayload);
-      }
+      await vendorApi.submitKyc(kycPayload);
       
       setProfileStatus('UNDER_REVIEW');
       router.push('/kyc/status');

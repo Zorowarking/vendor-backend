@@ -1,8 +1,25 @@
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import messaging from '@react-native-firebase/messaging';
+import { systemBubbleService } from './services/systemBubbleService';
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
+// Handle background messages
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('[FCM] Message handled in the background!', remoteMessage);
+  
+  const { type, bubble_active, badge_count } = remoteMessage.data || {};
+  
+  if (type === 'BUBBLE_UPDATE') {
+    const count = parseInt(badge_count || '0');
+    const active = bubble_active === 'true';
+    
+    if (active) {
+      systemBubbleService.show();
+    } else {
+      systemBubbleService.hide();
+    }
+  }
+});
+
 registerRootComponent(App);

@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:3000';
+const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://192.168.0.107:3001';
 
 class SocketService {
   constructor() {
@@ -21,7 +21,9 @@ class SocketService {
     
     const token = useAuthStore.getState().sessionToken;
     
-    this.socket = io(SOCKET_URL, {
+    const namespaceUrl = role === 'VENDOR' ? `${SOCKET_URL}/vendor` : `${SOCKET_URL}/rider`;
+    
+    this.socket = io(namespaceUrl, {
       auth: { token },
       query: { 
         userId, 
@@ -38,8 +40,11 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log(`${role} Socket connected:`, this.socket.id);
-      const joinEvent = role === 'VENDOR' ? 'join:vendor' : 'join:rider';
-      this.socket.emit(joinEvent, { [role === 'VENDOR' ? 'vendorId' : 'riderId']: userId });
+      if (role === 'VENDOR') {
+        this.socket.emit('join_vendor_room', userId);
+      } else {
+        this.socket.emit('join:rider', { riderId: userId });
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -61,31 +66,14 @@ class SocketService {
 
   }
 
-  // Backward compatibility methods
-  connectRider(riderId) {
-    this.connect(riderId, 'RIDER');
-  }
-
-  onRiderEvents({ onPickupRequest, onOrderUpdate }) {
-    if (!this.socket) return () => {};
-    
-    if (onPickupRequest) this.socket.on('new:pickupRequest', onPickupRequest);
-    if (onOrderUpdate) this.socket.on('order:update', onOrderUpdate);
-
-    return () => {
-      if (onPickupRequest) this.socket.off('new:pickupRequest', onPickupRequest);
-      if (onOrderUpdate) this.socket.off('order:update', onOrderUpdate);
-    };
-  }
-
   onNewOrder(callback) {
     if (!this.socket) return;
-    this.socket.on('new:order', callback);
+    this.socket.on('new_incoming_order', callback);
   }
 
   offNewOrder(callback) {
     if (!this.socket) return;
-    this.socket.off('new:order', callback);
+    this.socket.off('new_incoming_order', callback);
   }
 
   onOrderUpdate(callback) {
@@ -98,14 +86,29 @@ class SocketService {
     this.socket.off('order:update', callback);
   }
 
-  onPickupRequest(callback) {
-    if (!this.socket) return;
-    this.socket.on('new:pickupRequest', callback);
-  }
-
   onOrderStatusUpdate(callback) {
     if (!this.socket) return;
     this.socket.on('order:statusUpdate', callback);
+  }
+
+  onProductStatusUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.on('product_status_update', callback);
+  }
+
+  offProductStatusUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.off('product_status_update', callback);
+  }
+
+  onAccountStatusUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.on('account_status_update', callback);
+  }
+
+  offAccountStatusUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.off('account_status_update', callback);
   }
 
   emitLocation(orderId, latitude, longitude) {

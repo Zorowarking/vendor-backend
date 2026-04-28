@@ -5,6 +5,7 @@ import Colors from '../../constants/Colors';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../store/authStore';
+import { vendorApi } from '../../services/vendorApi';
 
 export default function KYCUpload() {
   const [file, setFile] = useState(null);
@@ -74,21 +75,18 @@ export default function KYCUpload() {
     setUploading(true);
     
     try {
-      // Mock upload to Cloudflare
-      console.log('Uploading to Cloudflare:', file.name);
-      await new Promise((resolve, reject) => {
-        setTimeout(() => {
-          // Simulate random failure for testing Step 7
-          if (Math.random() < 0.2) reject(new Error('Network failure'));
-          else resolve();
-        }, 2000);
-      });
+      console.log('[KYC] Starting real upload to Cloudflare R2:', file.name);
+      
+      const uploadResult = await vendorApi.uploadImage(file.uri);
+      
+      if (!uploadResult.success) {
+        throw new Error('Upload failed');
+      }
       
       // Save to store
-      const mockUrl = `https://cloudflare-b2.com/buckets/kyc/${docId}.pdf`;
       useAuthStore.getState().setKycDoc(docId, {
         name: file.name,
-        url: mockUrl,
+        url: uploadResult.url,
         status: 'SUCCESS'
       });
 
@@ -96,6 +94,7 @@ export default function KYCUpload() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (err) {
+      console.error('[KYC] Upload Error:', err);
       Alert.alert(
         'Upload Failed', 
         'Failed to upload the document. Please check your connection and try again.',
@@ -104,7 +103,8 @@ export default function KYCUpload() {
           { text: 'Retry', onPress: uploadFile }
         ]
       );
-    } finally {
+    }
+ finally {
       setUploading(false);
     }
 

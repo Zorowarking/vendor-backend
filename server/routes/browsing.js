@@ -12,9 +12,8 @@ router.get('/vendors', guestSession, async (req, res) => {
   try {
     const vendors = await prisma.vendor.findMany({
       where: {
-        // Relaxing filters for development to ensure visibility
-        // onlineStatus: 'online', 
-        // accountStatus: 'mock_approved'
+        onlineStatus: 'online', 
+        accountStatus: 'APPROVED'
       },
       select: {
         id: true,
@@ -24,7 +23,8 @@ router.get('/vendors', guestSession, async (req, res) => {
         businessAddress: true,
         latitude: true,
         longitude: true,
-        storeDescription: true
+        storeDescription: true,
+        onlineStatus: true
       }
     });
     const mappedVendors = vendors.map(v => ({
@@ -45,11 +45,7 @@ router.get('/vendors/:id', guestSession, async (req, res) => {
   try {
     const { id } = req.params;
     const vendor = await prisma.vendor.findUnique({
-      where: { id },
-      include: {
-        bankDetails: false, // Don't expose bank details to customers
-        complianceFlags: false
-      }
+      where: { id }
     });
 
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
@@ -66,8 +62,8 @@ router.get('/vendors/:id/products', guestSession, async (req, res) => {
     const products = await prisma.product.findMany({
       where: { 
         vendorId: id, 
-        // isActive: true, 
-        // reviewStatus: 'approved' 
+        isActive: true, 
+        reviewStatus: 'approved' 
       },
       include: { addOns: true }
     });
@@ -103,5 +99,6 @@ router.get('/products/:id', guestSession, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch product details' });
   }
 });
+
 
 module.exports = router;

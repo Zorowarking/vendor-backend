@@ -82,6 +82,7 @@ router.delete('/item/:id', firebaseAuthOptional, guestSession, async (req, res) 
   }
 });
 
+
 // DELETE /cart — clear cart
 router.delete('/', firebaseAuthOptional, guestSession, async (req, res) => {
   try {

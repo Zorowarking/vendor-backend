@@ -7,6 +7,8 @@ import NotificationBanner from '../components/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import { socketService } from '../services/socketService';
 import { useNotificationStore } from '../store/notificationStore';
+import { systemBubbleService } from '../services/systemBubbleService';
+import { useVendorStore } from '../store/vendorStore';
 
 
 export default function Layout() {
@@ -18,6 +20,7 @@ export default function Layout() {
 
   useEffect(() => {
     setIsMounted(true);
+    systemBubbleService.initialize();
   }, []);
 
   // Notification Initialization
@@ -30,6 +33,11 @@ export default function Layout() {
         // Show in-app banner for foreground messages
         setActiveNotification(remoteMessage);
       });
+
+      // Request token and sync to backend
+      if (isAuthenticated && role === 'VENDOR') {
+        await notificationService.requestPermissionAndToken();
+      }
     };
 
     setupNotifications();
@@ -38,18 +46,23 @@ export default function Layout() {
 
   // Socket Connection Management
   useEffect(() => {
-    if (isAuthenticated && role && user?.uid) {
-      if (role === 'VENDOR') {
-        socketService.connect(user.uid);
-      } else if (role === 'RIDER') {
-        socketService.connectRider(user.uid);
-      }
+    if (isAuthenticated && role === 'VENDOR' && user?.uid) {
+      socketService.connect(user.uid);
     } else {
       socketService.disconnect();
     }
 
     return () => socketService.disconnect();
   }, [isAuthenticated, role, user?.uid]);
+
+  // System-level Bubble Update
+  useEffect(() => {
+    if (role === 'VENDOR') {
+      const incoming = useVendorStore.getState().incomingOrders.length;
+      const active = useVendorStore.getState().activeOrders.length;
+      systemBubbleService.update(incoming + active);
+    }
+  }, [role, useVendorStore.getState().incomingOrders, useVendorStore.getState().activeOrders]);
 
   useEffect(() => {
     if (!isMounted) return;
@@ -64,7 +77,6 @@ export default function Layout() {
 
     if (isAuthenticated && inAuthGroup && role && profileStatus === 'READY') {
       if (role === 'VENDOR') router.replace('/(vendor)');
-      else if (role === 'RIDER') router.replace('/(rider)');
       return;
     }
 
@@ -93,12 +105,10 @@ export default function Layout() {
     if (isAuthenticated && profileStatus !== 'READY') {
 
       if (profileStatus === 'PENDING') {
-        const onboardingScreens = ['vendor-register', 'vendor-bank', 'rider-register', 'rider-bank', 'kyc'];
+        const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
         const currentPath = segments.join('/');
-        
         if (!onboardingScreens.some(screen => currentPath.includes(screen)) && currentScreen !== 'role-select') {
           if (role === 'VENDOR') router.replace('/auth/vendor-register');
-          else if (role === 'RIDER') router.replace('/auth/rider-register');
         }
       } else if (profileStatus === 'UNDER_REVIEW') {
         if (!segments[0].includes('kyc')) {

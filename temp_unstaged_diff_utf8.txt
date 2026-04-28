@@ -1,0 +1,1149 @@
+﻿diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index c3dd9c0..00f57d6 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -14,545 +14,702 @@ datasource db {
+ 
+ // ΓöÇΓöÇΓöÇ SHARED MODELS (ALIGNED WITH CUSTOMER APP) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ 
+-model Customer {
+-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  profileId      String?    @unique @map("profile_id") @db.Uuid
+-  phone          String     @unique @db.VarChar(20)
+-  email          String?    @unique @db.VarChar(255)
+-  fullName       String?    @map("full_name") @db.VarChar(255)
+-
+-  isGuest        Boolean    @default(false) @map("is_guest")
+-  sessionToken   String?    @map("session_token")
+-  guestExpiresAt DateTime?  @map("guest_expires_at") @db.Timestamptz(6)
+-
+-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  // Relations
+-  profile            Profile?   @relation(fields: [profileId], references: [id])
+-  address            Address?
+-  ageVerification    AgeVerification?
+-  cart               Cart?
+-  orders             Order[]
+-  feedbacks          Feedback[]
+-  supportRequests    SupportRequest[]
+-  analyticsEvents    AnalyticsEvent[]
++model product_addon {
++  id        String    @id @db.Uuid
++  productId String    @map("product_id") @db.Uuid
++  name      String    @db.VarChar(255)
++  isActive  Boolean?  @default(true) @map("is_active")
++  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
++  price     Decimal   @default(0) @db.Decimal(10, 2)
++  product   product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+ 
+-  @@map("customers")
+-  @@schema("customer")
++  @@map("product_addons")
++  @@schema("vendor_delivery")
+ }
+ 
+-model Address {
+-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  customerId   String    @unique @map("customer_id") @db.Uuid
+-
+-  addressLine1 String    @map("address_line1")
+-  addressLine2 String?   @map("address_line2")
+-  city         String    @db.VarChar(100)
+-  state        String    @db.VarChar(100)
+-  postalCode   String    @map("postal_code") @db.VarChar(20)
+-  landmark     String?
+-  latitude     Decimal?  @db.Decimal(10, 8)
+-  longitude    Decimal?  @db.Decimal(11, 8)
+-  addressType  String?   @map("address_type") @db.VarChar(50)
+-
+-  contactName  String?   @map("contact_name") @db.VarChar(255)
+-  contactPhone String?   @map("contact_phone") @db.VarChar(50)
+-
+-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+-
+-  @@map("addresses")
+-  @@schema("customer")
++model product_image {
++  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  productId String   @map("product_id") @db.Uuid
++  url       String
++  sortOrder Int      @default(0) @map("sort_order")
++  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  product   product  @relation(fields: [productId], references: [id], onDelete: Cascade)
++
++  @@index([productId])
++  @@map("product_images")
++  @@schema("vendor_delivery")
+ }
+ 
+-model Order {
+-  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  customerId            String               @map("customer_id") @db.Uuid
+-
+-  vendorId              String               @map("vendor_id") @db.Uuid
+-  riderId               String?              @map("rider_id") @db.Uuid
+-
+-  addressSnapshot       Json                 @map("address_snapshot")
+-  deliveryPreference    String?              @map("delivery_preference") @db.VarChar(50)
+-
+-  status                String               @default("payment_successful") @db.VarChar(50)
++model product_template {
++  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  vendorId     String?  @map("vendor_id") @db.Uuid
++  category     String?  @db.VarChar(100)
++  templateName String   @map("template_name") @db.VarChar(255)
++  templateData Json     @map("template_data")
++  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  vendor       vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+ 
+-  subtotal              Decimal              @db.Decimal(10, 2)
+-  addonCharges          Decimal              @default(0) @map("addon_charges") @db.Decimal(10, 2)
+-  deliveryFee           Decimal              @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+-  totalAmount           Decimal              @map("total_amount") @db.Decimal(10, 2)
+-
+-  paymentMethod         String?              @map("payment_method") @db.VarChar(50)
+-  paymentGatewayRef     String?              @map("payment_gateway_ref")
+-
+-  ageVerifiedCheckbox   Boolean              @default(false) @map("age_verified_checkbox")
+-  isFlagged             Boolean              @default(false) @map("is_flagged")
+-  isFlaggedAdmin        Boolean              @default(false) @map("is_flagged_admin")
+-  flagReason            String?              @map("flag_reason")
+-
+-  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt             DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+-
+-  customer              Customer             @relation(fields: [customerId], references: [id])
+-  vendor                Vendor               @relation(fields: [vendorId], references: [id])
+-  rider                 Rider?               @relation(fields: [riderId], references: [id])
++  @@index([vendorId])
++  @@map("product_templates")
++  @@schema("vendor_delivery")
++}
+ 
+-  items                 OrderItem[]
+-  statusHistory         OrderStatusHistory[]
+-  tracking              OrderTracking[]
+-  feedback              Feedback?
+-  supportRequests       SupportRequest[]
+-  analyticsEvents       AnalyticsEvent[]
+-  
+-  // Vendor-side specific relations (kept for backend compatibility)
+-  pickupRequests        PickupRequest[]
+-  deliveryStatusUpdates DeliveryStatusUpdate[]
+-  vendorOrderActions    VendorOrderAction[]
+-  vendorEarning         VendorEarning?
+-  riderEarning          RiderEarning?
+-  complianceFlags       VendorComplianceFlag[]
++model product_review_snapshot {
++  id                       String                    @id @db.Uuid
++  submissionId             String                    @map("submission_id") @db.Uuid
++  productId                String                    @map("product_id") @db.Uuid
++  name                     String                    @db.VarChar(255)
++  description              String?
++  category                 String?                   @db.VarChar(100)
++  productType              String?                   @map("product_type") @db.VarChar(100)
++  basePrice                Decimal                   @map("base_price") @db.Decimal(10, 2)
++  isRestricted             Boolean?                  @default(false) @map("is_restricted")
++  snapshotData             Json?                     @map("snapshot_data")
++  snapshottedAt            DateTime?                 @default(now()) @map("snapshotted_at") @db.Timestamptz(6)
++  product                  product                   @relation(fields: [productId], references: [id])
++  product_review_submission product_review_submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+ 
+-  @@map("orders")
+-  @@schema("customer")
++  @@map("product_review_snapshots")
++  @@schema("vendor_delivery")
+ }
+ 
+-// ΓöÇΓöÇΓöÇ VENDOR/RIDER SPECIFIC MODELS (vendor_delivery schema) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+-model Profile {
+-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  firebaseUid   String    @unique @map("firebase_uid")
+-  phoneNumber   String    @unique @map("phone_number")
+-  role          String?   @db.VarChar(20) // 'VENDOR', 'RIDER', 'CUSTOMER'
+-  profileStatus String    @default("PENDING") @map("profile_status") @db.VarChar(30)
+-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
++model vendor_sla_metric {
++  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  vendorId            String    @map("vendor_id") @db.Uuid
++  totalOrders         Int       @default(0) @map("total_orders")
++  acceptedWithinSla   Int       @default(0) @map("accepted_within_sla")
++  breachedOrders      Int       @default(0) @map("breached_orders")
++  rejectionRate       Decimal   @default(0) @map("rejection_rate") @db.Decimal(5,2)
++  averageResponseTime Decimal?  @map("average_response_time") @db.Decimal(10,2)
++  calculatedAt        DateTime  @default(now()) @map("calculated_at") @db.Timestamptz(6)
+ 
+-  vendor    Vendor?
+-  rider     Rider?
+-  customer  Customer?
++  vendor vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+ 
+-  @@map("profiles")
++  @@index([vendorId])
++  @@map("vendor_sla_metrics")
+   @@schema("vendor_delivery")
+ }
+ 
+-model Vendor {
+-  id                 String    @id @default(uuid()) @db.Uuid
+-  profileId          String?   @unique @map("profile_id") @db.Uuid
+-  businessName       String    @map("business_name") @db.VarChar(255)
+-  ownerName          String    @map("owner_name") @db.VarChar(255)
+-  phone              String    @unique @db.VarChar(20)
+-  email              String?   @unique @db.VarChar(255)
+-  businessAddress    String    @map("business_address")
+-  latitude           Decimal?  @db.Decimal(10, 7)
+-  longitude          Decimal?  @db.Decimal(10, 7)
+-  deliveryRadius     Decimal?  @map("delivery_radius") @db.Decimal(6, 2)
+-  storeDescription   String?   @map("store_description")
+-  businessCategory   String?   @map("business_category") @db.VarChar(100)
+-  logoUrl            String?   @map("logo_url")
+-  bannerUrl          String?   @map("banner_url")
+-  profilePicUrl      String?   @map("profile_pic_url")
+-  operatingHours     Json?     @map("operating_hours")
+-  accountStatus      String    @default("kyc_submitted") @map("account_status") @db.VarChar(50)
+-  onlineStatus       String?   @default("offline") @map("online_status") @db.VarChar(30)
+-  stopNewOrdersSince DateTime? @map("stop_new_orders_since") @db.Timestamptz()
+-  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+-  updatedAt          DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-
+-  kycDocs            VendorKyc[]
+-  bankDetails        VendorBankDetails?
+-  complianceFlags    VendorComplianceFlag[]
+-  products           Product[]
+-  orders             Order[]
+-  orderActions       VendorOrderAction[]
+-  earnings           VendorEarning[]
+-  productSubmissions ProductReviewSubmission[]
+-
+-  profile   Profile? @relation(fields: [profileId], references: [id])
++model product_review_submission {
++  id                       String                    @id @db.Uuid
++  productId                String                    @map("product_id") @db.Uuid
++  vendorId                 String                    @map("vendor_id") @db.Uuid
++  submissionRound          Int                       @default(1) @map("submission_round")
++  status                   String                    @default("pending_review") @db.VarChar(30)
++  submittedAt              DateTime?                 @default(now()) @map("submitted_at") @db.Timestamptz(6)
++  updatedAt                DateTime?                 @default(now()) @map("updated_at") @db.Timestamptz(6)
++  product_review_snapshots product_review_snapshot[]
++  product                  product                   @relation(fields: [productId], references: [id], onDelete: Cascade)
++  vendor                   vendor                    @relation(fields: [vendorId], references: [id])
+ 
+-  @@map("vendors")
++  @@map("product_review_submissions")
+   @@schema("vendor_delivery")
+ }
+ 
+-model Rider {
+-  id                 String    @id @default(uuid()) @db.Uuid
+-  profileId          String?   @unique @map("profile_id") @db.Uuid
+-  fullName           String    @map("full_name") @db.VarChar(255)
+-  phone              String    @unique @db.VarChar(20)
+-  email              String?   @unique @db.VarChar(255)
+-  profilePicUrl      String?   @map("profile_pic_url")
+-  vehicleType        String?   @map("vehicle_type") @db.VarChar(50)
+-  vehicleNumber      String?   @map("vehicle_number") @db.VarChar(50)
+-  preferredZone      String?   @map("preferred_zone")
+-  currentLat         Decimal?  @map("current_lat") @db.Decimal(10, 7)
+-  currentLng         Decimal?  @map("current_lng") @db.Decimal(10, 7)
+-  accountStatus      String    @default("kyc_submitted") @map("account_status") @db.VarChar(50)
+-  onlineStatus       String?   @default("offline") @map("online_status") @db.VarChar(30)
+-  stopNewOrdersSince DateTime? @map("stop_new_orders_since") @db.Timestamptz()
+-  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+-  updatedAt          DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-
+-  kycDocs               RiderKyc[]
+-  bankDetails           RiderBankDetails?
+-  complianceFlags       RiderComplianceFlag[]
+-  orders                Order[]
+-  pickupRequests        PickupRequest[]
+-  deliveryStatusUpdates DeliveryStatusUpdate[]
+-  earnings              RiderEarning[]
+-
+-  profile   Profile? @relation(fields: [profileId], references: [id])
++model product {
++  id                         String                      @id @db.Uuid
++  vendorId                   String                      @map("vendor_id") @db.Uuid
++  name                       String                      @db.VarChar(255)
++  description                String?
++  category                   String?                     @db.VarChar(100)
++  productType                String?                     @map("product_type") @db.VarChar(100)
++  basePrice                  Decimal                     @map("base_price") @db.Decimal(10, 2)
++  isRestricted               Boolean?                    @default(false) @map("is_restricted")
++  isActive                   Boolean?                    @default(true) @map("is_active")
++  templateId                 String?                     @map("template_id") @db.Uuid
++  reviewStatus               String                      @default("pending_review") @map("review_status") @db.VarChar(30)
++  createdAt                  DateTime?                   @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt                  DateTime?                   @default(now()) @map("updated_at") @db.Timestamptz(6)
++  product_addons             product_addon[]
++  product_images             product_image[]
++  product_review_snapshots   product_review_snapshot[]
++  product_review_submissions product_review_submission[]
++  vendor                     vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+ 
+-  @@map("riders")
++  @@map("products")
+   @@schema("vendor_delivery")
+ }
+ 
+-// ΓöÇΓöÇΓöÇ ADDITIONAL CUSTOMER APP SUPPORT MODELS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++model profile {
++  id            String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  firebaseUid   String     @unique @map("firebase_uid")
++  phoneNumber   String     @unique @map("phone_number")
++  role          String?    @db.VarChar(20)
++  profileStatus String     @default("PENDING") @map("profile_status") @db.VarChar(30)
++  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt     DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
++  fcmToken      String?    @map("fcm_token")
++  customer      customer?
++  rider         rider?
++  vendor        vendor?
+ 
+-model AgeVerification {
+-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  customerId     String    @unique @map("customer_id") @db.Uuid
+-  isVerified     Boolean   @default(false) @map("is_verified")
+-  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
+-  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+-  birthDate      DateTime? @map("birth_date") @db.Date
+-  idType         String?   @map("id_type") @db.VarChar(100)
+-  verificationId String?   @map("verification_id")
+-  customer       Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+-  @@map("age_verifications")
+-  @@schema("customer")
++  @@map("profiles")
++  @@schema("vendor_delivery")
+ }
+ 
+-model Cart {
+-  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  customerId  String?     @unique @map("customer_id") @db.Uuid
+-  guestId     String?     @unique @map("guest_id") @db.VarChar(255)
+-  vendorId    String      @map("vendor_id") @db.Uuid
+-  isGuest     Boolean     @default(false) @map("is_guest")
+-  expiresAt   DateTime?   @map("expires_at") @db.Timestamptz(6)
+-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+-  customer    Customer?   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+-  items       CartItem[]
+-  @@map("carts")
+-  @@schema("customer")
+-}
++model notification_log {
++  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  userId  String   @map("user_id") @db.Uuid
++  role    String   @db.VarChar(20)
++  title   String   @db.VarChar(255)
++  body    String
++  status  String   @default("sent") @db.VarChar(30)
++  sentAt  DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+ 
+-model CartItem {
+-  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  cartId                String           @map("cart_id") @db.Uuid
+-  productId             String           @map("product_id") @db.Uuid
+-  quantity              Int              @default(1)
+-  options               Json?
+-  ageVerifiedCheckbox   Boolean          @default(false) @map("age_verified_checkbox")
+-  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+-  cart                  Cart             @relation(fields: [cartId], references: [id], onDelete: Cascade)
+-  @@map("cart_items")
+-  @@schema("customer")
+-}
+-
+-model OrderItem {
+-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  orderId         String    @map("order_id") @db.Uuid
+-  productId       String    @map("product_id") @db.Uuid
+-  productName     String    @map("product_name")
+-  quantity        Int
+-  unitPrice       Decimal   @map("unit_price") @db.Decimal(10, 2)
+-  addonsSummary   Json?     @map("addons_summary")
+-  lineTotal       Decimal   @map("line_total") @db.Decimal(10, 2)
+-  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  @@map("order_items")
+-  @@schema("customer")
++  @@index([userId])
++  @@map("notification_logs")
++  @@schema("vendor_delivery")
+ }
+ 
+-model OrderStatusHistory {
+-  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++model rider_assignment_attempt {
++  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+   orderId     String    @map("order_id") @db.Uuid
+-  status      String    @db.VarChar(50)
+-  changedAt   DateTime  @default(now()) @map("changed_at") @db.Timestamptz(6)
+-  changedBy   String?   @map("changed_by") @db.VarChar(50)
+-  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  @@map("order_status_history")
+-  @@schema("customer")
++  riderId     String    @map("rider_id") @db.Uuid
++  attemptNo   Int       @map("attempt_no")
++  notifiedAt  DateTime  @default(now()) @map("notified_at") @db.Timestamptz(6)
++  respondedAt DateTime? @map("responded_at") @db.Timestamptz(6)
++  status      String    @default("pending") @db.VarChar(30)
++  order       order     @relation(fields: [orderId], references: [id])
++  rider       rider     @relation(fields: [riderId], references: [id])
++
++  @@index([orderId])
++  @@index([riderId])
++  @@map("rider_assignment_attempts")
++  @@schema("vendor_delivery")
+ }
+ 
+-model OrderTracking {
++model rider_earning {
+   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  orderId      String    @map("order_id") @db.Uuid
+-  latitude     Decimal   @db.Decimal(10, 7)
+-  longitude    Decimal   @db.Decimal(10, 7)
+-  recordedAt   DateTime  @default(now()) @map("recorded_at") @db.Timestamptz(6)
+-  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  @@map("order_tracking")
+-  @@schema("customer")
+-}
++  riderId     String    @map("rider_id") @db.Uuid
++  orderId     String    @unique @map("order_id") @db.Uuid
++  fixedFee    Decimal   @map("fixed_fee") @db.Decimal(10, 2)
++  distanceFee Decimal   @map("distance_fee") @db.Decimal(10, 2)
++  totalPayout Decimal   @map("total_payout") @db.Decimal(10, 2)
++  earnedAt    DateTime? @default(now()) @map("earned_at") @db.Timestamptz(6)
++  rider       rider     @relation(fields: [riderId], references: [id])
+ 
+-model Feedback {
+-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  orderId       String    @unique @map("order_id") @db.Uuid
+-  customerId    String    @map("customer_id") @db.Uuid
+-  rating        Int       @db.SmallInt
+-  comment       String?   @db.VarChar(150)
+-  submittedAt   DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
+-  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  customer      Customer  @relation(fields: [customerId], references: [id])
+-  @@map("feedback")
+-  @@schema("customer")
++  @@index([riderId])
++  @@map("rider_earnings")
++  @@schema("vendor_delivery")
+ }
+ 
+-model SupportRequest {
+-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  customerId   String?   @map("customer_id") @db.Uuid
+-  orderId      String?   @map("order_id") @db.Uuid
+-  optionLabel  String?   @map("option_label")
+-  isEscalated  Boolean   @default(false) @map("is_escalated")
+-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+-  customer     Customer? @relation(fields: [customerId], references: [id])
+-  order        Order?    @relation(fields: [orderId], references: [id])
+-  @@map("support_requests")
+-  @@schema("customer")
+-}
++model rider_ratings_summary {
++  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  riderId      String  @unique @map("rider_id") @db.Uuid
++  avgRating    Decimal @default(0) @map("avg_rating") @db.Decimal(3, 2)
++  totalReviews Int     @default(0) @map("total_reviews")
++  rider        rider   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+ 
+-model AnalyticsEvent {
+-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+-  event       String    @map("event_name") @db.VarChar(100)
+-  orderId     String?   @map("order_id") @db.Uuid
+-  customerId  String?   @map("customer_id") @db.Uuid
+-  firedAt     DateTime  @default(now()) @map("fired_at") @db.Timestamptz(6)
+-  metadata    Json?
+-  order       Order?    @relation(fields: [orderId], references: [id])
+-  customer    Customer? @relation(fields: [customerId], references: [id])
+-  @@map("analytics_events")
+-  @@schema("customer")
++  @@map("rider_ratings_summary")
++  @@schema("vendor_delivery")
+ }
+ 
+-// ΓöÇΓöÇΓöÇ VENDOR DELIVERY UTILITY MODELS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-
+-model VendorKyc {
+-  id                String    @id @default(uuid()) @db.Uuid
+-  vendorId          String    @map("vendor_id") @db.Uuid
+-  govIdType         String?   @map("gov_id_type") @db.VarChar(50)
+-  govIdUrl          String?   @map("gov_id_url")
+-  businessProofType String?   @map("business_proof_type") @db.VarChar(50)
+-  businessProofUrl  String?   @map("business_proof_url")
+-  panUrl            String?   @map("pan_url")
+-  addressProofUrl   String?   @map("address_proof_url")
+-  submissionRound   Int       @default(1) @map("submission_round")
+-  submittedAt       DateTime? @default(now()) @map("submitted_at") @db.Timestamptz()
+-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+-  @@map("vendor_kyc")
++model rider {
++  id                        String                     @id @db.Uuid
++  profileId                 String?                    @unique @map("profile_id") @db.Uuid
++  name                      String                     @db.VarChar(255)
++  phone                     String                     @unique @db.VarChar(20)
++  vehicleType               String?                    @map("vehicle_type") @db.VarChar(50)
++  accountStatus             String                     @default("pending") @map("account_status") @db.VarChar(50)
++  onlineStatus              String?                    @default("offline") @map("online_status") @db.VarChar(30)
++  createdAt                 DateTime?                  @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt                 DateTime?                  @default(now()) @map("updated_at") @db.Timestamptz(6)
++  fcmToken                  String?                    @map("fcm_token")
++  orders                    order[]
++  profile                   profile?                   @relation(fields: [profileId], references: [id])
++  rider_assignment_attempts rider_assignment_attempt[]
++  rider_earnings            rider_earning[]
++  rider_ratings_summary     rider_ratings_summary?
++
++  @@map("riders")
+   @@schema("vendor_delivery")
+ }
+ 
+-model VendorBankDetails {
+-  id            String    @id @default(uuid()) @db.Uuid
++model vendor_bank_details {
++  id            String    @id @db.Uuid
+   vendorId      String    @unique @map("vendor_id") @db.Uuid
+   accountHolder String    @map("account_holder") @db.VarChar(255)
+   bankName      String    @map("bank_name") @db.VarChar(255)
+   accountNumber String    @map("account_number") @db.VarChar(50)
+   ifscCode      String    @map("ifsc_code") @db.VarChar(20)
+   upiId         String?   @map("upi_id") @db.VarChar(100)
+-  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
++  vendor        vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++
+   @@map("vendor_bank_details")
+   @@schema("vendor_delivery")
+ }
+ 
+-model VendorComplianceFlag {
+-  id        String    @id @default(uuid()) @db.Uuid
++model vendor_compliance_flag {
++  id        String    @id @db.Uuid
+   vendorId  String    @map("vendor_id") @db.Uuid
+   flagType  String    @map("flag_type") @db.VarChar(100)
+   orderId   String?   @map("order_id") @db.Uuid
+-  flaggedAt DateTime? @default(now()) @map("flagged_at") @db.Timestamptz()
++  flaggedAt DateTime? @default(now()) @map("flagged_at") @db.Timestamptz(6)
+   notes     String?
+-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+-  order  Order? @relation(fields: [orderId], references: [id])
+-  @@map("vendor_compliance_flags")
+-  @@schema("vendor_delivery")
+-}
+-
+-model Product {
+-  id           String    @id @default(uuid()) @db.Uuid
+-  vendorId     String    @map("vendor_id") @db.Uuid
+-  name         String    @db.VarChar(255)
+-  description  String?
+-  category     String?   @db.VarChar(100)
+-  productType  String?   @map("product_type") @db.VarChar(100)
+-  basePrice    Decimal   @map("base_price") @db.Decimal(10, 2)
+-  isRestricted Boolean?  @default(false) @map("is_restricted")
+-  isActive     Boolean?  @default(true) @map("is_active")
+-  reviewStatus String    @default("pending_review") @map("review_status") @db.VarChar(30)
+-  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+-  updatedAt    DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-  vendor      Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+-  addOns      ProductAddon[]
+-  submissions ProductReviewSubmission[]
+-  snapshots   ProductReviewSnapshot[]
+-  @@map("products")
+-  @@schema("vendor_delivery")
+-}
+-
+-model ProductAddon {
+-  id        String    @id @default(uuid()) @db.Uuid
+-  productId String    @map("product_id") @db.Uuid
+-  name      String    @db.VarChar(255)
+-  price     Decimal   @default(0) @db.Decimal(10, 2)
+-  isActive  Boolean?  @default(true) @map("is_active")
+-  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+-  @@map("product_addons")
+-  @@schema("vendor_delivery")
+-}
++  order     order?    @relation(fields: [orderId], references: [id])
++  vendor    vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+ 
+-model VendorOrderAction {
+-  id              String    @id @default(uuid()) @db.Uuid
+-  orderId         String    @map("order_id") @db.Uuid
+-  vendorId        String    @map("vendor_id") @db.Uuid
+-  action          String    @db.VarChar(50)
+-  rejectionReason String?   @map("rejection_reason") @db.VarChar(100)
+-  rejectionNote   String?   @map("rejection_note")
+-  newStatus       String?   @map("new_status") @db.VarChar(50)
+-  actionedAt      DateTime? @default(now()) @map("actioned_at") @db.Timestamptz()
+-  vendor Vendor @relation(fields: [vendorId], references: [id])
+-  order  Order  @relation(fields: [orderId], references: [id])
+-  @@map("vendor_order_actions")
++  @@map("vendor_compliance_flags")
+   @@schema("vendor_delivery")
+ }
+ 
+-model VendorEarning {
+-  id             String    @id @default(uuid()) @db.Uuid
++model vendor_earning {
++  id             String    @id @db.Uuid
+   vendorId       String    @map("vendor_id") @db.Uuid
+   orderId        String    @unique @map("order_id") @db.Uuid
+   orderTotal     Decimal   @map("order_total") @db.Decimal(10, 2)
+   commissionRate Decimal   @map("commission_rate") @db.Decimal(5, 2)
+   commissionAmt  Decimal   @map("commission_amt") @db.Decimal(10, 2)
+   vendorPayout   Decimal   @map("vendor_payout") @db.Decimal(10, 2)
+-  earnedAt       DateTime? @default(now()) @map("earned_at") @db.Timestamptz()
+-  vendor Vendor @relation(fields: [vendorId], references: [id])
+-  order  Order  @relation(fields: [orderId], references: [id])
++  earnedAt       DateTime? @default(now()) @map("earned_at") @db.Timestamptz(6)
++  order          order     @relation(fields: [orderId], references: [id])
++  vendor         vendor    @relation(fields: [vendorId], references: [id])
++
+   @@map("vendor_earnings")
+   @@schema("vendor_delivery")
+ }
+ 
+-model RiderKyc {
+-  id                String    @id @default(uuid()) @db.Uuid
+-  riderId           String    @map("rider_id") @db.Uuid
+-  govIdType         String?   @map("gov_id_type") @db.VarChar(50)
+-  govIdUrl          String?   @map("gov_id_url")
+-  drivingLicenseUrl String?   @map("driving_license_url")
+-  vehicleRegUrl     String?   @map("vehicle_reg_url")
+-  submissionRound   Int       @default(1) @map("submission_round")
+-  submittedAt       DateTime? @default(now()) @map("submitted_at") @db.Timestamptz()
+-  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+-  @@map("rider_kyc")
++model vendor_kyc {
++  id                 String    @id @db.Uuid
++  vendorId           String    @map("vendor_id") @db.Uuid
++  govIdType          String?   @map("gov_id_type") @db.VarChar(50)
++  govIdUrl           String?   @map("gov_id_url")
++  businessProofType  String?   @map("business_proof_type") @db.VarChar(50)
++  businessProofUrl   String?   @map("business_proof_url")
++  panUrl             String?   @map("pan_url")
++  addressProofUrl    String?   @map("address_proof_url")
++  submissionRound    Int       @default(1) @map("submission_round")
++  status             String    @default("submitted") @db.VarChar(30)
++  reviewedAt         DateTime? @map("reviewed_at") @db.Timestamptz(6)
++  submittedAt        DateTime? @default(now()) @map("submitted_at") @db.Timestamptz(6)
++  vendor             vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++
++  @@map("vendor_kyc")
+   @@schema("vendor_delivery")
+ }
+ 
+-model RiderBankDetails {
+-  id            String    @id @default(uuid()) @db.Uuid
+-  riderId       String    @unique @map("rider_id") @db.Uuid
+-  accountHolder String    @map("account_holder") @db.VarChar(255)
+-  bankName      String    @map("bank_name") @db.VarChar(255)
+-  accountNumber String    @map("account_number") @db.VarChar(50)
+-  ifscCode      String    @map("ifsc_code") @db.VarChar(20)
+-  upiId         String?   @map("upi_id") @db.VarChar(100)
+-  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+-  @@map("rider_bank_details")
++model vendor_order_action {
++  id              String               @id @db.Uuid
++  orderId         String               @map("order_id") @db.Uuid
++  vendorId        String               @map("vendor_id") @db.Uuid
++  action          String               @db.VarChar(50)
++  rejectionReason VendorRejectReason?  @map("rejection_reason")
++  rejectionNote   String?              @map("rejection_note")
++  newStatus       String?              @map("new_status") @db.VarChar(50)
++  actionedAt      DateTime?            @default(now()) @map("actioned_at") @db.Timestamptz(6)
++  order           order                @relation(fields: [orderId], references: [id])
++  vendor          vendor               @relation(fields: [vendorId], references: [id])
++
++  @@map("vendor_order_actions")
+   @@schema("vendor_delivery")
+ }
+ 
+-model RiderComplianceFlag {
+-  id        String    @id @default(uuid()) @db.Uuid
+-  riderId   String    @map("rider_id") @db.Uuid
+-  flagType  String    @map("flag_type") @db.VarChar(100)
+-  orderId   String?   @map("order_id") @db.Uuid
+-  flaggedAt DateTime? @default(now()) @map("flagged_at") @db.Timestamptz()
+-  notes     String?
+-  rider Rider @relation(fields: [riderId], references: [id], onDelete: Cascade)
+-  @@map("rider_compliance_flags")
++model vendor_ratings_summary {
++  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  vendorId     String  @unique @map("vendor_id") @db.Uuid
++  avgRating    Decimal @default(0) @map("avg_rating") @db.Decimal(3, 2)
++  totalReviews Int     @default(0) @map("total_reviews")
++  vendor       vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++
++  @@map("vendor_ratings_summary")
+   @@schema("vendor_delivery")
+ }
+ 
+-model PickupRequest {
+-  id          String    @id @default(uuid()) @db.Uuid
+-  orderId     String    @map("order_id") @db.Uuid
+-  riderId     String    @map("rider_id") @db.Uuid
+-  status      String    @default("broadcast") @db.VarChar(30)
+-  respondedAt DateTime? @map("responded_at") @db.Timestamptz()
+-  assignedAt  DateTime? @default(now()) @map("assigned_at") @db.Timestamptz()
+-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  rider Rider @relation(fields: [riderId], references: [id])
+-  @@map("pickup_requests")
++model vendor_support_request {
++  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  vendorId     String    @map("vendor_id") @db.Uuid
++  orderId      String?   @map("order_id") @db.Uuid
++  issueType    String?   @map("issue_type") @db.VarChar(100)
++  message      String?
++  isEscalated  Boolean   @default(false) @map("is_escalated")
++  resolved     Boolean   @default(false)
++  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
++  resolvedAt   DateTime? @map("resolved_at") @db.Timestamptz(6)
++
++  vendor vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++
++  @@index([vendorId])
++  @@index([orderId])
++  @@map("vendor_support_requests")
+   @@schema("vendor_delivery")
+ }
+ 
+-model DeliveryStatusUpdate {
+-  id        String    @id @default(uuid()) @db.Uuid
+-  orderId   String    @map("order_id") @db.Uuid
+-  riderId   String    @map("rider_id") @db.Uuid
+-  status    String    @db.VarChar(50)
+-  updatedAt DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+-  rider Rider @relation(fields: [riderId], references: [id])
+-  @@map("delivery_status_updates")
++model vendor_operating_hour {
++  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  vendorId   String    @map("vendor_id") @db.Uuid
++  dayOfWeek  Int       @map("day_of_week")
++  openTime   String    @map("open_time") @db.VarChar(10)
++  closeTime  String    @map("close_time") @db.VarChar(10)
++  isClosed   Boolean   @default(false) @map("is_closed")
++  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
++
++  vendor vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
++
++  @@index([vendorId])
++  @@unique([vendorId, dayOfWeek])
++  @@map("vendor_operating_hours")
+   @@schema("vendor_delivery")
+ }
+ 
+-model RiderEarning {
+-  id          String    @id @default(uuid()) @db.Uuid
+-  riderId     String    @map("rider_id") @db.Uuid
+-  orderId     String    @unique @map("order_id") @db.Uuid
+-  fixedFee    Decimal   @map("fixed_fee") @db.Decimal(10, 2)
+-  distanceFee Decimal   @default(0) @map("distance_fee") @db.Decimal(10, 2)
+-  totalPayout Decimal   @map("total_payout") @db.Decimal(10, 2)
+-  earnedAt    DateTime? @default(now()) @map("earned_at") @db.Timestamptz()
+-  rider Rider @relation(fields: [riderId], references: [id])
+-  order Order @relation(fields: [orderId], references: [id])
+-  @@map("rider_earnings")
++model vendor {
++  id                    String                      @id @db.Uuid
++  businessName          String                      @map("business_name") @db.VarChar(255)
++  ownerName             String                      @map("owner_name") @db.VarChar(255)
++  phone                 String                      @unique @db.VarChar(20)
++  email                 String?                     @unique @db.VarChar(255)
++  businessAddress       String                      @map("business_address")
++  latitude              Decimal?                    @db.Decimal(10, 7)
++  longitude             Decimal?                    @db.Decimal(10, 7)
++  deliveryRadius        Decimal?                    @map("delivery_radius") @db.Decimal(6, 2)
++  storeDescription      String?                     @map("store_description")
++  businessCategory      String?                     @map("business_category") @db.VarChar(100)
++  logoUrl               String?                     @map("logo_url")
++  bannerUrl             String?                     @map("banner_url")
++  profilePicUrl         String?                     @map("profile_pic_url")
++  operatingHours        Json?                       @map("operating_hours")
++  bubbleEnabled         Boolean                     @default(false) @map("bubble_enabled")
++  bubbleLastSeenAt      DateTime?                   @map("bubble_last_seen_at") @db.Timestamptz(6)
++  onlineStatus          String?                     @default("offline") @map("online_status") @db.VarChar(30)
++  stopNewOrdersSince    DateTime?                   @map("stop_new_orders_since") @db.Timestamptz(6)
++  createdAt             DateTime?                   @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt             DateTime?                   @default(now()) @map("updated_at") @db.Timestamptz(6)
++  profileId             String?                     @unique @map("profile_id") @db.Uuid
++  fcmToken              String?                     @map("fcm_token")
++  accountStatus         AccountStatus               @default(KYC_SUBMITTED) @map("account_status")
++  orders                order[]
++  product_review_submissions product_review_submission[]
++  products              product[]
++  product_templates     product_template[]
++  vendor_bank_details   vendor_bank_details?
++  vendor_compliance_flags vendor_compliance_flag[]
++  vendor_earnings       vendor_earning[]
++  vendor_kyc            vendor_kyc[]
++  vendor_order_actions  vendor_order_action[]
++  vendor_ratings_summary vendor_ratings_summary?
++  vendor_sla_metrics    vendor_sla_metric[]
++  vendor_support_requests vendor_support_request[]
++  vendor_operating_hours vendor_operating_hour[]
++  profile               profile?                    @relation(fields: [profileId], references: [id])
++
++  @@map("vendors")
+   @@schema("vendor_delivery")
+ }
+ 
+-model ProductReviewSubmission {
+-  id              String    @id @default(uuid()) @db.Uuid
+-  productId       String    @map("product_id") @db.Uuid
+-  vendorId        String    @map("vendor_id") @db.Uuid
+-  submissionRound Int       @default(1) @map("submission_round")
+-  status          String    @default("pending_review") @db.VarChar(30)
+-  submittedAt     DateTime? @default(now()) @map("submitted_at") @db.Timestamptz()
+-  updatedAt       DateTime? @default(now()) @map("updated_at") @db.Timestamptz()
+-  product   Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+-  vendor    Vendor                  @relation(fields: [vendorId], references: [id])
+-  snapshots ProductReviewSnapshot[]
+-  @@map("product_review_submissions")
++// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// ENUMS
++// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++enum AccountStatus {
++  KYC_SUBMITTED
++  UNDER_REVIEW
++  APPROVED
++  REJECTED
++  SUSPENDED
++  DISABLED
++  ACTIVE
++
+   @@schema("vendor_delivery")
+ }
+ 
+-model ProductReviewSnapshot {
+-  id            String    @id @default(uuid()) @db.Uuid
+-  submissionId  String    @map("submission_id") @db.Uuid
+-  productId     String    @map("product_id") @db.Uuid
+-  name          String    @db.VarChar(255)
+-  description   String?
+-  category      String?   @db.VarChar(100)
+-  productType   String?   @map("product_type") @db.VarChar(100)
+-  basePrice     Decimal   @map("base_price") @db.Decimal(10, 2)
+-  isRestricted  Boolean?  @default(false) @map("is_restricted")
+-  snapshotData  Json?     @map("snapshot_data")
+-  snapshottedAt DateTime? @default(now()) @map("snapshotted_at") @db.Timestamptz()
+-  submission ProductReviewSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+-  product    Product                 @relation(fields: [productId], references: [id])
+-  @@map("product_review_snapshots")
++enum VendorRejectReason {
++  STORE_CLOSED
++  KITCHEN_CLOSED
++  ITEMS_UNAVAILABLE
++  UNABLE_TO_FULFILL
++  STAFF_UNAVAILABLE
++  TECHNICAL_ISSUE
++  OTHER
++
+   @@schema("vendor_delivery")
+ }
+ 
+-model GuestSession {
++// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++// CUSTOMER SCHEMA MODELS
++// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++model address {
++  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId   String    @map("customer_id") @db.Uuid
++  addressLine1 String    @map("address_line1")
++  addressLine2 String?   @map("address_line2")
++  city         String    @db.VarChar(100)
++  state        String    @db.VarChar(100)
++  postalCode   String    @map("postal_code") @db.VarChar(20)
++  landmark     String?
++  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt    DateTime  @map("updated_at") @db.Timestamptz(6)
++  addressType  String?   @map("address_type") @db.VarChar(50)
++  latitude     Decimal?  @db.Decimal(10, 8)
++  longitude    Decimal?  @db.Decimal(11, 8)
++  contactName  String?   @map("contact_name") @db.VarChar(255)
++  contactPhone String?   @map("contact_phone") @db.VarChar(50)
++  customer     customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
++
++  @@index([customerId])
++  @@map("addresses")
++  @@schema("customer")
++}
++
++model age_verification {
++  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId     String    @unique @map("customer_id") @db.Uuid
++  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
++  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
++  idType         String?   @map("id_type") @db.VarChar(100)
++  verificationId String?   @map("verification_id")
++  birthDate      DateTime? @map("birth_date") @db.Date
++  isVerified     Boolean   @default(false) @map("is_verified")
++  customer       customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
++
++  @@map("age_verifications")
++  @@schema("customer")
++}
++
++model analytics_event {
++  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  eventName  String    @map("event_name") @db.VarChar(100)
++  orderId    String?   @map("order_id") @db.Uuid
++  customerId String?   @map("customer_id") @db.Uuid
++  firedAt    DateTime  @default(now()) @map("fired_at") @db.Timestamptz(6)
++  metadata   Json?
++  customer   customer? @relation(fields: [customerId], references: [id])
++  order      order?    @relation(fields: [orderId], references: [id])
++
++  @@map("analytics_events")
++  @@schema("customer")
++}
++
++model cart {
++  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId    String?     @unique @map("customer_id") @db.Uuid
++  vendorId      String      @map("vendor_id") @db.Uuid
++  isGuest       Boolean     @default(false) @map("is_guest")
++  isActive      Boolean     @default(true) @map("is_active")
++  expiresAt     DateTime?   @map("expires_at") @db.Timestamptz(6)
++  checkedOutAt  DateTime?   @map("checked_out_at") @db.Timestamptz(6)
++  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt     DateTime    @map("updated_at") @db.Timestamptz(6)
++  guestId       String?     @unique @map("guest_id") @db.VarChar(255)
++  cart_items    cart_item[]
++  customer      customer?   @relation(fields: [customerId], references: [id], onDelete: Cascade)
++
++  @@map("carts")
++  @@schema("customer")
++}
++
++model cart_item {
++  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  cartId              String   @map("cart_id") @db.Uuid
++  productId           String   @map("product_id") @db.Uuid
++  quantity            Int      @default(1)
++  ageVerifiedCheckbox Boolean  @default(false) @map("age_verified_checkbox")
++  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  options             Json?
++  cart                cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
++
++  @@map("cart_items")
++  @@schema("customer")
++}
++
++model customer {
++  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  phone             String               @unique @db.VarChar(20)
++  email             String?              @unique @db.VarChar(255)
++  fullName          String?              @map("full_name") @db.VarChar(255)
++  isGuest           Boolean              @default(false) @map("is_guest")
++  sessionToken      String?              @map("session_token")
++  guestExpiresAt    DateTime?            @map("guest_expires_at") @db.Timestamptz(6)
++  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt         DateTime             @map("updated_at") @db.Timestamptz(6)
++  profileId         String?              @unique @map("profile_id") @db.Uuid
++  failedLoginCount  Int                  @default(0) @map("failed_login_count")
++  lastFailedAt      DateTime?            @map("last_failed_at") @db.Timestamptz(6)
++  captchaRequired   Boolean              @default(false) @map("captcha_required")
++  addresses         address[]
++  age_verification  age_verification?
++  analytics_events  analytics_event[]
++  carts             cart?
++  profile           profile?             @relation(fields: [profileId], references: [id])
++  feedback          feedback[]
++  orders            order[]
++  support_requests  support_request[]
++  otp_requests      otp_request[]
++  login_attempt_logs login_attempt_log[]
++
++  @@map("customers")
++  @@schema("customer")
++}
++
++model login_attempt_log {
++  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId       String?   @map("customer_id") @db.Uuid
++  phoneOrEmail     String    @map("phone_or_email") @db.VarChar(255)
++  isSuccess        Boolean   @default(false) @map("is_success")
++  captchaTriggered Boolean   @default(false) @map("captcha_triggered")
++  ipAddress        String?   @map("ip_address") @db.VarChar(100)
++  attemptedAt      DateTime  @default(now()) @map("attempted_at") @db.Timestamptz(6)
++  customer         customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
++
++  @@index([customerId])
++  @@index([phoneOrEmail])
++  @@map("login_attempt_logs")
++  @@schema("customer")
++}
++
++model feedback {
++  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  orderId     String    @unique @map("order_id") @db.Uuid
++  customerId  String    @map("customer_id") @db.Uuid
++  rating      Int       @db.SmallInt
++  comment     String?   @db.VarChar(150)
++  submittedAt DateTime  @default(now()) @map("submitted_at") @db.Timestamptz(6)
++  customer    customer  @relation(fields: [customerId], references: [id])
++  order       order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
++
++  @@map("feedback")
++  @@schema("customer")
++}
++
++model guest_session {
+   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+   guestId   String   @unique @map("guest_id") @db.VarChar(255)
+-  expiresAt DateTime @map("expires_at") @db.Timestamptz()
+-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
++  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
++  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ 
+   @@map("guest_sessions")
+   @@schema("customer")
+ }
++
++model otp_request {
++  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId   String?   @map("customer_id") @db.Uuid
++  phoneOrEmail String    @map("phone_or_email") @db.VarChar(255)
++  otpHash      String    @map("otp_hash")
++  attempts     Int       @default(0)
++  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
++  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
++  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
++  customer     customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
++
++  @@index([phoneOrEmail])
++  @@map("otp_requests")
++  @@schema("customer")
++}
++
++model order_item {
++  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  orderId       String  @map("order_id") @db.Uuid
++  productId     String  @map("product_id") @db.Uuid
++  productName   String  @map("product_name")
++  quantity      Int
++  unitPrice     Decimal @map("unit_price") @db.Decimal(10, 2)
++  addonsSummary Json?   @map("addons_summary")
++  lineTotal     Decimal @map("line_total") @db.Decimal(10, 2)
++  order         order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
++
++  @@map("order_items")
++  @@schema("customer")
++}
++
++model order_status_history {
++  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  orderId   String   @map("order_id") @db.Uuid
++  status    String   @db.VarChar(50)
++  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
++  changedBy String?  @map("changed_by") @db.VarChar(50)
++  order     order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
++
++  @@map("order_status_history")
++  @@schema("customer")
++}
++
++model order_tracking {
++  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  orderId    String   @map("order_id") @db.Uuid
++  latitude   Decimal  @db.Decimal(10, 7)
++  longitude  Decimal  @db.Decimal(10, 7)
++  recordedAt DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
++  order      order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
++
++  @@map("order_tracking")
++  @@schema("customer")
++}
++
++model order {
++  id                        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId                String                    @map("customer_id") @db.Uuid
++  vendorId                  String                    @map("vendor_id") @db.Uuid
++  riderId                   String?                   @map("rider_id") @db.Uuid
++  addressSnapshot           Json                      @map("address_snapshot")
++  deliveryPreference        String?                   @map("delivery_preference") @db.VarChar(50)
++  scheduledFor              DateTime?                 @map("scheduled_for") @db.Timestamptz(6)
++  status                    String                    @default("payment_successful") @db.VarChar(50)
++  subtotal                  Decimal                   @db.Decimal(10, 2)
++  addonCharges              Decimal                   @default(0) @map("addon_charges") @db.Decimal(10, 2)
++  deliveryFee               Decimal                   @default(0) @map("delivery_fee") @db.Decimal(10, 2)
++  totalAmount               Decimal                   @map("total_amount") @db.Decimal(10, 2)
++  paymentMethod             String?                   @map("payment_method") @db.VarChar(50)
++  paymentGatewayRef         String?                   @map("payment_gateway_ref")
++  ageVerifiedCheckbox       Boolean                   @default(false) @map("age_verified_checkbox")
++  isFlagged                 Boolean                   @default(false) @map("is_flagged")
++  isFlaggedAdmin            Boolean                   @default(false) @map("is_flagged_admin")
++  flagReason                String?                   @map("flag_reason")
++  orderReceivedWithinHours  Boolean?                  @map("order_received_within_hours")
++  responseDeadlineAt        DateTime?                 @map("response_deadline_at") @db.Timestamptz(6)
++  trackingStartedAt         DateTime?                 @map("tracking_started_at") @db.Timestamptz(6)
++  pickedUpAt                DateTime?                 @map("picked_up_at") @db.Timestamptz(6)
++  deliveredAt               DateTime?                 @map("delivered_at") @db.Timestamptz(6)
++  createdAt                 DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
++  updatedAt                 DateTime                  @map("updated_at") @db.Timestamptz(6)
++  analytics_events          analytics_event[]
++  feedback                  feedback?
++  order_items               order_item[]
++  order_status_history      order_status_history[]
++  order_tracking            order_tracking[]
++  customer                  customer                  @relation(fields: [customerId], references: [id])
++  rider                     rider?                    @relation(fields: [riderId], references: [id])
++  vendor                    vendor                    @relation(fields: [vendorId], references: [id])
++  support_requests          support_request[]
++  vendor_compliance_flags   vendor_compliance_flag[]
++  vendor_earnings           vendor_earning?
++  vendor_order_actions      vendor_order_action[]
++  deliveryFailureReason     String?                   @map("delivery_failure_reason") @db.VarChar(255)
++  payment_transactions      payment_transaction[]
++  rider_assignment_attempts rider_assignment_attempt[]
++
++  @@map("orders")
++  @@schema("customer")
++}
++
++model payment_transaction {
++  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  orderId        String   @map("order_id") @db.Uuid
++  gateway        String   @db.VarChar(100)
++  txnId          String?  @map("txn_id") @db.VarChar(255)
++  status         String   @db.VarChar(50)
++  amount         Decimal  @db.Decimal(10, 2)
++  webhookPayload Json?    @map("webhook_payload")
++  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
++  order          order    @relation(fields: [orderId], references: [id])
++
++  @@index([orderId])
++  @@map("payment_transactions")
++  @@schema("customer")
++}
++
++model support_request {
++  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
++  customerId        String?   @map("customer_id") @db.Uuid
++  orderId           String?   @map("order_id") @db.Uuid
++  optionLabel       String?   @map("option_label")
++  isEscalated       Boolean   @default(false) @map("is_escalated")
++  whatsappTicketId  String?   @map("whatsapp_ticket_id") @db.VarChar(255)
++  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
++  customer          customer? @relation(fields: [customerId], references: [id])
++  order             order?    @relation(fields: [orderId], references: [id])
++
++  @@map("support_requests")
++  @@schema("customer")
++}

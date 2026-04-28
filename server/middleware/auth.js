@@ -30,15 +30,27 @@ const firebaseAuth = async (req, res, next) => {
       return next();
     } 
 
-    // FALLBACK: For development, we'll allow any non-empty token as a valid user
+    // FALLBACK: For development, decode token if it looks like a JWT
     console.warn('[BACKEND] Running in MOCK AUTH fallback mode');
-    const mockUid = idToken.substring(0, 10);
-    const mockPhone = req.headers['x-mock-phone'] || `+1000${mockUid.replace(/[^0-9]/g, '').substring(0, 6)}`;
+    
+    let decoded = null;
+    try {
+      if (idToken.includes('.')) {
+        const payload = idToken.split('.')[1];
+        decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
+      }
+    } catch (e) {
+      console.warn('[AUTH] Failed to decode JWT payload in mock mode');
+    }
+
+    const uid = decoded?.user_id || decoded?.sub || idToken.substring(0, 10);
+    const phone = decoded?.phone_number || req.headers['x-mock-phone'] || `+1000${uid.replace(/[^0-9]/g, '').substring(0, 6)}`;
     
     req.user = {
-      uid: mockUid,
-      phoneNumber: mockPhone,
-      name: 'Mock User'
+      uid: uid,
+      phoneNumber: phone,
+      name: decoded?.name || 'Mock User',
+      email: decoded?.email
     };
     next();
 

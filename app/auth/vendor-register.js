@@ -185,7 +185,7 @@ export default function VendorRegisterScreen() {
                 disabled={loadingLocation}
               >
                 <Text style={[styles.locationButtonText, formData.location && styles.locationPinedText]}>
-                  {loadingLocation ? 'Getting Location...' : formData.location ? 'Location Pinned ✓' : 'Pin my location'}
+                  {loadingLocation ? 'Getting Location...' : formData.location ? `Pinned: ${formData.location.latitude.toFixed(4)}, ${formData.location.longitude.toFixed(4)}` : 'Pin my location'}
                 </Text>
               </TouchableOpacity>
             </View>

@@ -27,9 +27,20 @@ const firebaseAuthOptional = async (req, res, next) => {
       const decodedToken = await admin.auth().verifyIdToken(idToken);
       req.user = decodedToken;
     } else {
+      let decoded = null;
+      try {
+        if (idToken.includes('.')) {
+          const payload = idToken.split('.')[1];
+          decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
+        }
+      } catch (e) {}
+
+      const uid = decoded?.user_id || decoded?.sub || idToken.substring(0, 10);
       req.user = {
-        uid: idToken.substring(0, 10),
-        phoneNumber: 'unknown',
+        uid: uid,
+        phoneNumber: decoded?.phone_number || 'unknown',
+        email: decoded?.email,
+        name: decoded?.name
       };
     }
     next();

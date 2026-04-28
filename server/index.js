@@ -7,8 +7,8 @@ const admin = require('firebase-admin');
 
 const authRoutes = require('./routes/auth');
 const vendorRoutes = require('./routes/vendor');
-const riderRoutes = require('./routes/rider');
 const storageRoutes = require('./routes/storage');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const http = require('http');
@@ -96,8 +96,8 @@ const feedbackRoutes = require('./routes/feedback');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/vendor', vendorRoutes);
-app.use('/api/rider', riderRoutes);
 app.use('/api/storage', storageRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/browsing', browsingRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/customer', customerRoutes);

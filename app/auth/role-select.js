@@ -38,8 +38,6 @@ export default function RoleSelectScreen() {
     
     if (role === 'VENDOR') {
       router.push('/auth/vendor-register');
-    } else {
-      router.push('/auth/rider-register');
     }
   };
 
@@ -66,24 +64,6 @@ export default function RoleSelectScreen() {
             <View style={styles.textContainer}>
               <Text style={styles.cardTitle}>Register as Vendor</Text>
               <Text style={styles.cardDescription}>List your restaurant or store on our platform and grow your business.</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.card}
-          onPress={() => handleRoleSelection('RIDER')}
-        >
-          <View style={styles.cardContent}>
-            <View style={[styles.iconContainer, { backgroundColor: '#E3F2FD' }]}>
-              <Image 
-                source={{ uri: 'https://cdn-icons-png.flaticon.com/512/2830/2830305.png' }} // Delivery icon
-                style={[styles.icon, { tintColor: '#2196F3' }]}
-              />
-            </View>
-            <View style={styles.textContainer}>
-              <Text style={styles.cardTitle}>Register as Partner</Text>
-              <Text style={styles.cardDescription}>Start delivering with us and earn based on your own schedule.</Text>
             </View>
           </View>
         </TouchableOpacity>

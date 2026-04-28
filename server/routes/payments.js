@@ -48,14 +48,14 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
         address = await prisma.address.findFirst({ where: { customerId } }).catch(() => null);
     }
     
-    cart.deliveryAddress = address ? `${address.addressLine}, ${address.landmark || ''}` : 'Default Delivery Point';
+    cart.deliveryAddress = address ? `${address.addressLine1}, ${address.landmark || ''}` : 'Default Delivery Point';
 
     // 3. Create the order via OrderService
     console.log('[PAYMENT] Creating order from cart:', cart.id);
     const order = await OrderService.createOrderFromCart(
       cart, 
       customerId, 
-      req.body.customerName || 'Customer', 
+      req.customer?.fullName || req.body.customerName || 'Customer', 
       deliveryPreference
     ).catch(err => {
         console.error('[PAYMENT] OrderService.createOrderFromCart CRASH:', err.message);

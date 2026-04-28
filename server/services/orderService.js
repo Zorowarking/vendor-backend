@@ -1,6 +1,6 @@
 const { prisma } = require('../lib/prisma');
 const { orderSlaQueue } = require('../lib/bullmq');
-const { emitOrderStatusUpdate } = require('../lib/socket');
+const { emitOrderStatusUpdate, emitIncomingOrder } = require('../lib/socket');
 const fcm = require('../lib/fcm');
 
 /**
@@ -16,15 +16,7 @@ class OrderService {
       throw new Error('CART_INVALID: Missing vendor identification');
     }
 
-    if (!cart.total || isNaN(cart.total)) {
-      console.warn('[ORDER-SERVICE] Cart total is missing or NaN. Recalculating.');
-      // Safe fallback if calculation failed earlier
-    }
-
-    // 1. Snapshot the Address & Check Vendor Availability
-    console.log(`[ORDER-SERVICE] Creating Order for Customer: ${customerId} (${customerName}) from Cart: ${cart.id}`);
-    
-    // VENDOR GATEKEEPER
+    // 1. Check Vendor Availability
     const vendor = await prisma.vendor.findUnique({ where: { id: cart.vendorId } });
     if (!vendor || vendor.onlineStatus !== 'online') {
       throw new Error('VENDOR_OFFLINE: Vendor is currently not accepting orders.');
@@ -36,11 +28,12 @@ class OrderService {
       throw new Error(`VENDOR_CLOSED: Vendor is currently closed. Reopening ${nextOpen || 'soon'}.`);
     }
 
-    const activeAddress = await prisma.address.findUnique({
-      where: { customerId: customerId }
+    const activeAddress = await prisma.address.findFirst({
+      where: { customerId: customerId },
+      orderBy: { createdAt: 'desc' }
     });
 
-    const addressSnapshot = activeAddress || { addressLine1: cart.deliveryAddress || 'Default' };
+    const addressSnapshot = activeAddress || { addressLine1: 'Default Address' };
 
     const order = await prisma.order.create({
       data: {
@@ -49,11 +42,11 @@ class OrderService {
         addressSnapshot: addressSnapshot,
         subtotal: Number(cart.subtotal || 0),
         totalAmount: Number(cart.total || 0),
-        status: 'Awaiting Vendor Acceptance',
+        status: 'pending_vendor',
         deliveryPreference: deliveryPreference || 'standard',
         statusHistory: {
           create: {
-            status: 'Awaiting Vendor Acceptance',
+            status: 'pending_vendor',
             changedBy: 'CUSTOMER'
           }
         },
@@ -66,24 +59,39 @@ class OrderService {
             lineTotal: Number(item.total || 0)
           }))
         }
+      },
+      include: {
+        items: true
       }
     });
-    console.log(`[ORDER-SERVICE] SUCCESS: Order persisted with ID: ${order.id}`);
 
     // 2. Clear the cart
-    console.log(`[ORDER-SERVICE] Deleting checkout cart: ${cart.id}`);
     await prisma.cart.delete({ where: { id: cart.id } });
 
     // 3. Fire Notifications
-    // To Vendor
-    emitOrderStatusUpdate(order.id, 'Awaiting Vendor Acceptance', 'CUSTOMER');
+    emitOrderStatusUpdate(order.id, 'pending_vendor', 'CUSTOMER');
+    
+    const formattedOrder = {
+      ...order,
+      customerName: customerName,
+      total: Number(order.totalAmount),
+      items: order.items.map(i => ({ qty: i.quantity, name: i.productName }))
+    };
+    emitIncomingOrder(cart.vendorId, formattedOrder);
+    
+    // Update Floating Bubble
+    const activeOrdersCount = await prisma.order.count({
+      where: { vendorId: cart.vendorId, status: { in: ['preparing', 'ready_for_pickup', 'accepted', 'pending_vendor'] } }
+    });
+    fcm.updateFloatingBubble(cart.vendorId, true, activeOrdersCount);
+
     await fcm.sendToVendor(cart.vendorId, {
       title: 'New Order Received',
       body: `Order #${order.id.substring(0,8)} is awaiting your acceptance.`,
       orderId: order.id
     });
 
-    // 4. Start BullMQ SLA Timer (5 minutes)
+    // 4. Start BullMQ SLA Timer
     await orderSlaQueue.add('vendorSlaTimeout', 
       { orderId: order.id, type: 'vendor_accept' }, 
       { delay: 5 * 60 * 1000 }
@@ -114,7 +122,6 @@ class OrderService {
       }
     });
 
-    // Notify Customer via WS and FCM
     emitOrderStatusUpdate(orderId, newStatus, actorRole);
     
     if (order.customer?.profile?.firebaseUid) {
@@ -125,7 +132,7 @@ class OrderService {
       });
     }
 
-    // Analytics: Fire 'Order Completed' event
+    // Analytics
     if (newStatus === 'Delivered') {
       await prisma.analyticsEvent.create({
         data: {

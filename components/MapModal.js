@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator, Platform } from 'react-native';
 import Colors from '../constants/Colors';
 import Constants from 'expo-constants';
+import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,9 +21,11 @@ try {
   // Silent catch for Expo Go
 }
 
+import { WebView } from 'react-native-webview';
+
 export default function MapModal({ visible, onClose, onConfirm, initialLocation }) {
   const isNative = Constants.appOwnership !== 'expo';
-  const canShowMap = isNative && MapView;
+  const canShowNativeMap = isNative && MapView;
 
   const [region, setRegion] = useState({
     latitude: initialLocation?.latitude || 28.6139,
@@ -34,6 +38,111 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
     latitude: initialLocation?.latitude || 28.6139,
     longitude: initialLocation?.longitude || 77.2090,
   });
+
+  const [loadingLocation, setLoadingLocation] = useState(false);
+
+  // HTML for the Leaflet Map Fallback
+  const mapHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          body { margin: 0; padding: 0; }
+          #map { height: 100vh; width: 100vw; }
+          .leaflet-control-attribution { display: none; }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          var map = L.map('map', { zoomControl: false }).setView([${marker.latitude}, ${marker.longitude}], 15);
+          
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+          }).addTo(map);
+
+          var marker = L.marker([${marker.latitude}, ${marker.longitude}], {
+            draggable: true
+          }).addTo(map);
+
+          marker.on('dragend', function(event) {
+            var position = marker.getLatLng();
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              latitude: position.lat,
+              longitude: position.lng
+            }));
+          });
+
+          map.on('click', function(e) {
+            marker.setLatLng(e.latlng);
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              latitude: e.latlng.lat,
+              longitude: e.latlng.lng
+            }));
+          });
+
+          document.addEventListener('message', function(e) {
+            var data = JSON.parse(e.data);
+            if (data.latitude && data.longitude) {
+              map.setView([data.latitude, data.longitude], 15);
+              marker.setLatLng([data.latitude, data.longitude]);
+            }
+          });
+        </script>
+      </body>
+    </html>
+  `;
+
+  const onWebMessage = (event) => {
+    try {
+      const coords = JSON.parse(event.nativeEvent.data);
+      setMarker(coords);
+    } catch (e) {
+      console.error('Web Map Message Error:', e);
+    }
+  };
+
+  const fetchCurrentLocation = async () => {
+    setLoadingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission to access location was denied');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      
+      const newCoords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+
+      setMarker(newCoords);
+      setRegion({
+        ...newCoords,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+
+      // Update WebView if it's visible
+      if (!canShowNativeMap) {
+        // We'd need a ref to the webview to send messages, but simple state updates 
+        // to the HTML string (by including marker in it) will cause a reload.
+        // For smoother experience, we'll just let the state update the HTML.
+      }
+    } catch (error) {
+      console.error('Error fetching location:', error);
+      alert('Could not fetch current location');
+    } finally {
+      setLoadingLocation(false);
+    }
+  };
 
   const handleRegionChange = (newRegion) => {
     setRegion(newRegion);
@@ -48,7 +157,7 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={styles.container}>
-        {canShowMap ? (
+        {canShowNativeMap ? (
           <MapView
             provider={PROVIDER_GOOGLE}
             style={styles.map}
@@ -63,24 +172,30 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
             />
           </MapView>
         ) : (
-          <View style={styles.fallbackContainer}>
-            <View style={styles.fallbackContent}>
-              <Text style={styles.fallbackIcon}>📍</Text>
-              <Text style={styles.fallbackTitle}>Interactive Map Unavailable</Text>
-              <Text style={styles.fallbackSubtitle}>
-                The interactive map is only available in the real app build. 
-                Using your current GPS coordinates instead.
-              </Text>
-              <View style={styles.coordBox}>
-                <Text style={styles.coordLabel}>Latitude: {marker.latitude.toFixed(4)}</Text>
-                <Text style={styles.coordLabel}>Longitude: {marker.longitude.toFixed(4)}</Text>
-              </View>
-            </View>
-          </View>
+          <WebView
+            style={styles.map}
+            originWhitelist={['*']}
+            source={{ html: mapHtml }}
+            onMessage={onWebMessage}
+            scrollEnabled={false}
+          />
         )}
 
         <View style={styles.overlay}>
-          {canShowMap && <Text style={styles.instruction}>Drag the pin to your exact location</Text>}
+          <View style={styles.headerRow}>
+            <Text style={styles.instruction}>Drag the pin to your exact location</Text>
+            <TouchableOpacity 
+              style={styles.currentLocBtn} 
+              onPress={fetchCurrentLocation}
+              disabled={loadingLocation}
+            >
+              {loadingLocation ? (
+                <ActivityIndicator size="small" color={Colors.primary} />
+              ) : (
+                <Ionicons name="locate" size={24} color={Colors.primary} />
+              )}
+            </TouchableOpacity>
+          </View>
           
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
@@ -172,11 +287,29 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   instruction: {
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.black,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: '600',
+    flex: 1,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 20,
+    gap: 12,
+  },
+  currentLocBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f1f3f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -190,7 +323,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   cancelText: {
     color: Colors.subText,
@@ -202,7 +335,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 12,
   },
   confirmText: {
     color: 'white',

@@ -106,6 +106,9 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
            <TouchableOpacity style={styles.closeModalBtn} onPress={() => onDismiss(order.id)}>
              <Ionicons name="close" size={24} color={Colors.subText} />
            </TouchableOpacity>
+           <TouchableOpacity style={styles.minimizeModalBtn} onPress={() => onDismiss(order.id)}>
+             <Ionicons name="contract" size={24} color={Colors.primary} />
+           </TouchableOpacity>
            <Text style={styles.modalTitle}>New Incoming Order!</Text>
           
           {isOutsideHours && (
@@ -128,7 +131,9 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
           <Text style={styles.itemsSummary}>
             {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}
           </Text>
-          <Text style={styles.totalAmount}>${order.total?.toFixed(2)}</Text>
+          <Text style={styles.totalAmount}>
+            ${typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
+          </Text>
 
           {isBreached ? (
             <View>
@@ -307,7 +312,9 @@ function HistoryOrderCard({ order, router }) {
         <Text style={[styles.statusBadge, order.status === 'cancelled_by_vendor' && styles.statusBadgeDanger]}>{order.status}</Text>
       </View>
       <Text style={styles.customerName}>{order.customerName}</Text>
-      <Text style={styles.itemsSummary}>{order.total?.toFixed(2)} USD</Text>
+      <Text style={styles.itemsSummary}>
+        {typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)} USD
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -315,7 +322,7 @@ function HistoryOrderCard({ order, router }) {
 export default function VendorOrdersDashboard() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { isOnline, incomingOrders, activeOrders, orderHistory, addIncomingOrder, removeIncomingOrder, addActiveOrder, updateOrder } = useVendorStore();
+  const { onlineStatus, incomingOrders, activeOrders, orderHistory, addIncomingOrder, removeIncomingOrder, addActiveOrder, updateOrder } = useVendorStore();
   const [activeTab, setActiveTab] = useState('ACTIVE'); // 'ACTIVE' or 'HISTORY'
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -331,20 +338,33 @@ export default function VendorOrdersDashboard() {
     try {
       const data = await vendorApi.getProfile();
       setProfile(data);
+      fetchOrders(); // Fetch orders after profile
     } catch (e) {
       console.error('Failed to fetch profile in dashboard');
     }
   };
 
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      const data = await vendorApi.getOrders();
+      useVendorStore.getState().setOrders(data.active, data.history);
+    } catch (e) {
+      console.error('Failed to fetch orders:', e.response?.data?.details || e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   useEffect(() => {
-    if (user?.uid) {
-      socketService.connect(user.uid);
+    if (user?.uid && profile?.id) {
+      socketService.connect(profile.id);
       
       const handleNewOrder = async (orderData) => {
         // Step 4: Ignore new orders while offline
-        const currentIsOnline = useVendorStore.getState().isOnline;
-        if (!currentIsOnline) {
+        const currentStatus = useVendorStore.getState().onlineStatus;
+        if (currentStatus === 'offline') {
           console.log('Vendor is offline. Ignoring incoming order.');
           return;
         }
@@ -375,11 +395,13 @@ export default function VendorOrdersDashboard() {
       return () => {
         socketService.offNewOrder(handleNewOrder);
         socketService.offOrderUpdate(handleOrderUpdate);
+        // Do not disconnect here if we want to stay connected between tab switches 
+        // but here it's fine as it's the main screen
         socketService.disconnect();
         if (soundRef.current) soundRef.current.unloadAsync();
       };
     }
-  }, [user]);
+  }, [user, profile?.id]);
 
 
 
@@ -428,8 +450,8 @@ export default function VendorOrdersDashboard() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate data fetch
-    setTimeout(() => setRefreshing(false), 2000);
+    await Promise.all([fetchProfile(), fetchOrders()]);
+    setRefreshing(false);
   };
 
 
@@ -437,7 +459,7 @@ export default function VendorOrdersDashboard() {
 
   return (
     <View style={styles.container}>
-      {!isOnline && (
+      {onlineStatus !== 'online' && (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineText}>You are offline — no new orders will be received.</Text>
         </View>
@@ -579,6 +601,7 @@ const styles = StyleSheet.create({
   modalBreached: { borderColor: Colors.error, borderWidth: 2 },
   modalTitle: { fontSize: 24, fontWeight: 'bold', color: Colors.black, marginBottom: 16, textAlign: 'center' },
   closeModalBtn: { position: 'absolute', right: 16, top: 16, zIndex: 10, padding: 4 },
+  minimizeModalBtn: { position: 'absolute', left: 16, top: 16, zIndex: 10, padding: 4 },
   totalAmount: { fontSize: 22, fontWeight: 'bold', color: Colors.success, marginBottom: 16 },
   actionRowModal: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   rejectButtonModal: { flex: 1, paddingVertical: 14, borderRadius: 8, borderWidth: 1, borderColor: Colors.error, marginRight: 8, alignItems: 'center' },

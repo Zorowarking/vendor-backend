@@ -96,7 +96,9 @@ export default function OrderDetailScreen() {
         <Text style={styles.sectionTitle}>Summary</Text>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Total Amount</Text>
-          <Text style={styles.summaryTotal}>${order.total?.toFixed(2)}</Text>
+          <Text style={styles.summaryTotal}>
+            ${typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
+          </Text>
         </View>
       </View>
 

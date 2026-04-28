@@ -1,335 +1,421 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Linking, ScrollView, Alert } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  Image, 
+  TouchableOpacity, 
+  Linking, 
+  ScrollView, 
+  SafeAreaView,
+  StatusBar
+} from 'react-native';
 
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '../../constants/Colors';
 
-
 import { useAuthStore } from '../../store/authStore';
-import { notificationService } from '../../services/notificationService';
-// import messaging from '@react-native-firebase/messaging'; // Requires dev build
+import { socketService } from '../../services/socketService';
+import { vendorApi } from '../../services/vendorApi';
 
 export default function KYCStatus() {
   const router = useRouter();
-  const { profileStatus, role, setProfileStatus, logout, suspensionReason } = useAuthStore();
-
+  const { profileStatus, setProfileStatus, logout, user } = useAuthStore();
   const [kycStatus, setKycStatus] = useState(profileStatus?.toUpperCase() || 'UNDER_REVIEW');
 
   useEffect(() => {
-    // If approved, ensure notifications are ready
-    if (kycStatus === 'APPROVED') {
-      notificationService.requestPermissionAndToken();
+    if (kycStatus === 'APPROVED' || kycStatus === 'READY') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Give the user a moment to see the success state before redirecting
+      const timer = setTimeout(() => {
+        router.replace('/(vendor)');
+      }, 2000);
+      return () => clearTimeout(timer);
     }
   }, [kycStatus]);
 
   useEffect(() => {
-    // Basic FCM Listener setup (Mocked for Expo Go)
-    console.log('FCM: Initializing status listeners...');
-    
-    // In real implementation:
-    /*
-    const unsubscribe = messaging().onMessage(async remoteMessage => {
-      if (remoteMessage.data?.type === 'KYC_STATUS_UPDATE') {
-        const newStatus = remoteMessage.data.status;
-        setKycStatus(newStatus);
-        setProfileStatus(newStatus);
-      }
-    });
-    return unsubscribe;
-    */
-  }, []);
+    // Real-time status updates via Socket.IO
+    if (user?.uid) {
+      socketService.connect(user.uid);
+      
+      const handleStatusUpdate = ({ status }) => {
+        console.log(`[SOCKET] Received account status update: ${status}`);
+        const upperStatus = status.toUpperCase();
+        setKycStatus(upperStatus);
+        setProfileStatus(upperStatus);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      };
 
-  const renderStatus = () => {
+      socketService.onAccountStatusUpdate(handleStatusUpdate);
+      return () => socketService.offAccountStatusUpdate(handleStatusUpdate);
+    }
+  }, [user?.uid, setProfileStatus]);
+
+  useEffect(() => {
+    // Polling fallback every 10 seconds
+    const checkStatus = async () => {
+      try {
+        const vendor = await vendorApi.getProfile();
+        if (vendor && vendor.accountStatus) {
+          const remoteStatus = vendor.accountStatus.toUpperCase();
+          if (remoteStatus !== kycStatus) {
+            console.log(`[POLL] Status mismatch: ${kycStatus} -> ${remoteStatus}`);
+            setKycStatus(remoteStatus);
+            setProfileStatus(remoteStatus);
+          }
+        }
+      } catch (err) {
+        console.error('[POLL] Failed to check status:', err);
+      }
+    };
+
+    const interval = setInterval(checkStatus, 2000);
+    return () => clearInterval(interval);
+  }, [kycStatus, setProfileStatus]);
+
+  const renderStatusIcon = () => {
     switch (kycStatus) {
       case 'APPROVED':
-        return (
-          <View style={styles.content}>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/190/190411.png' }} 
-              style={styles.statusIcon} 
-            />
-            <Text style={[styles.statusTitle, { color: Colors.success }]}>Account Activated!</Text>
-            <Text style={styles.statusDescription}>
-              Your KYC has been approved. You can now start using the app as a {role === 'VENDOR' ? 'Vendor' : 'Delivery Partner'}.
-            </Text>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: Colors.success }]}
-              onPress={() => router.replace(role === 'VENDOR' ? '/(vendor)' : '/(rider)')}
-            >
-              <Text style={styles.actionButtonText}>Proceed to Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        );
+      case 'ACTIVE':
+      case 'READY':
+        return <Ionicons name="checkmark-circle" size={100} color={Colors.success} />;
       case 'REJECTED':
-        return (
-          <View style={styles.content}>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/190/190406.png' }} 
-              style={styles.statusIcon} 
-            />
-            <Text style={[styles.statusTitle, { color: Colors.error }]}>KYC Rejected</Text>
-            <Text style={styles.statusDescription}>
-              Reason: {suspensionReason || 'Your document was not clear. Please resubmit clear documents.'}
-            </Text>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: Colors.error }]}
-              onPress={() => { setProfileStatus('PENDING'); router.replace('/kyc'); }}
-            >
-              <Text style={styles.actionButtonText}>Resubmit Documents</Text>
-            </TouchableOpacity>
-          </View>
-        );
-
-    case 'KYC_SUBMITTED':
-      case 'UNDER_REVIEW':
+      case 'DISABLED':
+        return <Ionicons name="close-circle" size={100} color={Colors.error} />;
+      case 'SUSPENDED':
+        return <Ionicons name="alert-circle" size={100} color={Colors.warning} />;
       default:
-        return (
-          <View style={styles.content}>
-            <Image 
-              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1043/1043424.png' }} 
-              style={styles.statusIcon} 
-            />
-               <Text style={styles.statusTitle}>Verification in Progress</Text>
-            <Text style={styles.statusDescription}>
-              Your documents are under review. This usually takes 24-48 hours. We'll notify you once your account is activated.
-              {profileStatus === 'mock_approved' && ' (Auto-approved for Developer testing)'}
-            </Text>
-            
-            {/* DEV MOCK BUTTON */}
-            <TouchableOpacity 
-              style={styles.devApproveButton}
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setKycStatus('APPROVED');
-                setProfileStatus('APPROVED'); // Standardized for UI
-              }}
-            >
-              <Text style={styles.devApproveText}>[DEV MOCK] Approve KYC</Text>
-            </TouchableOpacity>
+        return <Ionicons name="time" size={100} color={Colors.primary} />;
+    }
+  };
 
-            <TouchableOpacity 
-              style={styles.supportButton}
+  const getStatusTitle = () => {
+    switch (kycStatus) {
+      case 'APPROVED':
+      case 'ACTIVE':
+      case 'READY': return 'Account Activated';
+      case 'REJECTED': return 'Verification Failed';
+      case 'SUSPENDED': return 'Account Suspended';
+      case 'DISABLED': return 'Account Disabled';
+      default: return 'Verification in Progress';
+    }
+  };
 
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                Linking.openURL('mailto:support@app.com');
-              }}
-            >
-              <Text style={styles.supportButtonText}>Contact Support</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.logoutButton} 
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                logout();
-              }}
-            >
-              <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-              <Text style={styles.logoutButtonText}>Logout</Text>
-            </TouchableOpacity>
-
-
-            {/* DEV ONLY MOCK TOOLS */}
-            <View style={styles.devTools}>
-              <Text style={styles.devToolsTitle}>[DEV] Security Testing</Text>
-              <View style={styles.devToolsGrid}>
-                <TouchableOpacity 
-                  style={[styles.devBtn, { borderColor: Colors.warning }]}
-                  onPress={() => {
-                    const { setProfileStatus } = useAuthStore.getState();
-                    setProfileStatus('SUSPENDED', 'Payment irregularities and repeated policy violations.');
-                    Alert.alert('Mock Success', 'Vendor status set to SUSPENDED. Enforcement initiated.');
-                  }}
-                >
-                  <Ionicons name="alert-circle-outline" size={16} color={Colors.warning} />
-                  <Text style={[styles.devBtnText, { color: Colors.warning }]}>Mock Suspend</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.devBtn, { borderColor: Colors.error }]}
-                  onPress={() => {
-                    const { setProfileStatus } = useAuthStore.getState();
-                    setProfileStatus('DISABLED');
-                    Alert.alert('Mock Success', 'Vendor status set to DISABLED. Compliance termination active.');
-                  }}
-                >
-                  <Ionicons name="lock-closed-outline" size={16} color={Colors.error} />
-                  <Text style={[styles.devBtnText, { color: Colors.error }]}>Mock Disable</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <Text style={styles.version}>v1.2.5 (Security Phase)</Text>
-
-          </View>
-        );
+  const getStatusDescription = () => {
+    switch (kycStatus) {
+      case 'APPROVED':
+      case 'ACTIVE':
+      case 'READY': return 'Congratulations! Your account has been approved. You can now start managing your store and receiving orders.';
+      case 'REJECTED': return 'Unfortunately, your documents could not be verified. Please review the requirements and resubmit.';
+      case 'SUSPENDED': return 'Your account is temporarily suspended. Please contact support.';
+      case 'DISABLED': return 'Your account is disabled. Access is restricted.';
+      default: return 'Our team is currently reviewing your documents. This process usually takes 24-48 business hours.';
     }
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Account Status</Text>
-        </View>
-
-        {renderStatus()}
-
-        <View style={styles.stepContainer}>
-          <View style={styles.step}>
-            <View style={[styles.stepDot, styles.stepCompleted]} />
-            <Text style={styles.stepText}>Registration Complete</Text>
+          <View>
+            <Text style={styles.headerSubtitle}>Vetting Phase</Text>
+            <Text style={styles.headerTitle}>Identity Verification</Text>
           </View>
-          <View style={styles.stepLine} />
-          <View style={styles.step}>
-            <View style={[styles.stepDot, styles.stepCompleted]} />
-            <Text style={styles.stepText}>KYC Documents Submitted</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.step}>
-            <View style={[styles.stepDot, kycStatus === 'APPROVED' ? styles.stepCompleted : styles.stepActive]} />
-            <Text style={[styles.stepText, kycStatus === 'APPROVED' ? null : styles.stepTextActive]}>Verification Review</Text>
+          <View style={styles.statusBadge}>
+            <View style={[styles.statusDot, { backgroundColor: kycStatus === 'APPROVED' ? Colors.success : Colors.warning }]} />
+            <Text style={styles.statusBadgeText}>{kycStatus.replace('_', ' ')}</Text>
           </View>
         </View>
+
+        <LinearGradient
+          colors={['#FFFFFF', '#F8F9FA']}
+          style={styles.card}
+        >
+          <View style={styles.iconContainer}>
+            <LinearGradient
+              colors={[Colors.primary + '10', Colors.primary + '05']}
+              style={styles.iconBg}
+            >
+              {renderStatusIcon()}
+            </LinearGradient>
+          </View>
+          
+          <Text style={styles.statusTitle}>{getStatusTitle()}</Text>
+          <Text style={styles.statusDescription}>{getStatusDescription()}</Text>
+
+          {kycStatus === 'REJECTED' && (
+            <TouchableOpacity 
+              style={styles.primaryButton}
+              onPress={() => {
+                setProfileStatus('PENDING');
+                router.replace('/auth/vendor-register');
+              }}
+            >
+              <LinearGradient
+                colors={[Colors.primary, Colors.secondary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.gradientButton}
+              >
+                <Text style={styles.primaryButtonText}>Resubmit Documents</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {(kycStatus === 'APPROVED' || kycStatus === 'READY') && (
+            <TouchableOpacity 
+              style={styles.primaryButton}
+              onPress={() => router.replace('/(vendor)')}
+            >
+              <LinearGradient
+                colors={[Colors.success, '#388E3C']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.gradientButton}
+              >
+                <Text style={styles.primaryButtonText}>Go to Dashboard</Text>
+                <Ionicons name="arrow-forward" size={20} color={Colors.white} style={{ marginLeft: 8 }} />
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>Verification Timeline</Text>
+          
+          <View style={styles.step}>
+            <View style={[styles.stepNumber, styles.stepCompleted]}>
+              <Ionicons name="checkmark" size={16} color={Colors.white} />
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepLabel}>Documents Submitted</Text>
+              <Text style={styles.stepSubtext}>We have received your KYC documents safely.</Text>
+            </View>
+          </View>
+
+          <View style={styles.step}>
+            <View style={[styles.stepNumber, (kycStatus === 'APPROVED' || kycStatus === 'READY') ? styles.stepCompleted : styles.stepActive]}>
+              {(kycStatus === 'APPROVED' || kycStatus === 'READY') ? (
+                <Ionicons name="checkmark" size={16} color={Colors.white} />
+              ) : (
+                <Text style={styles.stepNumberText}>2</Text>
+              )}
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepLabel}>Manual Review</Text>
+              <Text style={styles.stepSubtext}>Our compliance team is verifying your details.</Text>
+            </View>
+          </View>
+
+          <View style={styles.step}>
+            <View style={[styles.stepNumber, (kycStatus === 'APPROVED' || kycStatus === 'READY') ? styles.stepActive : styles.stepInactive]}>
+              <Text style={styles.stepNumberText}>3</Text>
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepLabel}>Store Activation</Text>
+              <Text style={styles.stepSubtext}>Start adding products and receiving orders.</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.footer}>
+          <TouchableOpacity 
+            style={styles.supportLink}
+            onPress={() => Linking.openURL('mailto:support@zorowarking.com')}
+          >
+            <Ionicons name="help-circle-outline" size={20} color={Colors.primary} />
+            <Text style={styles.supportLinkText}>Need help? Contact Support</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+            <Text style={styles.logoutBtnText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
+
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#F8F9FA',
   },
   scrollContainer: {
     padding: 24,
-    paddingTop: 60,
-    alignItems: 'center',
-    flexGrow: 1,
+    paddingTop: 20,
   },
   header: {
-    marginBottom: 40,
-    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 32,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.black,
-    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    letterSpacing: -0.5,
   },
-  content: {
+  headerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 2,
+  },
+  statusBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 40,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E9ECEF',
   },
-  statusIcon: {
-    width: 120,
-    height: 120,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#495057',
+    textTransform: 'uppercase',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 5,
+    marginBottom: 32,
+  },
+  iconContainer: {
     marginBottom: 24,
+  },
+  iconBg: {
+    padding: 24,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.black,
+    fontWeight: '800',
+    color: '#1A1A1A',
     marginBottom: 12,
     textAlign: 'center',
   },
   statusDescription: {
-    fontSize: 16,
-    color: Colors.subText,
+    fontSize: 15,
+    color: '#6C757D',
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 22,
     marginBottom: 32,
-    paddingHorizontal: 20,
   },
-  actionButton: {
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 30,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  actionButtonText: {
-    color: Colors.white,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  supportButton: {
-    marginTop: 10,
-    padding: 10,
-  },
-  supportButtonText: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  logoutButton: {
-    marginTop: 20,
-    padding: 10,
-  },
-  logoutButtonText: {
-    color: Colors.error,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  stepContainer: {
+  primaryButton: {
     width: '100%',
-    paddingHorizontal: 40,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  gradientButton: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoSection: {
     marginBottom: 40,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 24,
   },
   step: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 24,
   },
-  stepDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.border,
+  stepNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 16,
+    marginTop: 2,
   },
   stepCompleted: {
     backgroundColor: Colors.success,
   },
   stepActive: {
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.primary,
   },
-  stepLine: {
-    width: 2,
-    height: 30,
-    backgroundColor: Colors.border,
-    marginLeft: 5,
+  stepInactive: {
+    backgroundColor: '#E9ECEF',
+  },
+  stepNumberText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
-  stepText: {
+  stepSubtext: {
     fontSize: 14,
-    color: Colors.subText,
+    color: '#6C757D',
   },
-  stepTextActive: {
-    color: Colors.black,
-    fontWeight: 'bold',
+  footer: {
+    alignItems: 'center',
+    paddingBottom: 40,
   },
-  devApproveButton: {
-    backgroundColor: Colors.info,
+  supportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  supportLinkText: {
+    fontSize: 15,
+    color: Colors.primary,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  logoutBtn: {
     padding: 12,
-    borderRadius: 8,
-    marginTop: 20,
-    marginBottom: 10,
-    width: '100%',
-    alignItems: 'center'
   },
-  devApproveText: {
-    color: Colors.white,
-    fontWeight: 'bold',
-    fontSize: 16
+  logoutBtnText: {
+    fontSize: 14,
+    color: '#ADB5BD',
+    fontWeight: '600',
   }
 });
