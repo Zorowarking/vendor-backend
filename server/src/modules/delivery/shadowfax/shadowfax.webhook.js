@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma } = require('../../../../lib/prisma');
 const validator = require('./shadowfax.validator');
 const mapper = require('./shadowfax.mapper');
 const logger = require('../../../../lib/logger');
@@ -126,3 +125,4 @@ class ShadowfaxWebhookHandler {
 }
 
 module.exports = new ShadowfaxWebhookHandler();
+
