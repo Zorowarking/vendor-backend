@@ -1,6 +1,6 @@
 const shadowfaxService = require('./shadowfax/shadowfax.service');
 const mapper = require('./shadowfax/shadowfax.mapper');
-const env = require('../../../config/env');
+const env = require('../../config/env');
 const OrderService = require('../../../services/orderService');
 const logger = require('../../../lib/logger');
 
@@ -201,3 +201,4 @@ class DeliveryService {
 }
 
 module.exports = new DeliveryService();
+
