@@ -9,7 +9,7 @@ COPY prisma/ ./prisma/
 COPY package*.json ./
 
 # Install dotenv in root so prisma.config.js can load it
-RUN npm install dotenv @prisma/config
+RUN npm install dotenv @prisma/config --legacy-peer-deps
 
 # Copy server package files and install
 COPY server/package*.json ./server/
