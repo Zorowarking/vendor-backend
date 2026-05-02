@@ -15,8 +15,8 @@ const config = {
 const activeToken = config.NODE_ENV === 'production' ? config.SFX_PROD_TOKEN : config.SFX_STAGING_TOKEN;
 
 if (!config.SFX_STORE_CODE || !activeToken) {
-  console.error('[CONFIG] FATAL: Missing Shadowfax credentials. Check SFX_STORE_CODE and Token.');
-  process.exit(1);
+  console.warn('[CONFIG] WARNING: Missing Shadowfax credentials (SFX_STORE_CODE or Token). Delivery features will fail until these are configured.');
+  config.SFX_MISSING = true;
 }
 
 module.exports = config;
