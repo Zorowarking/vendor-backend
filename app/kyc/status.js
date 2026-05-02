@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import apiClient from '../../services/api';
 import { 
   View, 
   Text, 
@@ -27,7 +28,7 @@ export default function KYCStatus() {
   const [kycStatus, setKycStatus] = useState(profileStatus?.toUpperCase() || 'UNDER_REVIEW');
 
   useEffect(() => {
-    if (kycStatus === 'APPROVED' || kycStatus === 'READY') {
+    if (kycStatus === 'APPROVED' || kycStatus === 'READY' || kycStatus === 'ACTIVE') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Give the user a moment to see the success state before redirecting
       const timer = setTimeout(() => {
@@ -59,21 +60,26 @@ export default function KYCStatus() {
     // Polling fallback every 10 seconds
     const checkStatus = async () => {
       try {
-        const vendor = await vendorApi.getProfile();
-        if (vendor && vendor.accountStatus) {
-          const remoteStatus = vendor.accountStatus.toUpperCase();
+        // Add timestamp to bust any potential caches
+        const vendor = await apiClient.get(`/api/vendor/profile?t=${Date.now()}`).then(res => res.data.vendor);
+        if (vendor && vendor.kycStatus) {
+          const remoteStatus = vendor.kycStatus.toUpperCase();
+          console.log(`[KYC-POLL] Current: ${kycStatus}, Remote: ${remoteStatus}`);
           if (remoteStatus !== kycStatus) {
-            console.log(`[POLL] Status mismatch: ${kycStatus} -> ${remoteStatus}`);
+            console.log(`[KYC-POLL] Status CHANGE detected: ${kycStatus} -> ${remoteStatus}`);
             setKycStatus(remoteStatus);
             setProfileStatus(remoteStatus);
           }
+        } else {
+          console.warn('[KYC-POLL] Vendor data or kycStatus missing in response', vendor);
         }
       } catch (err) {
-        console.error('[POLL] Failed to check status:', err);
+        console.error('[KYC-POLL] Network/Server Error:', err.message);
       }
     };
 
-    const interval = setInterval(checkStatus, 2000);
+    const interval = setInterval(checkStatus, 5000);
+    checkStatus(); // Run immediately on mount
     return () => clearInterval(interval);
   }, [kycStatus, setProfileStatus]);
 
@@ -149,26 +155,29 @@ export default function KYCStatus() {
           <Text style={styles.statusTitle}>{getStatusTitle()}</Text>
           <Text style={styles.statusDescription}>{getStatusDescription()}</Text>
 
-          {kycStatus === 'REJECTED' && (
+          {(kycStatus === 'REJECTED' || kycStatus === 'UNDER_REVIEW') && (
             <TouchableOpacity 
-              style={styles.primaryButton}
+              style={[styles.primaryButton, { marginTop: 16 }]}
               onPress={() => {
-                setProfileStatus('PENDING');
-                router.replace('/auth/vendor-register');
+                router.push('/kyc');
               }}
             >
-              <LinearGradient
-                colors={[Colors.primary, Colors.secondary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.gradientButton}
-              >
-                <Text style={styles.primaryButtonText}>Resubmit Documents</Text>
-              </LinearGradient>
+              <View style={[styles.gradientButton, { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.primary }]}>
+                <Ionicons name="create-outline" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
+                <Text style={[styles.primaryButtonText, { color: Colors.primary }]}>Edit Documents</Text>
+              </View>
             </TouchableOpacity>
           )}
 
-          {(kycStatus === 'APPROVED' || kycStatus === 'READY') && (
+          {kycStatus === 'REJECTED' && (
+            <View style={{ marginTop: 24, padding: 16, backgroundColor: Colors.error + '10', borderRadius: 12 }}>
+              <Text style={{ color: Colors.error, fontSize: 13, textAlign: 'center' }}>
+                Your documents were rejected. Please click "Edit Documents" above to fix the issues and resubmit.
+              </Text>
+            </View>
+          )}
+
+          {(kycStatus === 'APPROVED' || kycStatus === 'READY' || kycStatus === 'ACTIVE') && (
             <TouchableOpacity 
               style={styles.primaryButton}
               onPress={() => router.replace('/(vendor)')}

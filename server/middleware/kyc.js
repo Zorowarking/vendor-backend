@@ -19,7 +19,7 @@ const requireKyc = async (req, res, next) => {
     let isApproved = false;
     let fallbackStatus = 'PENDING';
 
-    const APPROVED_STATUSES = ['APPROVED', 'ACTIVE'];
+    const APPROVED_STATUSES = ['approved', 'active', 'ready'];
 
     if (profile.role === 'VENDOR' && profile.vendor) {
       fallbackStatus = profile.vendor.accountStatus;

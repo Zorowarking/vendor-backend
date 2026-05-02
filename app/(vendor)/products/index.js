@@ -146,7 +146,7 @@ export default function ProductsList() {
       <View style={styles.productInfo}>
         <Text style={styles.productName}>{item.name}</Text>
         <Text style={styles.productCategory}>{item.category} • {item.type}</Text>
-        <Text style={styles.productPrice}>${(item.price || 0).toFixed(2)}</Text>
+        <Text style={styles.productPrice}>₹{(item.price || 0).toFixed(2)}</Text>
       </View>
 
       <View style={styles.actionContainer}>

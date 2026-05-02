@@ -34,11 +34,12 @@ router.post('/', firebaseAuthOptional, guestSession, async (req, res) => {
 
     res.json({ success: true, item: updatedItem });
   } catch (error) {
-    console.error('[CART] Update error:', error);
+    console.error('[CART-ROUTE] Update error:', error);
     if (error.status) return res.status(error.status).json({ error: error.message });
     res.status(500).json({ 
       error: 'Failed to update cart',
-      details: process.env.NODE_ENV === 'development' ? (error.message || error) : undefined 
+      details: error.message || error,
+      code: error.code
     });
   }
 });

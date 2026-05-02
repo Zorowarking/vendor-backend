@@ -106,12 +106,23 @@ export default function OTPVerifyScreen() {
 
 
 
-  const handleResend = () => {
+  const [resendCount, setResendCount] = useState(0);
+
+  const handleResend = async () => {
     if (timer === 0) {
-      setTimer(30);
-      // Call resend OTP service
-      // Call resend OTP service with the recaptcha verifier
-      authService.sendOTP(`+91${phone}`, recaptchaVerifier.current);
+      setLoading(true);
+      try {
+        const verifier = resendCount >= 1 ? recaptchaVerifier.current : null;
+        await authService.sendOTP(`+91${phone}`, verifier);
+        setTimer(30);
+        setResendCount(0); // Reset on success
+      } catch (err) {
+        console.error('UI: Resend Error', err);
+        setResendCount(prev => prev + 1);
+        Alert.alert('Error', 'Failed to resend OTP. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 

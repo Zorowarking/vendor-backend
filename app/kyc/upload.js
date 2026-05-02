@@ -75,9 +75,21 @@ export default function KYCUpload() {
     setUploading(true);
     
     try {
-      console.log('[KYC] Starting real upload to Cloudflare R2:', file.name);
+      console.log('[KYC] Fetching profile for deterministic key...');
+      const profileData = await vendorApi.getProfile();
+      if (!profileData || !profileData.id) {
+         throw new Error('Could not identify vendor ID');
+      }
+
+      const extension = file.name.split('.').pop();
+      const deterministicKey = `kyc/${profileData.id}/${docId}.${extension}`;
       
-      const uploadResult = await vendorApi.uploadImage(file.uri);
+      console.log('[KYC] Starting deterministic upload to R2:', deterministicKey);
+      
+      const uploadResult = await vendorApi.uploadImage(file.uri, {
+        key: deterministicKey,
+        isDeterministic: true
+      });
       
       if (!uploadResult.success) {
         throw new Error('Upload failed');

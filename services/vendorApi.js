@@ -82,7 +82,7 @@ export const vendorApi = {
     return response.data;
   },
 
-  uploadImage: async (uri) => {
+  uploadImage: async (uri, options = {}) => {
     try {
       const fileName = uri.split('/').pop();
       const extension = fileName.split('.').pop();
@@ -95,21 +95,30 @@ export const vendorApi = {
       const { uploadUrl, publicUrl } = await apiClient.get('/api/storage/presigned-url', {
         params: { 
           fileName,
-          contentType 
+          contentType,
+          key: options.key,
+          isDeterministic: options.isDeterministic ? 'true' : 'false'
         }
       }).then(res => res.data);
 
       console.log(`[API] Got upload URL. Sending binary to R2...`);
 
-      // 2. Upload file directly to R2
-      const response = await fetch(uri);
-      const blob = await response.blob();
+      // 2. Upload file directly to R2 using fetch and Blob (binary-safe)
+      const fileResponse = await fetch(uri);
+      const blob = await fileResponse.blob();
 
-      await axios.put(uploadUrl, blob, {
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: blob,
         headers: {
-          'Content-Type': contentType
-        }
+          'Content-Type': contentType,
+        },
       });
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new Error(`R2 upload failed: ${uploadResponse.status} ${errorText}`);
+      }
 
       console.log(`[API] Upload successful. Public URL: ${publicUrl}`);
       return { url: publicUrl, success: true };

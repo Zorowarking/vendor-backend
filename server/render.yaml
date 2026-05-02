@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: vantyrn-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vantyrn-db
+          property: connectionString
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false # Set this in the Render dashboard manually
+
+databases:
+  - name: vantyrn-db
+    plan: free
+    databaseName: vantyrn
+    user: vantyrn_user

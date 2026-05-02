@@ -96,10 +96,14 @@ router.get('/profile', firebaseAuth, async (req, res) => {
 
 router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    const { fullName, email } = req.body;
+    const { fullName, email, profilePicUrl } = req.body;
     const updated = await prisma.customer.update({
       where: { id: req.customer.id },
-      data: { fullName, email }
+      data: { 
+        fullName: fullName || undefined, 
+        email: email || undefined, 
+        profilePicUrl: profilePicUrl || undefined 
+      }
     });
     res.json({ success: true, customer: updated });
   } catch (error) {

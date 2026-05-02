@@ -105,6 +105,9 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/feedback', feedbackRoutes);
 
+const shadowfaxRoutes = require('./src/modules/delivery/shadowfax/shadowfax.routes');
+app.use('/webhooks/shadowfax', shadowfaxRoutes);
+
 console.log('✅ [STAGE 3] All Routes loaded.');
 
 // Basic Health Check

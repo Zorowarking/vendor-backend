@@ -118,15 +118,15 @@ export default function VendorEarnings() {
         <View style={styles.summaryGrid}>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total Revenue</Text>
-            <Text style={styles.summaryValue}>${Number(data.revenue || 0).toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>₹{Number(data.revenue || 0).toFixed(2)}</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Platform Fee</Text>
-            <Text style={[styles.summaryValue, { color: Colors.error }]}>-${Number(data.commission || 0).toFixed(2)}</Text>
+            <Text style={[styles.summaryValue, { color: Colors.error }]}>-₹{Number(data.commission || 0).toFixed(2)}</Text>
           </View>
           <View style={[styles.summaryCard, { width: '100%', marginTop: 12, backgroundColor: Colors.primary }]}>
             <Text style={[styles.summaryLabel, { color: Colors.white }]}>Net Earnings</Text>
-            <Text style={[styles.summaryValue, { color: Colors.white, fontSize: 28 }]}>${Number(data.net || 0).toFixed(2)}</Text>
+            <Text style={[styles.summaryValue, { color: Colors.white, fontSize: 28 }]}>₹{Number(data.net || 0).toFixed(2)}</Text>
           </View>
         </View>
 
@@ -137,7 +137,7 @@ export default function VendorEarnings() {
           </View>
           <View style={styles.divider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>${(Number(data.revenue || 0) / (data.orderCount || 1)).toFixed(2)}</Text>
+            <Text style={styles.statValue}>₹{(Number(data.revenue || 0) / (data.orderCount || 1)).toFixed(2)}</Text>
             <Text style={styles.statLabel}>Avg. Order</Text>
           </View>
         </View>
@@ -178,8 +178,8 @@ export default function VendorEarnings() {
               <View key={idx} style={styles.tableRow}>
                 <Text style={[styles.tableCell, { flex: 1.5 }]}>{row.date}</Text>
                 <Text style={styles.tableCell}>{row.count}</Text>
-                <Text style={styles.tableCell}>${Number(row.gross || 0).toFixed(2)}</Text>
-                <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>${Number(row.net || 0).toFixed(2)}</Text>
+                <Text style={styles.tableCell}>₹{Number(row.gross || 0).toFixed(2)}</Text>
+                <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>₹{Number(row.net || 0).toFixed(2)}</Text>
               </View>
             ))}
           </View>

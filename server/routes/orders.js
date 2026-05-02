@@ -4,6 +4,8 @@ const firebaseAuth = require('../middleware/auth');
 const requireCustomer = require('../middleware/customer');
 const CartService = require('../services/cartService');
 const { prisma } = require('../lib/prisma');
+const shadowfaxService = require('../src/modules/delivery/shadowfax/shadowfax.service');
+const env = require('../src/config/env');
 
 /**
  * MODULE 5 — ORDER & PAYMENT
@@ -74,6 +76,27 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     const address = await prisma.address.findUnique({ where: { id: addressId, customerId: req.customer.id } });
 
     if (!address) return res.status(400).json({ error: 'Valid delivery address required' });
+
+    // SFX Serviceability Check
+    let deliveryCost = 0;
+    try {
+      const sfxResponse = await shadowfaxService.checkServiceability({
+        storeCode: env.SFX_STORE_CODE,
+        orderValue: cart.total,
+        paid: true,
+        dropLat: address.latitude ? Number(address.latitude) : undefined,
+        dropLng: address.longitude ? Number(address.longitude) : undefined
+      });
+      if (sfxResponse && sfxResponse.available_rider_count === 0) {
+        return res.status(422).json({ error: 'Delivery not available right now' });
+      }
+      if (sfxResponse && sfxResponse.delivery_cost) {
+        deliveryCost = sfxResponse.delivery_cost;
+      }
+    } catch (error) {
+      console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
+      // Fail gracefully, don't block checkout
+    }
 
     // 6. Initiate Payment (Mock)
     // In real app, call Stripe/Razorpay here

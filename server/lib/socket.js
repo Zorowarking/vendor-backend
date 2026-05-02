@@ -21,7 +21,11 @@ const initSocket = (server) => {
 
   // Customer connections
   customerNs.on('connection', (socket) => {
-    console.log('[SOCKET] Customer connected:', socket.id);
+    console.log(`[SOCKET] Customer connected: ${socket.id} (Namespace: /customer)`);
+    
+    socket.on('disconnect', (reason) => {
+      console.log(`[SOCKET] Customer disconnected: ${socket.id}, Reason: ${reason}`);
+    });
     
     socket.on('join_order_room', (orderId) => {
       socket.join(`order_${orderId}`);
@@ -49,10 +53,10 @@ const initSocket = (server) => {
 /**
  * Emit Location Update (for third-party delivery tracking integration)
  */
-const emitLocationUpdate = (orderId, lat, lng) => {
+const emitLocationUpdate = (orderId, lat, lng, pickupEta = null, dropEta = null) => {
   if (!io) return;
-  io.of('/customer').to(`order_${orderId}`).emit('rider_location_update', { lat, lng });
-  io.of('/admin').to('admin_global').emit('rider_location_update', { orderId, lat, lng });
+  io.of('/customer').to(`order_${orderId}`).emit('rider_location_update', { lat, lng, pickupEta, dropEta });
+  io.of('/admin').to('admin_global').emit('rider_location_update', { orderId, lat, lng, pickupEta, dropEta });
 };
 
 /**

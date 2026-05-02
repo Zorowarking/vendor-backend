@@ -42,6 +42,7 @@ export default function EditProduct() {
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
   const [addOnPrice, setAddOnPrice] = useState('');
+  const [addOnFreeLimit, setAddOnFreeLimit] = useState('0');
   const [showAddOnForm, setShowAddOnForm] = useState(false);
 
   // Mock Categories and Types
@@ -56,15 +57,15 @@ export default function EditProduct() {
         if (product) {
           setName(product.name);
           setDescription(product.description || '');
-          setPrice(product.price.toString());
+          setPrice((product.price || 0).toString());
           setCategory(product.category);
           setType(product.type);
           setIsAvailable(product.isAvailable);
           setImage(product.image);
           // Mocking add-ons if they don't exist in the list
           setAddOns(product.addOns || [
-            { id: 'a1', name: 'Extra Cheese', price: 1.50 },
-            { id: 'a2', name: 'Mushrooms', price: 0.75 }
+            { id: 'a1', name: 'Extra Cheese', price: 20.00 },
+            { id: 'a2', name: 'Mushrooms', price: 15.00 }
           ]);
         }
       } catch (error) {
@@ -94,9 +95,15 @@ export default function EditProduct() {
       Alert.alert('Error', 'Please enter add-on name and price');
       return;
     }
-    setAddOns([...addOns, { id: Date.now().toString(), name: addOnName, price: parseFloat(addOnPrice) }]);
+    setAddOns([...addOns, { 
+      id: Date.now().toString(), 
+      name: addOnName, 
+      price: parseFloat(addOnPrice),
+      freeLimit: parseInt(addOnFreeLimit) || 0
+    }]);
     setAddOnName('');
     setAddOnPrice('');
+    setAddOnFreeLimit('0');
     setShowAddOnForm(false);
   };
 
@@ -145,7 +152,11 @@ export default function EditProduct() {
         isRestricted,
         isAvailable,
         image: imageUrl,
-        addOns
+        addOns: addOns.map(a => ({
+          name: a.name,
+          price: parseFloat(a.price) || 0,
+          freeLimit: parseInt(a.freeLimit) || 0
+        }))
       };
 
       const res = await vendorApi.updateProduct(id, productData);
@@ -153,7 +164,7 @@ export default function EditProduct() {
       // Update local store for immediate UI feedback
       const { setProducts, products: currentProducts } = useVendorStore.getState();
       const updatedProducts = currentProducts.map(p => 
-        p.id === id ? { ...p, ...productData, reviewStatus: res.status } : p
+        p.id === id ? { ...p, ...productData, reviewStatus: res.product?.reviewStatus || p.reviewStatus } : p
       );
       setProducts(updatedProducts);
 
@@ -165,7 +176,8 @@ export default function EditProduct() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to update product');
+      const errorMsg = error.response?.data?.details || error.message || 'Unknown error';
+      Alert.alert('Error', `Update Error: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -246,7 +258,7 @@ export default function EditProduct() {
 
         <View style={styles.row}>
           <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Price ($) *</Text>
+            <Text style={styles.label}>Price (₹) *</Text>
             <TextInput 
               style={styles.input} 
               placeholder="0.00" 
@@ -354,32 +366,58 @@ export default function EditProduct() {
 
         {showAddOnForm && (
           <View style={styles.addOnForm}>
-            <TextInput 
-              style={[styles.input, { flex: 1, marginRight: 8 }]} 
-              placeholder="Add-on Name" 
-              value={addOnName} 
-              onChangeText={setAddOnName} 
-            />
-            <TextInput 
-              style={[styles.input, { width: 80, marginRight: 8 }]} 
-              placeholder="Price" 
-              keyboardType="numeric"
-              value={addOnPrice} 
-              onChangeText={setAddOnPrice} 
-            />
-            <TouchableOpacity onPress={addAddOn} style={styles.saveAddOnButton}>
-              <Ionicons name="checkmark" size={24} color={Colors.white} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
-              <Ionicons name="close" size={24} color={Colors.white} />
-            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <TextInput 
+                style={[styles.input, { marginBottom: 8 }]} 
+                placeholder="Add-on Name" 
+                value={addOnName} 
+                onChangeText={setAddOnName} 
+              />
+              <View style={{ flexDirection: 'row' }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Price (₹)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Price" 
+                    keyboardType="numeric"
+                    value={addOnPrice} 
+                    onChangeText={setAddOnPrice} 
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Free Qty Limit</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Limit" 
+                    keyboardType="numeric"
+                    value={addOnFreeLimit} 
+                    onChangeText={setAddOnFreeLimit} 
+                  />
+                </View>
+              </View>
+            </View>
+            <View style={{ marginLeft: 8 }}>
+              <TouchableOpacity onPress={addAddOn} style={[styles.saveAddOnButton, { marginBottom: 8 }]}>
+                <Ionicons name="checkmark" size={24} color={Colors.white} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
+                <Ionicons name="close" size={24} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
         {addOns.map(item => (
           <View key={item.id} style={styles.addOnListItem}>
-            <Text style={styles.addOnName}>{item.name}</Text>
-            <Text style={styles.addOnPrice}>+${item.price.toFixed(2)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addOnName}>{item.name}</Text>
+              {item.freeLimit > 0 && (
+                <Text style={{ fontSize: 11, color: Colors.success, fontWeight: '500' }}>
+                  First {item.freeLimit} units free
+                </Text>
+              )}
+            </View>
+            <Text style={styles.addOnPrice}>+₹{Number(item.price || 0).toFixed(2)}</Text>
             <TouchableOpacity onPress={() => removeAddOn(item.id)}>
               <Ionicons name="trash-outline" size={20} color={Colors.error} />
             </TouchableOpacity>

@@ -6,7 +6,17 @@ import {
   GoogleAuthProvider, 
   signInWithCredential 
 } from 'firebase/auth';
-import { Alert } from 'react-native';
+import { Alert, NativeModules } from 'react-native';
+
+// Safely require native firebase auth
+let nativeAuth = null;
+try {
+  if (NativeModules.RNFBAppModule) {
+    nativeAuth = require('@react-native-firebase/auth').default;
+  }
+} catch (e) {
+  console.log('[AUTH] Native Firebase Auth not available, using Web SDK fallback.');
+}
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.107:3001';
 
@@ -109,25 +119,29 @@ export const authService = {
         };
       }
 
+      // 1. Try Native Auth (Invisible Recaptcha) if available
+      if (nativeAuth) {
+        console.log('--- CALLING NATIVE signInWithPhoneNumber ---');
+        const confirmationResult = await nativeAuth().signInWithPhoneNumber(cleanPhone);
+        console.log('--- OTP SENT SUCCESSFULLY (NATIVE) ---');
+        return confirmationResult;
+      }
+
+      // 2. Fallback to Web SDK (May require Recaptcha Modal)
       if (!recaptchaVerifier) {
-        throw new Error('Recaptcha verifier is required for Web SDK Phone Auth');
+        console.log('--- ATTEMPTING WEB signInWithPhoneNumber WITHOUT VERIFIER ---');
+        // This will succeed if the number is a test number in Firebase, or fail with auth/captcha-check-failed
+        return await signInWithPhoneNumber(auth, phoneNumber);
       }
 
       // Bugfix for Firebase JS SDK v9+ compatibility with expo-firebase-recaptcha
-      // We wrap the verifier in a proxy-like object that implements the full interface
       const applicationVerifier = {
         type: 'recaptcha',
         verify: async () => {
           console.log('--- VERIFIER: STARTING VERIFICATION ---');
-          try {
-            return await recaptchaVerifier.verify();
-          } catch (e) {
-            console.error('--- VERIFIER: VERIFY ERROR ---', e);
-            throw e;
-          }
+          return await recaptchaVerifier.verify();
         },
         _reset: () => {
-          console.log('--- VERIFIER: RESET CALLED ---');
           if (typeof recaptchaVerifier?._reset === 'function') {
             recaptchaVerifier._reset();
           }

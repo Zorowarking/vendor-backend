@@ -1,4 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import * as KeepAwake from 'expo-keep-awake';
+
+// Safely handle keep-awake to prevent crashes in Expo Go or Web
+try {
+  KeepAwake.activateKeepAwakeAsync().catch(() => {
+    console.log('[DEBUG] Keep awake unavailable, skipping.');
+  });
+} catch (e) {}
 import { View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
@@ -19,8 +27,12 @@ export default function Layout() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    setIsMounted(true);
-    systemBubbleService.initialize();
+    const init = async () => {
+      await useAuthStore.getState().initialize();
+      setIsMounted(true);
+      systemBubbleService.initialize();
+    };
+    init();
   }, []);
 
   // Notification Initialization
@@ -75,7 +87,7 @@ export default function Layout() {
       return;
     }
 
-    if (isAuthenticated && inAuthGroup && role && profileStatus === 'READY') {
+    if (isAuthenticated && inAuthGroup && role && (profileStatus === 'READY' || profileStatus === 'ACTIVE')) {
       if (role === 'VENDOR') router.replace('/(vendor)');
       return;
     }
@@ -95,14 +107,14 @@ export default function Layout() {
       return;
     }
 
-    // Role Selection Enforcement
-    if (isAuthenticated && !role && currentScreen !== 'role-select') {
+    // Role Selection Enforcement: If not a vendor, must select role
+    if (isAuthenticated && role !== 'VENDOR' && currentScreen !== 'role-select') {
       router.replace('/auth/role-select');
       return;
     }
 
     // Role-based onboarding checks (only if not already Ready or Enforcement)
-    if (isAuthenticated && profileStatus !== 'READY') {
+    if (isAuthenticated && profileStatus !== 'READY' && profileStatus !== 'ACTIVE') {
 
       if (profileStatus === 'PENDING') {
         const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
@@ -111,7 +123,8 @@ export default function Layout() {
           if (role === 'VENDOR') router.replace('/auth/vendor-register');
         }
       } else if (profileStatus === 'UNDER_REVIEW') {
-        if (!segments[0].includes('kyc')) {
+        const currentPath = segments.join('/');
+        if (!currentPath.includes('kyc')) {
           router.replace('/kyc/status');
         }
       }

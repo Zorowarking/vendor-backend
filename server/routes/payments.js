@@ -3,6 +3,7 @@ const router = express.Router();
 const { prisma } = require('../lib/prisma');
 const OrderService = require('../services/orderService');
 const CartService = require('../services/cartService');
+const deliveryService = require('../src/modules/delivery/delivery.service');
 
 const firebaseAuth = require('../middleware/auth');
 const requireCustomer = require('../middleware/customer');
@@ -63,10 +64,32 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
     });
 
     console.log('[PAYMENT] Order created successfully:', order.id);
+
+    // INITIATE SFX DELIVERY
+    try {
+      await deliveryService.initiateDelivery(order.id);
+    } catch (sfxErr) {
+      console.error('[PAYMENT] Shadowfax delivery initiation failed:', sfxErr.message);
+      try {
+        const { emitToRoom } = require('../lib/socket');
+        emitToRoom('admin:alerts', 'SFX_ORDER_PLACEMENT_FAILED', { orderId: order.id, error: sfxErr.message });
+      } catch (e) {
+        // ignore socket emit errors
+      }
+    }
+
     res.json({ success: true, orderId: order.id });
   } catch (error) {
     console.error('[PAYMENT] CRITICAL Webhook processing error:', error.message);
-    if (error.stack) console.error(error.stack);
+    
+    // Categorize errors for better frontend UX
+    if (error.message.includes('VENDOR_CLOSED') || error.message.includes('VENDOR_OFFLINE')) {
+        return res.status(403).json({ error: 'VENDOR_UNAVAILABLE', message: error.message });
+    }
+    if (error.message.includes('CART_INVALID')) {
+        return res.status(400).json({ error: 'CART_ERROR', message: error.message });
+    }
+
     res.status(500).json({ error: 'Failed to process payment verification', details: error.message });
   }
 });

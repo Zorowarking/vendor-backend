@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "scheme": "vendor-app",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -14,6 +14,7 @@
       "backgroundColor": "#ffffff"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -31,6 +32,9 @@
       "expo-document-picker",
       "expo-location",
       "expo-image-picker",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/messaging",
       "@react-native-google-signin/google-signin"
     ],
     "experiments": {

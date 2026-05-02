@@ -23,11 +23,33 @@ export const useAuthStore = create((set) => ({
       suspensionReason: userData.suspensionReason || null,
       kycDocs: {},
     });
-    // Persist session if needed
+    // Persist session
+    AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+  },
+
+  initialize: async () => {
+    try {
+      const session = await AsyncStorage.getItem('auth_session');
+      if (session) {
+        const userData = JSON.parse(session);
+        set({
+          user: userData.user,
+          role: userData.role,
+          sessionToken: userData.sessionToken,
+          isAuthenticated: true,
+          profileStatus: userData.profileStatus,
+          suspensionReason: userData.suspensionReason || null,
+        });
+        return userData;
+      }
+    } catch (e) {
+      console.warn('Failed to restore session', e);
+    }
+    return null;
   },
 
   logout: async () => {
-    await AsyncStorage.removeItem('sessionToken');
+    await AsyncStorage.removeItem('auth_session');
     set({
       user: null,
       role: null,

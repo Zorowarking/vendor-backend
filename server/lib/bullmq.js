@@ -84,8 +84,44 @@ setTimeout(async () => {
         if (!order) return;
 
         if (type === 'vendor_accept' && (order.status === 'pending_vendor' || order.status === 'Awaiting Vendor Acceptance')) {
-          console.log(`[BULLMQ] Order ${orderId} SLA breached by Vendor. Flagging.`);
-          await prisma.order.update({ where: { id: orderId }, data: { isFlaggedAdmin: true, flagReason: 'Vendor SLA Timeout' } });
+          console.log(`[BULLMQ] Order ${orderId} SLA breached by Vendor. Cancelling and moving to history.`);
+          
+          await prisma.order.update({ 
+            where: { id: orderId }, 
+            data: { 
+              status: 'CANCELLED',
+              isFlaggedAdmin: true, 
+              flagReason: 'Vendor SLA Timeout (No Acceptance)',
+              statusHistory: {
+                create: {
+                  status: 'CANCELLED',
+                  changedBy: 'SYSTEM',
+                  notes: 'Auto-cancelled due to vendor SLA timeout (No Acceptance)'
+                }
+              }
+            } 
+          });
+
+          // Emit status update to both parties
+          const { emitOrderStatusUpdate } = require('./socket');
+          emitOrderStatusUpdate(orderId, 'CANCELLED', 'SYSTEM');
+
+          // Log breach in SlaMetric table (Aggregate)
+          await prisma.vendorSlaMetric.upsert({
+            where: { vendorId: order.vendorId },
+            update: { breachedOrders: { increment: 1 } },
+            create: { vendorId: order.vendorId, totalOrders: 1, breachedOrders: 1 }
+          });
+
+          // Log detailed Breach Record
+          await prisma.vendorBreach.create({
+            data: {
+              vendorId: order.vendorId,
+              orderId: orderId,
+              type: 'SLA_TIMEOUT',
+              reason: 'Vendor failed to accept order within 1 minute'
+            }
+          });
         } else if (type === 'vendor_support' && order.status === 'pending_vendor_response') {
           console.log(`[BULLMQ] Order ${orderId} SLA breached for Vendor Support wait. Flagging.`);
           await prisma.order.update({ where: { id: orderId }, data: { isFlaggedAdmin: true, flagReason: 'Vendor Support Resolution Timeout' } });
@@ -98,6 +134,23 @@ setTimeout(async () => {
               isFlaggedAdmin: true, 
               flagReason: 'Delayed Preparation' 
             } 
+          });
+
+          // Log breach in SlaMetric table (Aggregate)
+          await prisma.vendorSlaMetric.upsert({
+            where: { vendorId: order.vendorId },
+            update: { breachedOrders: { increment: 1 } },
+            create: { vendorId: order.vendorId, totalOrders: 1, breachedOrders: 1 }
+          });
+
+          // Log detailed Breach Record
+          await prisma.vendorBreach.create({
+            data: {
+              vendorId: order.vendorId,
+              orderId: orderId,
+              type: 'PREPARATION_DELAY',
+              reason: 'Vendor failed to mark order as ready within expected time'
+            }
           });
         }
       }, { connection });

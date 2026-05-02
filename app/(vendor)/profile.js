@@ -22,6 +22,7 @@ import { useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import Colors from '../../constants/Colors';
 
 import { vendorApi } from '../../services/vendorApi';
@@ -30,6 +31,8 @@ import { useVendorStore } from '../../store/vendorStore';
 import { SkeletonLoader } from '../../components/SkeletonLoader';
 import MapModal from '../../components/MapModal';
 
+const { width } = Dimensions.get('window');
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export default function VendorProfile() {
   const router = useRouter();
@@ -60,6 +63,11 @@ export default function VendorProfile() {
     ifscCode: '',
     upiId: ''
   });
+
+  const [showHoursModal, setShowHoursModal] = useState(false);
+  const [activeDay, setActiveDay] = useState(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timeMode, setTimeMode] = useState('open'); // 'open' or 'close'
 
   const [isMapModalVisible, setIsMapModalVisible] = useState(false);
 
@@ -108,6 +116,15 @@ export default function VendorProfile() {
 
 
   const handleUpdateCommission = async (model) => {
+    if (profile.commissionModel) {
+      Alert.alert(
+        'Action Restricted',
+        'Your commission model is already set. Please contact the admin to request any changes.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setLoading(true);
@@ -127,8 +144,20 @@ export default function VendorProfile() {
     setLoading(true);
     try {
       const updatedProfile = { ...profile, ...editForm };
-      await vendorApi.updateProfile(updatedProfile);
-      setProfile(updatedProfile);
+      const res = await vendorApi.updateProfile(updatedProfile);
+      if (res.success && res.vendor) {
+        setProfile(res.vendor);
+        // Sync editForm with new data (important for operating hours etc)
+        setEditForm({
+          businessName: res.vendor.businessName,
+          description: res.vendor.description,
+          category: res.vendor.category,
+          deliveryRadius: res.vendor.deliveryRadius.toString(),
+          operatingHours: res.vendor.operatingHours
+        });
+      } else {
+        setProfile(updatedProfile);
+      }
       setIsEditModalVisible(false);
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
@@ -199,8 +228,12 @@ export default function VendorProfile() {
     try {
       const uploadResult = await vendorApi.uploadImage(uri);
       const updatedProfile = { ...profile, [type]: uploadResult.url };
-      await vendorApi.updateProfile(updatedProfile);
-      setProfile(updatedProfile);
+      const res = await vendorApi.updateProfile(updatedProfile);
+      if (res.success && res.vendor) {
+        setProfile(res.vendor);
+      } else {
+        setProfile(updatedProfile);
+      }
       Alert.alert('Success', `${type.charAt(0).toUpperCase() + type.slice(1)} updated successfully!`);
     } catch (error) {
       Alert.alert('Error', 'Failed to upload image');
@@ -229,13 +262,39 @@ export default function VendorProfile() {
     );
   };
 
+  const handleTimeChange = (event, selectedDate) => {
+    setShowTimePicker(false);
+    if (selectedDate && activeDay) {
+      const hours = selectedDate.getHours().toString().padStart(2, '0');
+      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
+      const timeString = `${hours}:${minutes}`;
+      
+      setEditForm(prev => ({
+        ...prev,
+        operatingHours: {
+          ...prev.operatingHours,
+          [activeDay]: {
+            ...prev.operatingHours[activeDay],
+            [timeMode]: timeString
+          }
+        }
+      }));
+    }
+  };
+
   const renderValue = (val) => {
     if (!val) return 'Not set';
+    if (typeof val === 'string' && val.trim() === '') return 'Not set';
     if (typeof val === 'string') return val;
     if (typeof val === 'object') {
       // If it's the operating hours object, format it simply
-      if (val.Monday || val.current) {
-        return 'Schedule Set (Click Edit to View)';
+      if (val.Monday) {
+        const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+        const todayHours = val[today];
+        if (todayHours) {
+          return `${today}: ${todayHours.isClosed ? 'Closed' : `${todayHours.open} - ${todayHours.close}`}`;
+        }
+        return 'Schedule Configured';
       }
       return JSON.stringify(val);
     }
@@ -393,16 +452,22 @@ export default function VendorProfile() {
           }}
         />
 
-                <View style={styles.section}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Platform Commission Model</Text>
-          <Text style={styles.sectionSubtitle}>Choose how platform fees are applied to your products.</Text>
+          <Text style={styles.sectionSubtitle}>
+            {profile.commissionModel 
+              ? 'Your commission model is locked. Contact admin to change.' 
+              : 'Choose how platform fees are applied to your products.'}
+          </Text>
           
           <TouchableOpacity 
             style={[
               styles.commissionCard, 
-              profile.commissionModel === 'ADD_ON' && styles.commissionCardActive
+              profile.commissionModel === 'ADD_ON' && styles.commissionCardActive,
+              profile.commissionModel && { opacity: 0.8 }
             ]}
             onPress={() => handleUpdateCommission('ADD_ON')}
+            disabled={loading}
           >
             <View style={[styles.radio, profile.commissionModel === 'ADD_ON' && styles.radioActive]}>
               {profile.commissionModel === 'ADD_ON' && <View style={styles.radioInner} />}
@@ -412,13 +477,15 @@ export default function VendorProfile() {
               <Text style={styles.commissionDesc}>5% is added on top of your price. Customers pay more, you receive your full price.</Text>
             </View>
           </TouchableOpacity>
-
+ 
           <TouchableOpacity 
             style={[
               styles.commissionCard, 
-              profile.commissionModel === 'DEDUCTED' && styles.commissionCardActive
+              profile.commissionModel === 'DEDUCTED' && styles.commissionCardActive,
+              profile.commissionModel && { opacity: 0.8 }
             ]}
             onPress={() => handleUpdateCommission('DEDUCTED')}
+            disabled={loading}
           >
             <View style={[styles.radio, profile.commissionModel === 'DEDUCTED' && styles.radioActive]}>
               {profile.commissionModel === 'DEDUCTED' && <View style={styles.radioInner} />}
@@ -428,6 +495,13 @@ export default function VendorProfile() {
               <Text style={styles.commissionDesc}>5% is deducted from your price. Customers pay your price, platform takes a cut.</Text>
             </View>
           </TouchableOpacity>
+          
+          {profile.commissionModel && (
+            <View style={styles.lockedNote}>
+              <Ionicons name="lock-closed" size={14} color={Colors.subText} />
+              <Text style={styles.lockedNoteText}>Contact support to change this model</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -526,14 +600,16 @@ export default function VendorProfile() {
                   />
                 </View>
                 <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.inputLabel}>Hours</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={typeof editForm.operatingHours === 'object' ? JSON.stringify(editForm.operatingHours) : editForm.operatingHours}
-                    onChangeText={(val) => setEditForm(prev => ({ ...prev, operatingHours: val }))}
-                    placeholder="e.g. 09:00 - 22:00"
-                  />
-
+                  <Text style={styles.inputLabel}>Operating Hours</Text>
+                  <TouchableOpacity 
+                    style={styles.selectorInput} 
+                    onPress={() => setShowHoursModal(true)}
+                  >
+                    <Text style={styles.selectorText} numberOfLines={1}>
+                      {editForm.operatingHours?.Monday ? 'Edit Weekly Schedule' : 'Set Hours'}
+                    </Text>
+                    <Ionicons name="time-outline" size={16} color={Colors.darkGrey} />
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -663,6 +739,50 @@ export default function VendorProfile() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Operating Hours Modal */}
+      <Modal visible={showHoursModal} transparent animationType="slide">
+        <View style={styles.modalBg}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Weekly Operating Hours</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {DAYS.map(day => (
+                <View key={day} style={styles.dayRow}>
+                  <Text style={styles.dayName}>{day}</Text>
+                  <View style={styles.timeControls}>
+                    <TouchableOpacity 
+                      onPress={() => { setActiveDay(day); setTimeMode('open'); setShowTimePicker(true); }}
+                      style={styles.timeBox}
+                    >
+                      <Text style={styles.timeText}>{editForm.operatingHours?.[day]?.open || '09:00'}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.timeSeparator}>-</Text>
+                    <TouchableOpacity 
+                      onPress={() => { setActiveDay(day); setTimeMode('close'); setShowTimePicker(true); }}
+                      style={styles.timeBox}
+                    >
+                      <Text style={styles.timeText}>{editForm.operatingHours?.[day]?.close || '22:00'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={[styles.closeButton, { backgroundColor: Colors.primary }]} onPress={() => setShowHoursModal(false)}>
+              <Text style={[styles.closeButtonText, { color: 'white' }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={new Date()}
+          mode="time"
+          is24Hour={true}
+          display="default"
+          onChange={handleTimeChange}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -907,5 +1027,86 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6
+  },
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  dayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  dayName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    width: 100,
+  },
+  timeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeBox: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: Colors.grey,
+  },
+  timeText: {
+    fontSize: 14,
+    color: Colors.black,
+  },
+  timeSeparator: {
+    marginHorizontal: 8,
+    color: Colors.darkGrey,
+  },
+  closeButton: {
+    marginTop: 20,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: Colors.grey,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  selectorInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.grey,
+  },
+  selectorText: {
+    fontSize: 14,
+    color: Colors.black,
+  },
+  lockedNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  lockedNoteText: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginLeft: 6,
+    fontStyle: 'italic',
   }
 });

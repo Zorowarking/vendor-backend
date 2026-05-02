@@ -1,8 +1,12 @@
 const { prisma } = require('../lib/prisma');
+
 async function main() {
-  const count = await prisma.product.count({
-    where: { vendorId: '331746cc-4a5a-4de9-9f86-e4a62fee2b42' }
+  const products = await prisma.product.findMany({
+    include: { images: true }
   });
-  console.log('Product count:', count);
+
+  console.log('--- PRODUCTS LIST ---');
+  console.log(JSON.stringify(products, null, 2));
 }
+
 main().catch(console.error).finally(() => prisma.$disconnect());

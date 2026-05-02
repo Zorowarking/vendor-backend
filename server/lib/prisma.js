@@ -10,6 +10,8 @@ const { Pool } = require('pg');
 
 let prismaClientInstance;
 
+console.log('[PRISMA] Client Path:', require.resolve('@prisma/client'));
+
 /**
  * Shared Prisma Client Initialization
  * Uses the standard 'pg' driver adapter for robust PostgreSQL connectivity.
@@ -46,6 +48,9 @@ function getPrismaClient() {
     adapter,
     log: ['error', 'warn'],
   });
+  
+  console.log('[PRISMA] Models available:', Object.keys(prismaClientInstance).filter(k => !k.startsWith('$') && !k.startsWith('_')));
+  console.log('[PRISMA] vendorBreach exists:', !!prismaClientInstance.vendorBreach);
   
   return prismaClientInstance;
 }

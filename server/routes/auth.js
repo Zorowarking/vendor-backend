@@ -30,7 +30,34 @@ router.post('/sync', firebaseAuth, async (req, res) => {
       }
     }));
 
-    console.log(`[AUTH-SYNC] Success! Profile ID: ${profile.id}, Status: ${profile.profileStatus}`);
+    // SELF-HEALING: Determine correct profileStatus based on vendor/rider records
+    let currentStatus = profile.profileStatus;
+    
+    if (profile.role === 'VENDOR' && profile.vendor) {
+      const vStatus = profile.vendor.accountStatus;
+      if (['ACTIVE', 'APPROVED'].includes(vStatus)) {
+        currentStatus = 'ACTIVE';
+      } else if (['UNDER_REVIEW', 'KYC_SUBMITTED'].includes(vStatus)) {
+        currentStatus = 'UNDER_REVIEW';
+      }
+    } else if (profile.role === 'RIDER' && profile.rider) {
+      const rStatus = profile.rider.accountStatus?.toUpperCase();
+      if (['ACTIVE', 'APPROVED'].includes(rStatus)) {
+        currentStatus = 'ACTIVE';
+      } else if (['PENDING', 'UNDER_REVIEW'].includes(rStatus)) {
+        currentStatus = 'UNDER_REVIEW';
+      }
+    }
+
+    // Sync status if it changed (e.g. from PENDING to ACTIVE on relogin)
+    if (currentStatus !== profile.profileStatus) {
+      await prisma.profile.update({
+        where: { id: profile.id },
+        data: { profileStatus: currentStatus }
+      });
+    }
+
+    console.log(`[AUTH-SYNC] Success! Profile ID: ${profile.id}, Role: ${profile.role}, Status: ${currentStatus}`);
 
     res.json({
       success: true,
@@ -38,7 +65,7 @@ router.post('/sync', firebaseAuth, async (req, res) => {
         uid: profile.firebaseUid,
         phoneNumber: profile.phoneNumber,
         role: profile.role,
-        profileStatus: profile.profileStatus
+        profileStatus: currentStatus
       }
     });
   } catch (error) {

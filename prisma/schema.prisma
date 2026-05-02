@@ -10,12 +10,13 @@ datasource db {
 }
 
 model ProductAddon {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId String    @map("product_id") @db.Uuid
   name      String    @db.VarChar(255)
   isActive  Boolean?  @default(true) @map("is_active")
   createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   price     Decimal   @default(0) @db.Decimal(10, 2)
+  freeLimit Int       @default(0) @map("free_limit")
   product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@map("product_addons")
@@ -50,7 +51,7 @@ model ProductTemplate {
 }
 
 model ProductReviewSnapshot {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                      String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   submissionId            String                  @map("submission_id") @db.Uuid
   productId               String                  @map("product_id") @db.Uuid
   name                    String                  @db.VarChar(255)
@@ -68,9 +69,23 @@ model ProductReviewSnapshot {
   @@schema("vendor_delivery")
 }
 
+model VendorBreach {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorId  String   @map("vendor_id") @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  type      String   @db.VarChar(50)
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order     Order    @relation(fields: [orderId], references: [id])
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+
+  @@map("vendor_breaches")
+  @@schema("vendor_delivery")
+}
+
 model VendorSlaMetric {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  vendorId            String   @map("vendor_id") @db.Uuid
+  vendorId            String   @unique @map("vendor_id") @db.Uuid
   totalOrders         Int      @default(0) @map("total_orders")
   acceptedWithinSla   Int      @default(0) @map("accepted_within_sla")
   breachedOrders      Int      @default(0) @map("breached_orders")
@@ -85,7 +100,7 @@ model VendorSlaMetric {
 }
 
 model ProductReviewSubmission {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   productId              String                  @map("product_id") @db.Uuid
   vendorId               String                  @map("vendor_id") @db.Uuid
   submissionRound        Int                     @default(1) @map("submission_round")
@@ -101,7 +116,7 @@ model ProductReviewSubmission {
 }
 
 model Product {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendorId                 String                    @map("vendor_id") @db.Uuid
   name                     String                    @db.VarChar(255)
   description              String?
@@ -155,72 +170,26 @@ model NotificationLog {
   @@schema("vendor_delivery")
 }
 
-model RiderAssignmentAttempt {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderId     String    @map("order_id") @db.Uuid
-  riderId     String    @map("rider_id") @db.Uuid
-  attemptNo   Int       @map("attempt_no")
-  notifiedAt  DateTime  @default(now()) @map("notified_at") @db.Timestamptz(6)
-  respondedAt DateTime? @map("responded_at") @db.Timestamptz(6)
-  status      String    @default("pending") @db.VarChar(30)
-  order       Order     @relation(fields: [orderId], references: [id])
-  rider       Rider     @relation(fields: [riderId], references: [id])
-
-  @@index([orderId])
-  @@index([riderId])
-  @@map("rider_assignment_attempts")
-  @@schema("vendor_delivery")
-}
-
-model RiderEarning {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  riderId     String    @map("rider_id") @db.Uuid
-  orderId     String    @unique @map("order_id") @db.Uuid
-  fixedFee    Decimal   @map("fixed_fee") @db.Decimal(10, 2)
-  distanceFee Decimal   @map("distance_fee") @db.Decimal(10, 2)
-  totalPayout Decimal   @map("total_payout") @db.Decimal(10, 2)
-  earnedAt    DateTime? @default(now()) @map("earned_at") @db.Timestamptz(6)
-  rider       Rider     @relation(fields: [riderId], references: [id])
-
-  @@index([riderId])
-  @@map("rider_earnings")
-  @@schema("vendor_delivery")
-}
-
-model RiderRatingsSummary {
-  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  riderId      String  @unique @map("rider_id") @db.Uuid
-  avgRating    Decimal @default(0) @map("avg_rating") @db.Decimal(3, 2)
-  totalReviews Int     @default(0) @map("total_reviews")
-  rider        Rider   @relation(fields: [riderId], references: [id], onDelete: Cascade)
-
-  @@map("rider_ratings_summary")
-  @@schema("vendor_delivery")
-}
-
 model Rider {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  profileId               String?                  @unique @map("profile_id") @db.Uuid
-  fullName                String                   @map("name") @db.VarChar(255)
-  phone                   String                   @unique @db.VarChar(20)
-  vehicleType             String?                  @map("vehicle_type") @db.VarChar(50)
-  accountStatus           String                   @default("pending") @map("account_status") @db.VarChar(50)
-  onlineStatus            String?                  @default("offline") @map("online_status") @db.VarChar(30)
-  createdAt               DateTime?                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime?                @default(now()) @map("updated_at") @db.Timestamptz(6)
-  fcmToken                String?                  @map("fcm_token")
-  orders                  Order[]
-  riderAssignmentAttempts RiderAssignmentAttempt[]
-  riderEarnings           RiderEarning[]
-  riderRatingsSummary     RiderRatingsSummary?
-  profile                 Profile?                 @relation(fields: [profileId], references: [id])
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId     String?   @unique @map("profile_id") @db.Uuid
+  fullName      String    @map("name") @db.VarChar(255)
+  phone         String    @unique @db.VarChar(20)
+  vehicleType   String?   @map("vehicle_type") @db.VarChar(50)
+  accountStatus String    @default("pending") @map("account_status") @db.VarChar(50)
+  onlineStatus  String?   @default("offline") @map("online_status") @db.VarChar(30)
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+  fcmToken      String?   @map("fcm_token")
+  orders        Order[]
+  profile       Profile?  @relation(fields: [profileId], references: [id])
 
   @@map("riders")
   @@schema("vendor_delivery")
 }
 
 model VendorBankDetails {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendorId      String    @unique @map("vendor_id") @db.Uuid
   accountHolder String    @map("account_holder") @db.VarChar(255)
   bankName      String    @map("bank_name") @db.VarChar(255)
@@ -235,7 +204,7 @@ model VendorBankDetails {
 }
 
 model VendorComplianceFlag {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendorId  String    @map("vendor_id") @db.Uuid
   flagType  String    @map("flag_type") @db.VarChar(100)
   orderId   String?   @map("order_id") @db.Uuid
@@ -249,7 +218,7 @@ model VendorComplianceFlag {
 }
 
 model VendorEarning {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendorId       String    @map("vendor_id") @db.Uuid
   orderId        String    @unique @map("order_id") @db.Uuid
   orderTotal     Decimal   @map("order_total") @db.Decimal(10, 2)
@@ -265,7 +234,7 @@ model VendorEarning {
 }
 
 model VendorKyc {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vendorId          String    @map("vendor_id") @db.Uuid
   govIdType         String?   @map("gov_id_type") @db.VarChar(50)
   govIdUrl          String?   @map("gov_id_url")
@@ -284,7 +253,7 @@ model VendorKyc {
 }
 
 model VendorOrderAction {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId         String              @map("order_id") @db.Uuid
   vendorId        String              @map("vendor_id") @db.Uuid
   action          String              @db.VarChar(50)
@@ -346,7 +315,7 @@ model VendorOperatingHour {
 }
 
 model Vendor {
-  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   businessName             String                    @map("business_name") @db.VarChar(255)
   ownerName                String                    @map("owner_name") @db.VarChar(255)
   phone                    String                    @unique @db.VarChar(20)
@@ -370,18 +339,21 @@ model Vendor {
   profileId                String?                   @unique @map("profile_id") @db.Uuid
   fcmToken                 String?                   @map("fcm_token")
   accountStatus            AccountStatus             @default(KYC_SUBMITTED) @map("account_status")
+  commissionModel          CommissionModel?          @map("commission_model")
+  commissionRate           Decimal                   @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
   orders                   Order[]
   productReviewSubmissions ProductReviewSubmission[]
   productTemplates         ProductTemplate[]
   products                 Product[]
   bankDetails              VendorBankDetails?
+  breaches                 VendorBreach[]
   complianceFlags          VendorComplianceFlag[]
   earnings                 VendorEarning[]
   kyc                      VendorKyc[]
   operatingHoursList       VendorOperatingHour[]
   orderActions             VendorOrderAction[]
   ratingsSummary           VendorRatingsSummary?
-  slaMetrics               VendorSlaMetric[]
+  slaMetrics               VendorSlaMetric?
   supportRequests          VendorSupportRequest[]
   profile                  Profile?                  @relation(fields: [profileId], references: [id])
 
@@ -487,6 +459,7 @@ model Customer {
   failedLoginCount Int               @default(0) @map("failed_login_count")
   lastFailedAt     DateTime?         @map("last_failed_at") @db.Timestamptz(6)
   captchaRequired  Boolean           @default(false) @map("captcha_required")
+  profilePicUrl    String?           @map("profile_pic_url")
   addresses        Address[]
   ageVerification  AgeVerification?
   analyticsEvents  AnalyticsEvent[]
@@ -579,6 +552,7 @@ model OrderStatusHistory {
   status    String   @db.VarChar(50)
   changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
   changedBy String?  @map("changed_by") @db.VarChar(50)
+  notes     String?
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("order_status_history")
@@ -598,46 +572,50 @@ model OrderTracking {
 }
 
 model Order {
-  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  customerId               String                   @map("customer_id") @db.Uuid
-  vendorId                 String                   @map("vendor_id") @db.Uuid
-  riderId                  String?                  @map("rider_id") @db.Uuid
-  addressSnapshot          Json                     @map("address_snapshot")
-  deliveryPreference       String?                  @map("delivery_preference") @db.VarChar(50)
-  scheduledFor             DateTime?                @map("scheduled_for") @db.Timestamptz(6)
-  status                   String                   @default("payment_successful") @db.VarChar(50)
-  subtotal                 Decimal                  @db.Decimal(10, 2)
-  addonCharges             Decimal                  @default(0) @map("addon_charges") @db.Decimal(10, 2)
-  deliveryFee              Decimal                  @default(0) @map("delivery_fee") @db.Decimal(10, 2)
-  totalAmount              Decimal                  @map("total_amount") @db.Decimal(10, 2)
-  paymentMethod            String?                  @map("payment_method") @db.VarChar(50)
-  paymentGatewayRef        String?                  @map("payment_gateway_ref")
-  ageVerifiedCheckbox      Boolean                  @default(false) @map("age_verified_checkbox")
-  isFlagged                Boolean                  @default(false) @map("is_flagged")
-  isFlaggedAdmin           Boolean                  @default(false) @map("is_flagged_admin")
-  flagReason               String?                  @map("flag_reason")
-  orderReceivedWithinHours Boolean?                 @map("order_received_within_hours")
-  responseDeadlineAt       DateTime?                @map("response_deadline_at") @db.Timestamptz(6)
-  trackingStartedAt        DateTime?                @map("tracking_started_at") @db.Timestamptz(6)
-  pickedUpAt               DateTime?                @map("picked_up_at") @db.Timestamptz(6)
-  deliveredAt              DateTime?                @map("delivered_at") @db.Timestamptz(6)
-  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deliveryFailureReason    String?                  @map("delivery_failure_reason") @db.VarChar(255)
+  id                       String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId               String                 @map("customer_id") @db.Uuid
+  vendorId                 String                 @map("vendor_id") @db.Uuid
+  riderId                  String?                @map("rider_id") @db.Uuid
+  addressSnapshot          Json                   @map("address_snapshot")
+  sfxOrderId               BigInt?                @unique @map("sfx_order_id")
+  deliveryPreference       String?                @map("delivery_preference") @db.VarChar(50)
+  scheduledFor             DateTime?              @map("scheduled_for") @db.Timestamptz(6)
+  status                   String                 @default("payment_successful") @db.VarChar(50)
+  subtotal                 Decimal                @db.Decimal(10, 2)
+  addonCharges             Decimal                @default(0) @map("addon_charges") @db.Decimal(10, 2)
+  deliveryFee              Decimal                @default(0) @map("delivery_fee") @db.Decimal(10, 2)
+  totalAmount              Decimal                @map("total_amount") @db.Decimal(10, 2)
+  paymentMethod            String?                @map("payment_method") @db.VarChar(50)
+  paymentGatewayRef        String?                @map("payment_gateway_ref")
+  ageVerifiedCheckbox      Boolean                @default(false) @map("age_verified_checkbox")
+  isFlagged                Boolean                @default(false) @map("is_flagged")
+  isFlaggedAdmin           Boolean                @default(false) @map("is_flagged_admin")
+  flagReason               String?                @map("flag_reason")
+  orderReceivedWithinHours Boolean?               @map("order_received_within_hours")
+  responseDeadlineAt       DateTime?              @map("response_deadline_at") @db.Timestamptz(6)
+  trackingStartedAt        DateTime?              @map("tracking_started_at") @db.Timestamptz(6)
+  pickedUpAt               DateTime?              @map("picked_up_at") @db.Timestamptz(6)
+  deliveredAt              DateTime?              @map("delivered_at") @db.Timestamptz(6)
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deliveryFailureReason    String?                @map("delivery_failure_reason") @db.VarChar(255)
+  preparingAt              DateTime?              @map("preparing_at") @db.Timestamptz(6)
+  readyAt                  DateTime?              @map("ready_at") @db.Timestamptz(6)
   analyticsEvents          AnalyticsEvent[]
   feedback                 Feedback?
   items                    OrderItem[]
   statusHistory            OrderStatusHistory[]
   tracking                 OrderTracking[]
-  customer                 Customer                 @relation(fields: [customerId], references: [id])
-  rider                    Rider?                   @relation(fields: [riderId], references: [id])
-  vendor                   Vendor                   @relation(fields: [vendorId], references: [id])
+  customer                 Customer               @relation(fields: [customerId], references: [id])
+  rider                    Rider?                 @relation(fields: [riderId], references: [id])
+  vendor                   Vendor                 @relation(fields: [vendorId], references: [id])
   paymentTransactions      PaymentTransaction[]
   supportRequests          SupportRequest[]
-  riderAssignmentAttempts  RiderAssignmentAttempt[]
+  breaches                 VendorBreach[]
   vendorComplianceFlags    VendorComplianceFlag[]
   vendorEarnings           VendorEarning?
   vendorOrderActions       VendorOrderAction[]
+  sfxOrder                 SfxOrder?
 
   @@map("orders")
   @@schema("customer")
@@ -674,6 +652,13 @@ model SupportRequest {
   @@schema("customer")
 }
 
+enum CommissionModel {
+  ADD_ON
+  DEDUCTED
+
+  @@schema("vendor_delivery")
+}
+
 enum AccountStatus {
   KYC_SUBMITTED
   UNDER_REVIEW
@@ -696,4 +681,46 @@ enum VendorRejectReason {
   OTHER
 
   @@schema("vendor_delivery")
+}
+
+model SfxOrder {
+  id              Int      @id @default(autoincrement())
+  internalOrderId String   @unique @map("internal_order_id") @db.Uuid
+  sfxOrderId      BigInt   @unique @map("sfx_order_id")
+  storeCode       String   @map("store_code") @db.VarChar(100)
+  clientOrderId   String   @map("client_order_id") @db.VarChar(100)
+  sfxStatus       String?  @map("sfx_status") @db.VarChar(50)
+  trackUrl        String?  @map("track_url")
+  deliveryCost    Decimal? @map("delivery_cost") @db.Decimal(10, 2)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order Order @relation(fields: [internalOrderId], references: [id], onDelete: Cascade)
+
+  @@map("sfx_orders")
+  @@schema("customer")
+}
+
+model SfxCallback {
+  id         Int      @id @default(autoincrement())
+  sfxOrderId BigInt?  @map("sfx_order_id")
+  payload    Json?
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  processed  Boolean  @default(false)
+
+  @@index([sfxOrderId, processed])
+  @@map("sfx_callbacks")
+  @@schema("customer")
+}
+
+model SfxRiderLocationLog {
+  id         Int      @id @default(autoincrement())
+  sfxOrderId BigInt   @map("sfx_order_id")
+  lat        Decimal? @db.Decimal(10, 7)
+  lng        Decimal? @db.Decimal(10, 7)
+  pickupEta  Int?     @map("pickup_eta")
+  dropEta    Int?     @map("drop_eta")
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  @@map("sfx_rider_location_log")
+  @@schema("customer")
 }

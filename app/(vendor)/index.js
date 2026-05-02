@@ -17,7 +17,7 @@ import { SkeletonLoader } from '../../components/SkeletonLoader';
 import EmptyState from '../../components/EmptyState';
 
 const { width } = Dimensions.get('window');
-const INCOMING_SLA_SECONDS = 300; // 5 minutes
+const INCOMING_SLA_SECONDS = 60; // 1 minute (for testing)
 
 const checkOperatingHours = (hoursRange) => {
   if (!hoursRange) return true; // Default to open if not set
@@ -62,6 +62,33 @@ function ActiveTimer({ acceptedAt }) {
 
   const mins = Math.floor(elapsed / 60);
   return <Text style={styles.timeSinceText}>{mins} min ago</Text>;
+}
+
+function PrepTimer({ startTime }) {
+  const [timeLeft, setTimeLeft] = useState(60); // 1 minute (for testing)
+
+  useEffect(() => {
+    if (!startTime) return;
+    const update = () => {
+      const elapsed = Math.floor((Date.now() - new Date(startTime).getTime()) / 1000);
+      setTimeLeft(Math.max(0, 60 - elapsed));
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [startTime]);
+
+  const mins = Math.floor(timeLeft / 60);
+  const secs = timeLeft % 60;
+  const isOver = timeLeft === 0;
+
+  return (
+    <View style={[styles.timerBadge, isOver && styles.timerBadgeDanger, { alignSelf: 'flex-start', marginBottom: 8 }]}>
+      <Text style={[styles.timerText, isOver && styles.timerTextDanger]}>
+        {isOver ? 'PREPARATION DELAYED' : `Prep Time: ${mins}:${secs.toString().padStart(2, '0')} left`}
+      </Text>
+    </View>
+  );
 }
 
 function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, isOutsideHours }) {
@@ -119,7 +146,7 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
           )}
 
           <View style={styles.cardHeader}>
-            <Text style={styles.orderId}>Order #{order.id}</Text>
+            <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
             <View style={[styles.timerBadge, isDanger && styles.timerBadgeDanger]}>
               <Text style={[styles.timerText, isDanger && styles.timerTextDanger]}>
                 {isBreached ? 'SLA BREACHED' : `${minutes}:${seconds.toString().padStart(2, '0')} left`}
@@ -132,7 +159,7 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
             {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}
           </Text>
           <Text style={styles.totalAmount}>
-            ${typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
+            ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
           </Text>
 
           {isBreached ? (
@@ -244,6 +271,74 @@ function RejectionReasonModal({ visible, onCancel, onConfirm }) {
   );
 }
 
+function CommissionSelectionModal({ visible, onSelect, loading }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.commissionSelectionContent}>
+          <View style={styles.commissionHeader}>
+            <View style={styles.commissionIconBg}>
+              <Ionicons name="calculator" size={28} color={Colors.white} />
+            </View>
+            <Text style={styles.commissionModalTitle}>Business Configuration</Text>
+            <Text style={styles.commissionModalSub}>Choose your platform commission model to continue. This setting is permanent.</Text>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.modelOption} 
+            onPress={() => onSelect('ADD_ON')}
+            disabled={loading}
+          >
+            <View style={styles.modelHeader}>
+              <View style={styles.modelIcon}>
+                <Ionicons name="add-circle" size={24} color={Colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modelName}>Add-on Model</Text>
+                <Text style={styles.modelPrice}>5% added to price</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.border} />
+            </View>
+            <Text style={styles.modelDescription}>
+              The platform fee is added on top of your product price. You receive exactly what you charge, and the customer pays the difference.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.modelOption} 
+            onSelect={() => onSelect('DEDUCTED')} // Wait, typo in my thought? onPress
+            onPress={() => onSelect('DEDUCTED')}
+            disabled={loading}
+          >
+            <View style={styles.modelHeader}>
+              <View style={[styles.modelIcon, { backgroundColor: Colors.success + '15' }]}>
+                <Ionicons name="remove-circle" size={24} color={Colors.success} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modelName}>Deducted Model</Text>
+                <Text style={styles.modelPrice}>5% deducted from price</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.border} />
+            </View>
+            <Text style={styles.modelDescription}>
+              The platform fee is taken from your product price. Customers see your exact price, and the platform takes a 5% cut from the sale.
+            </Text>
+          </TouchableOpacity>
+
+          {loading && (
+            <ActivityIndicator color={Colors.primary} style={{ marginTop: 10 }} />
+          )}
+
+          <View style={styles.infoBox}>
+            <Ionicons name="information-circle" size={16} color={Colors.subText} />
+            <Text style={styles.infoBoxText}>You cannot change this later. Please choose carefully.</Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function ActiveOrderCard({ order, router }) {
   // Accepted, Preparing, Ready
   const handleStatusUpdate = async (newStatus) => {
@@ -254,8 +349,18 @@ function ActiveOrderCard({ order, router }) {
         useVendorStore.getState().updateOrder(order.id, { status: newStatus });
       } else {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        await vendorApi.updateOrderStatus(order.id, newStatus);
-        useVendorStore.getState().updateOrder(order.id, { status: newStatus });
+        const res = await vendorApi.updateOrderStatus(order.id, newStatus);
+        if (res.success && res.order) {
+          useVendorStore.getState().updateOrder(order.id, { 
+            ...res.order,
+            // Preserve fields that might be missing in simplified response
+            customerName: order.customerName,
+            items: order.items,
+            total: order.total
+          });
+        } else {
+          useVendorStore.getState().updateOrder(order.id, { status: newStatus });
+        }
       }
     } catch (err) {
       Alert.alert('Error', 'Could not update status');
@@ -267,7 +372,7 @@ function ActiveOrderCard({ order, router }) {
     <TouchableOpacity style={styles.card} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
-          <Text style={styles.orderId}>Order #{order.id}</Text>
+          <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
           {(order.isFlagged || order.isFlaggedAdmin) && (
             <View style={styles.flaggedBadge}>
               <Ionicons name="flag" size={10} color={Colors.white} />
@@ -282,6 +387,7 @@ function ActiveOrderCard({ order, router }) {
       </Text>
       
       {order.acceptedAt && <ActiveTimer acceptedAt={order.acceptedAt} />}
+      {order.status === 'preparing' && order.preparingAt && <PrepTimer startTime={order.preparingAt} />}
 
       <View style={styles.actionRow}>
         {order.status === 'accepted' && (
@@ -308,13 +414,27 @@ function HistoryOrderCard({ order, router }) {
   return (
     <TouchableOpacity style={[styles.card, styles.historyCard]} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
-        <Text style={styles.orderId}>Order #{order.id}</Text>
-        <Text style={[styles.statusBadge, order.status === 'cancelled_by_vendor' && styles.statusBadgeDanger]}>{order.status}</Text>
+        <Text style={[styles.orderId, { fontSize: 12 }]}>Order #{order.id.substring(0, 8)}</Text>
       </View>
       <Text style={styles.customerName}>{order.customerName}</Text>
-      <Text style={styles.itemsSummary}>
-        {typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)} USD
-      </Text>
+        <Text style={styles.historyTotal}>
+          ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
+        </Text>
+      
+      <View style={styles.badgeRow}>
+        <Text style={[
+          styles.statusBadge, 
+          (order.status?.toLowerCase() === 'cancelled_by_vendor' || order.status?.toLowerCase() === 'cancelled') && styles.statusBadgeDanger
+        ]}>
+          {order.status}
+        </Text>
+        {(order.isFlagged || order.isFlaggedAdmin) && (
+          <View style={[styles.flaggedBadge, { marginLeft: 8 }]}>
+            <Ionicons name="flag" size={10} color={Colors.white} />
+            <Text style={styles.flaggedText}>FLAGGED</Text>
+          </View>
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -328,6 +448,7 @@ export default function VendorOrdersDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState(null);
   const [rejectOrderId, setRejectOrderId] = useState(null);
+  const [updatingCommission, setUpdatingCommission] = useState(false);
   const soundRef = useRef(null);
 
   useEffect(() => {
@@ -419,7 +540,13 @@ export default function VendorOrdersDashboard() {
         addActiveOrder({ ...order, status: 'accepted', acceptedAt: new Date().toISOString() });
       }
     } catch (e) {
-      Alert.alert('Error', 'Failed to accept order');
+      const errorMsg = e.response?.data?.error || 'Failed to accept order';
+      if (errorMsg.includes('already processed')) {
+        Alert.alert('Notice', 'This order has already been processed or cancelled due to timeout.');
+        removeIncomingOrder(orderId);
+      } else {
+        Alert.alert('Error', errorMsg);
+      }
     }
   };
 
@@ -448,6 +575,20 @@ export default function VendorOrdersDashboard() {
     }
   };
 
+  const handleCommissionSelect = async (model) => {
+    try {
+      setUpdatingCommission(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await vendorApi.updateProfile({ ...profile, commissionModel: model });
+      await fetchProfile(); // Refresh profile to hide modal
+      Alert.alert('Success', 'Commission model set successfully! You can now start receiving orders.');
+    } catch (e) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to set commission model');
+    } finally {
+      setUpdatingCommission(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchProfile(), fetchOrders()]);
@@ -466,19 +607,15 @@ export default function VendorOrdersDashboard() {
       )}
 
       {profile && profile.commissionModel === null && (
-        <TouchableOpacity 
-          style={styles.setupBanner} 
-          onPress={() => router.push('/(vendor)/profile')}
-        >
+        <View style={styles.setupBanner}>
           <View style={styles.setupIcon}>
-            <Ionicons name="settings-outline" size={24} color={Colors.white} />
+            <Ionicons name="shield-checkmark" size={24} color={Colors.white} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.setupTitle}>Final Step Required</Text>
-            <Text style={styles.setupSub}>Complete your setup by choosing a commission model.</Text>
+            <Text style={styles.setupTitle}>Configuration Required</Text>
+            <Text style={styles.setupSub}>Please select your commission model below to proceed.</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.white} />
-        </TouchableOpacity>
+        </View>
       )}
 
       <View style={styles.tabsRow}>
@@ -536,6 +673,12 @@ export default function VendorOrdersDashboard() {
         onCancel={() => setRejectOrderId(null)}
         onConfirm={confirmRejection}
       />
+
+      <CommissionSelectionModal 
+        visible={profile !== null && profile.commissionModel === null}
+        onSelect={handleCommissionSelect}
+        loading={updatingCommission}
+      />
     </View>
   );
 }
@@ -580,6 +723,8 @@ const styles = StyleSheet.create({
   timerBadgeDanger: { backgroundColor: Colors.error + '30' },
   timerText: { color: Colors.warning, fontWeight: '700', fontSize: 12 },
   timerTextDanger: { color: Colors.error },
+  
+  badgeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   
   actionRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 },
   primaryButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8, backgroundColor: Colors.primary },
@@ -763,5 +908,96 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 12,
     opacity: 0.9,
+  },
+  
+  // Commission Selection Modal Styles
+  commissionSelectionContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 24,
+    padding: 24,
+    width: width * 0.9,
+    maxWidth: 400,
+  },
+  commissionHeader: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  commissionIconBg: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    elevation: 4,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  commissionModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: Colors.black,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  commissionModalSub: {
+    fontSize: 14,
+    color: Colors.subText,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modelOption: {
+    backgroundColor: Colors.grey,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  modelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modelIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  modelName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  modelPrice: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  modelDescription: {
+    fontSize: 13,
+    color: Colors.subText,
+    lineHeight: 18,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.grey,
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  infoBoxText: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginLeft: 8,
+    fontStyle: 'italic',
   }
 });

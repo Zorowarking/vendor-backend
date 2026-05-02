@@ -43,3 +43,14 @@ yarn-error.*
 /android
 
 /app/generated/prisma
+
+# scratch files
+scratch/
+server/scratch/
+server/debug_cheese.js
+server/test-db.js
+server/test_api.js
+server/scratch_check.js
+server/scratch_reset_vendor.js
+server/seed_products.js
+server/tests/

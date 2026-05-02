@@ -64,19 +64,40 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
     }
 
     // Handle initial submission
-    const kycRecord = await withRetry(() => prisma.vendorKyc.create({
-      data: {
-        vendorId: profile.vendor.id,
-        govIdType: govIdType || 'Government ID', 
-        govIdUrl, 
-        businessProofType: businessProofType || 'Business Proof', 
-        businessProofUrl, 
-        panUrl, 
-        addressProofUrl
-      }
-    }));
-
-    console.log(`[VENDOR] KYC record created: ${kycRecord.id}`);
+    // Upsert KYC record (Only one record per vendor)
+    let kycRecord;
+    const existingKyc = await prisma.vendorKyc.findFirst({ where: { vendorId: profile.vendor.id } });
+    
+    if (existingKyc) {
+      kycRecord = await withRetry(() => prisma.vendorKyc.update({
+        where: { id: existingKyc.id },
+        data: {
+          govIdType: govIdType || undefined,
+          govIdUrl: govIdUrl || undefined,
+          businessProofType: businessProofType || undefined,
+          businessProofUrl: businessProofUrl || undefined,
+          panUrl: panUrl || undefined,
+          addressProofUrl: addressProofUrl || undefined,
+          status: 'submitted', // Reset status on re-submission
+          submittedAt: new Date()
+        }
+      }));
+      console.log(`[VENDOR] KYC record updated: ${kycRecord.id}`);
+    } else {
+      kycRecord = await withRetry(() => prisma.vendorKyc.create({
+        data: {
+          vendorId: profile.vendor.id,
+          govIdType: govIdType || 'Government ID', 
+          govIdUrl, 
+          businessProofType: businessProofType || 'Business Proof', 
+          businessProofUrl, 
+          panUrl, 
+          addressProofUrl,
+          status: 'submitted'
+        }
+      }));
+      console.log(`[VENDOR] KYC record created: ${kycRecord.id}`);
+    }
     
     // Status remains default (kyc_submitted) or could be explicitly set to under_review
     await withRetry(() => prisma.vendor.update({
@@ -102,6 +123,20 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
 // ==========================================
 // MODULE B1: Vendor Profile
 // ==========================================
+// Helper to safely add cache-buster to URL
+const addCacheBuster = (url) => {
+  if (!url || typeof url !== 'string' || url.includes('via.placeholder.com')) return url;
+  // Strip existing cache buster if any
+  const baseUrl = url.split('?')[0];
+  return `${baseUrl}?t=${Date.now()}`;
+};
+
+// Helper to strip cache-buster before saving
+const stripCacheBuster = (url) => {
+  if (!url || typeof url !== 'string') return url;
+  return url.split('?')[0];
+};
+
 router.get('/profile', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
@@ -111,7 +146,8 @@ router.get('/profile', firebaseAuth, async (req, res) => {
         vendor: { 
           include: { 
             bankDetails: true,
-            complianceFlags: true
+            complianceFlags: true,
+            operatingHoursList: true
           } 
         } 
       } 
@@ -129,7 +165,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       }));
       profile = await withRetry(() => prisma.profile.findUnique({ 
         where: { firebaseUid: uid }, 
-        include: { vendor: { include: { bankDetails: true, complianceFlags: true } } } 
+        include: { vendor: { include: { bankDetails: true, complianceFlags: true, operatingHoursList: true } } } 
       }));
     }
 
@@ -173,12 +209,12 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       phone: v.phone,
       email: v.email,
       deliveryRadius: parseFloat(v.deliveryRadius) || 0,
-      logo: v.logoUrl || 'https://via.placeholder.com/150',
-      banner: v.bannerUrl || 'https://via.placeholder.com/800x200',
-      profilePic: v.profilePicUrl || 'https://via.placeholder.com/150',
+      logo: addCacheBuster(v.logoUrl) || 'https://via.placeholder.com/150',
+      banner: addCacheBuster(v.bannerUrl) || 'https://via.placeholder.com/800x200',
+      profilePic: addCacheBuster(v.profilePicUrl) || 'https://via.placeholder.com/150',
       operatingHours: v.operatingHours || 'Not configured',
       kycStatus: v.accountStatus,
-      commissionModel: v.commissionModel || 'DEDUCTED',
+      commissionModel: v.commissionModel,
       location: {
         address: v.businessAddress,
         latitude: parseFloat(v.latitude) || 0,
@@ -196,8 +232,8 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       complianceFlags: v.complianceFlags.map(f => f.reason) || []
     };
 
+    console.log(`[VENDOR-API] Profile fetch for UID: ${uid}, Status: ${v.accountStatus}`);
     res.json({ success: true, vendor: vendorResponse });
-
 
   } catch (error) {
     res.status(500).json({ error: 'Failed to get profile' });
@@ -210,7 +246,8 @@ router.put('/profile', firebaseAuth, async (req, res) => {
     const { uid } = req.user;
     const { 
       businessName, ownerName, address, category, description, location, 
-      operatingHours, bankData, fcmToken, email, deliveryRadius, logo, banner, profilePic 
+      operatingHours, bankData, fcmToken, email, deliveryRadius, logo, banner, profilePic,
+      commissionModel
     } = req.body;
 
     let profile = await withRetry(() => prisma.profile.findUnique({ where: { firebaseUid: uid }, include: { vendor: true } }));
@@ -245,21 +282,58 @@ router.put('/profile', firebaseAuth, async (req, res) => {
     const parsedLocation = typeof location === 'string' ? JSON.parse(location) : location;
     const parsedHours = typeof operatingHours === 'string' ? JSON.parse(operatingHours) : operatingHours;
 
+    const updateData = {
+      businessName: businessName || undefined,
+      ownerName: ownerName || undefined,
+      businessAddress: address || undefined,
+      businessCategory: category || undefined,
+      storeDescription: description || undefined,
+      latitude: parsedLocation?.latitude || undefined,
+      longitude: parsedLocation?.longitude || undefined,
+      operatingHours: parsedHours || undefined,
+      deliveryRadius: deliveryRadius ? parseFloat(deliveryRadius) : undefined,
+      logoUrl: logo ? stripCacheBuster(logo) : undefined,
+      bannerUrl: banner ? stripCacheBuster(banner) : undefined,
+      profilePicUrl: profilePic ? stripCacheBuster(profilePic) : undefined,
+      commissionModel: undefined // Handled separately below
+    };
+
+    if (commissionModel) {
+      if (vendor.commissionModel && vendor.commissionModel !== commissionModel) {
+        return res.status(403).json({ error: 'Commission model cannot be changed. Please contact admin for assistance.' });
+      }
+      updateData.commissionModel = commissionModel;
+    }
+
     // Proceed to update the vendor
     vendor = await withRetry(() => prisma.vendor.update({
       where: { id: vendor.id },
-      data: {
-        businessName, ownerName, businessAddress: address, businessCategory: category, storeDescription: description,
-        latitude: parsedLocation?.latitude || null, longitude: parsedLocation?.longitude || null,
-        operatingHours: parsedHours || null,
-        fcmToken: fcmToken || undefined,
-        email: email || undefined,
-        deliveryRadius: deliveryRadius ? parseFloat(deliveryRadius) : undefined,
-        logoUrl: logo || undefined,
-        bannerUrl: banner || undefined,
-        profilePicUrl: profilePic || undefined
-      }
+      data: updateData
     }));
+    
+    // Sync to VendorOperatingHour table for relational queries
+    if (parsedHours && typeof parsedHours === 'object') {
+      const dayMap = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
+      
+      try {
+        await prisma.$transaction([
+          prisma.vendorOperatingHour.deleteMany({ where: { vendorId: vendor.id } }),
+          prisma.vendorOperatingHour.createMany({
+            data: Object.entries(parsedHours).map(([day, config]) => ({
+              vendorId: vendor.id,
+              dayOfWeek: dayMap[day] ?? 0,
+              openTime: config.open || '09:00',
+              closeTime: config.close || '22:00',
+              isClosed: config.isClosed || false
+            }))
+          })
+        ]);
+        console.log(`[VENDOR] Synced operating hours for vendor ${vendor.id}`);
+      } catch (syncError) {
+        console.error('[VENDOR] Failed to sync operating hours table:', syncError.message);
+      }
+    }
+
 
     // Update Profile FCM Token too
     if (fcmToken) {
@@ -282,8 +356,32 @@ router.put('/profile', firebaseAuth, async (req, res) => {
         }
       }));
     }
-    res.json({ success: true, vendor });
+    // Re-fetch to get complete updated record
+    const updatedV = await prisma.vendor.findUnique({ 
+      where: { id: vendor.id }, 
+      include: { bankDetails: true, complianceFlags: true } 
+    });
 
+    const vendorResponse = {
+      id: updatedV.id,
+      businessName: updatedV.businessName,
+      ownerName: updatedV.ownerName,
+      description: updatedV.storeDescription,
+      category: updatedV.businessCategory,
+      phone: updatedV.phone,
+      email: updatedV.email,
+      deliveryRadius: parseFloat(updatedV.deliveryRadius) || 0,
+      logo: updatedV.logoUrl ? `${updatedV.logoUrl}?t=${Date.now()}` : 'https://via.placeholder.com/150',
+      banner: updatedV.bannerUrl ? `${updatedV.bannerUrl}?t=${Date.now()}` : 'https://via.placeholder.com/800x200',
+      profilePic: updatedV.profilePicUrl ? `${updatedV.profilePicUrl}?t=${Date.now()}` : 'https://via.placeholder.com/150',
+      operatingHours: updatedV.operatingHours || 'Not configured',
+      kycStatus: updatedV.accountStatus,
+      commissionModel: updatedV.commissionModel,
+      bankDetails: updatedV.bankDetails || null,
+      location: { latitude: Number(updatedV.latitude || 0), longitude: Number(updatedV.longitude || 0) }
+    };
+
+    res.json({ success: true, vendor: vendorResponse });
   } catch (error) {
     console.error('[VENDOR] Profile update error:', error);
     res.status(500).json({ error: 'Failed', details: error.message });
@@ -369,11 +467,27 @@ router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
 
     await prisma.order.update({
       where: { id },
-      data: { status: 'accepted' }
+      data: { 
+        status: 'accepted',
+        statusHistory: {
+          create: {
+            status: 'accepted',
+            changedBy: 'VENDOR',
+            notes: 'Order accepted by vendor'
+          }
+        }
+      }
     });
 
-    // Schedule 5-minute SLA for preparation start
-    await orderSlaQueue.add('prepareTimeout', { orderId: id, type: 'vendor_prepare_start' }, { delay: 5 * 60 * 1000 });
+    // Update SLA Metric for successful acceptance
+    await prisma.vendorSlaMetric.upsert({
+      where: { vendorId: profile.vendor.id },
+      update: { acceptedWithinSla: { increment: 1 } },
+      create: { vendorId: profile.vendor.id, totalOrders: 1, acceptedWithinSla: 1 }
+    });
+
+    // Schedule 1-minute SLA for preparation start
+    await orderSlaQueue.add('prepareTimeout', { orderId: id, type: 'vendor_prepare_start' }, { delay: 1 * 60 * 1000 });
 
     emitOrderStatusUpdate(id, 'accepted', 'VENDOR');
     res.json({ success: true });
@@ -409,7 +523,18 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
 
     await prisma.order.update({
       where: { id },
-      data: { status: 'cancelled_by_vendor', cancellationReason: reason, cancellationNote: otherNotes || null }
+      data: { 
+        status: 'cancelled_by_vendor', 
+        cancellationReason: reason, 
+        cancellationNote: otherNotes || null,
+        statusHistory: {
+          create: {
+            status: 'cancelled_by_vendor',
+            changedBy: 'VENDOR',
+            notes: `Rejected by vendor. Reason: ${reason}. ${otherNotes ? 'Notes: ' + otherNotes : ''}`
+          }
+        }
+      }
     });
 
     emitOrderStatusUpdate(id, 'cancelled_by_vendor', 'VENDOR');
@@ -429,8 +554,8 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
       data: { status: 'pending_vendor_response' }
     });
 
-    // Start 5 minute BullMQ timeout
-    await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 5 * 60 * 1000 });
+    // Start 1 minute BullMQ timeout
+    await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 1 * 60 * 1000 });
     
     // Broadcast to admin socket
     const io = require('../lib/socket').getIo();
@@ -456,6 +581,81 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    // SELF-HEALING: Cleanup any pending_vendor orders that have already timed out (1 min)
+    const now = new Date();
+    const expiredOrders = orders.filter(o => 
+      (o.status === 'pending_vendor' || o.status === 'Awaiting Vendor Acceptance') && 
+      (now - new Date(o.createdAt)) > 1 * 60 * 1000
+    );
+
+    if (expiredOrders.length > 0) {
+      console.log(`[VENDOR-API] Self-healing: Found ${expiredOrders.length} expired pending orders. Cancelling.`);
+      const expiredIds = expiredOrders.map(o => o.id);
+      
+      await prisma.order.updateMany({
+        where: { id: { in: expiredIds } },
+        data: { 
+          status: 'CANCELLED',
+          isFlaggedAdmin: true,
+          flagReason: 'SLA Timeout (Cleanup on Fetch)'
+        }
+      });
+
+      // Log breaches for these (if not already logged)
+      for (const o of expiredOrders) {
+        // Check if breach record already exists
+        const existingBreach = await prisma.vendorBreach.findFirst({
+          where: { orderId: o.id, type: 'SLA_TIMEOUT' }
+        });
+
+        if (!existingBreach) {
+          console.log(`[VENDOR-API] Self-healing breach for order: ${o.id}, vendor: ${profile.vendor.id}`);
+          try {
+            const breach = await prisma.vendorBreach.create({
+              data: {
+                vendorId: profile.vendor.id,
+                orderId: o.id,
+                type: 'SLA_TIMEOUT',
+                reason: 'SLA Timeout (System cleanup on fetch)'
+              }
+            });
+            console.log(`[VENDOR-API] Breach record created successfully: ${breach.id}`);
+          } catch (err) {
+            console.error(`[VENDOR-API] FAILED to create breach record: ${err.message}`);
+          }
+
+          await prisma.vendorSlaMetric.upsert({
+            where: { vendorId: profile.vendor.id },
+            update: { breachedOrders: { increment: 1 } },
+            create: { vendorId: profile.vendor.id, totalOrders: 1, breachedOrders: 1 }
+          });
+        }
+      }
+
+      // Re-fetch orders locally instead of redirecting
+      const freshOrders = await prisma.order.findMany({
+        where: { vendorId: profile.vendor.id },
+        include: { 
+          items: true,
+          customer: { select: { fullName: true, phone: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      const formatted = freshOrders.map(o => ({
+        ...o,
+        customerName: o.customer?.fullName || 'Customer',
+        total: parseFloat(o.totalAmount),
+        items: o.items.map(i => ({ qty: i.quantity, name: i.productName }))
+      }));
+
+      const activeStatuses = ['pending_vendor', 'accepted', 'preparing', 'ready_for_pickup', 'pending_vendor_response'];
+      return res.json({
+        active: formatted.filter(o => activeStatuses.includes(o.status)),
+        history: formatted.filter(o => !activeStatuses.includes(o.status))
+      });
+    }
 
     // Format for frontend
     const formattedOrders = orders.map(o => ({
@@ -486,14 +686,62 @@ router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
     const { status } = req.body; // preparing, ready_for_pickup
     if (!['preparing', 'ready_for_pickup'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    await prisma.order.update({
+    const updateData = { status };
+    if (status === 'preparing') {
+      updateData.preparingAt = new Date();
+    } else if (status === 'ready_for_pickup') {
+      updateData.readyAt = new Date();
+    }
+
+    const order = await prisma.order.update({
       where: { id },
-      data: { status }
+      data: updateData
     });
 
+    // Notify Shadowfax if ready
+    if (status === 'ready_for_pickup') {
+      try {
+        const deliveryService = require('../src/modules/delivery/delivery.service');
+        await deliveryService.onVendorReadyForPickup(id);
+      } catch (sfxErr) {
+        console.warn(`[VENDOR-API] Failed to notify SFX of ready status for order ${id}:`, sfxErr.message);
+      }
+    }
+
+    // Handle Delay Tracking (> 10 mins)
+    if (status === 'ready_for_pickup' && order.preparingAt && order.readyAt) {
+      const durationMs = order.readyAt.getTime() - order.preparingAt.getTime();
+      const durationMins = durationMs / (1000 * 60);
+      
+      if (durationMins > 1) {
+        console.log(`[VENDOR-API] Order ${id} preparation delayed: ${durationMins.toFixed(1)} mins`);
+        
+        // Flag the order
+        await prisma.order.update({
+          where: { id },
+          data: { 
+            isFlagged: true,
+            isFlaggedAdmin: true,
+            flagReason: `Delayed Preparation: ${durationMins.toFixed(1)} mins`
+          }
+        });
+
+        // Log to VendorBreach
+        await prisma.vendorBreach.create({
+          data: {
+            vendorId: order.vendorId,
+            orderId: id,
+            type: 'PREPARATION_DELAY',
+            reason: `Order took ${durationMins.toFixed(1)} mins to prepare (Target: 1 min)`
+          }
+        });
+      }
+    }
+
     emitOrderStatusUpdate(id, status, 'VENDOR');
-    res.json({ success: true });
+    res.json({ success: true, order });
   } catch (error) {
+    console.error('[VENDOR] Status update error:', error);
     res.status(500).json({ error: 'Status update failed' });
   }
 });
@@ -517,7 +765,7 @@ router.get('/products', firebaseAuth, async (req, res) => {
 
     const products = await prisma.product.findMany({
       where: { vendorId: profile.vendor.id },
-      include: { addOns: true },
+      include: { addOns: true, images: true },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -526,11 +774,15 @@ router.get('/products', firebaseAuth, async (req, res) => {
 
     const formattedProducts = products.map(p => ({
       ...p, 
+      image: p.images && p.images.length > 0 ? addCacheBuster(p.images[0].url) : null,
       price: p.basePrice ? Number(p.basePrice) : 0, 
       type: p.productType, 
       isAvailable: p.isActive, 
-      addOns: p.addOns || [], 
-      config
+      addOns: (p.addOns || []).map(a => ({ 
+        ...a, 
+        price: a.price ? Number(a.price) : 0,
+        freeLimit: a.freeLimit || 0
+      })),
     }));
 
 
@@ -543,7 +795,7 @@ router.get('/products', firebaseAuth, async (req, res) => {
 router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
   try {
     const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
-    const { name, description, category, type, price, isRestricted, isAvailable, addOns } = req.body;
+    const { name, description, category, type, price, isRestricted, isAvailable, addOns, image, images } = req.body;
 
     const createData = {
       vendorId: profile.vendor.id, 
@@ -559,10 +811,28 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
 
 
     if (addOns && Array.isArray(addOns) && addOns.length > 0) {
-      createData.addOns = { create: addOns.map(addon => ({ name: addon.name, isActive: true })) };
+      createData.addOns = { 
+        create: addOns.map(addon => ({ 
+          name: addon.name, 
+          price: parseFloat(addon.price) || 0,
+          freeLimit: parseInt(addon.freeLimit) || 0,
+          isActive: true 
+        })) 
+      };
     }
 
-    const product = await prisma.product.create({ data: createData, include: { addOns: true } });
+    if (image || (images && images.length > 0)) {
+      const imageList = (images ? images : [image]).map(url => stripCacheBuster(url));
+      createData.images = {
+        create: imageList.filter(img => !!img).map((url, index) => ({
+          url,
+          sortOrder: index
+        }))
+      };
+    }
+
+    console.log('[DEBUG] Product createData:', JSON.stringify(createData, null, 2));
+    const product = await prisma.product.create({ data: createData, include: { addOns: true, images: true } });
     res.json({ success: true, product });
   } catch (error) {
     console.error('[VENDOR] Add Product error:', error);
@@ -574,20 +844,103 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
 router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
     try {
       const { id } = req.params;
-      const { isAvailable, price, ...otherFields } = req.body;
+      console.log(`[VENDOR-API] PUT /products/${id} attempt...`);
+      const { name, description, category, type, isRestricted, isAvailable, price, image, images, addOns } = req.body;
       const profile = await withRetry(() => prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } }));
       
-      const updateData = { ...otherFields };
-      if (price !== undefined) updateData.basePrice = price;
-      if (isAvailable !== undefined) updateData.isActive = isAvailable;
-  
-      await withRetry(() => prisma.product.updateMany({
-        where: { id: id, vendorId: profile.vendor.id },
-         data: updateData
-      }));
+      const product = await prisma.product.findFirst({ where: { id, vendorId: profile.vendor.id } });
+      if (!product) return res.status(404).json({ error: 'Product not found' });
 
+      // Build update data with correct mapping
+      const updateData = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (category !== undefined) updateData.category = category;
+      if (type !== undefined) updateData.productType = type;
+      if (isRestricted !== undefined) updateData.isRestricted = isRestricted;
+      if (isAvailable !== undefined) updateData.isActive = isAvailable;
+      if (price !== undefined) updateData.basePrice = price;
   
-      res.json({ success: true });
+      // Check for Review-Triggering Changes
+      // Only price, images, and addons are exempt
+      const coreFields = {
+        name: name,
+        description: description,
+        category: category,
+        productType: type,
+        isRestricted: isRestricted
+      };
+
+      let reviewTriggered = false;
+      for (const [key, value] of Object.entries(coreFields)) {
+        // Compare with original product fields
+        const productKey = key === 'productType' ? 'productType' : key; 
+        if (value !== undefined && value !== product[productKey]) {
+          reviewTriggered = true;
+          break;
+        }
+      }
+
+      if (reviewTriggered) {
+        console.log(`[VENDOR-API] Core change detected for product ${id}. Triggering re-review.`);
+        updateData.reviewStatus = 'pending_review';
+        updateData.isActive = false; // Force hide from customer view
+      }
+
+      // Use a transaction to ensure add-on updates are atomic
+      const updatedProduct = await prisma.$transaction(async (tx) => {
+        // 1. Handle Images (if provided)
+        if (image !== undefined || images !== undefined) {
+          const imageList = (images ? images : (image ? [image] : [])).map(url => stripCacheBuster(url));
+          await tx.productImage.deleteMany({ where: { productId: id } });
+          if (imageList.length > 0) {
+            updateData.images = {
+              create: imageList.filter(img => !!img).map((url, index) => ({
+                url,
+                sortOrder: index
+              }))
+            };
+          }
+        }
+
+        // 2. Handle Add-ons (if provided)
+        if (addOns !== undefined) {
+          await tx.productAddon.deleteMany({ where: { productId: id } });
+          if (addOns.length > 0) {
+            updateData.addOns = {
+              create: addOns.map(a => ({
+                name: a.name,
+                price: parseFloat(a.price) || 0,
+                freeLimit: parseInt(a.freeLimit) || 0
+              }))
+            };
+          }
+        }
+
+        // 3. Final Update
+        return await tx.product.update({
+          where: { id },
+          data: updateData,
+          include: { addOns: true, images: true }
+        });
+      });
+
+      res.json({ 
+        success: true, 
+        reviewTriggered,
+        product: {
+          ...updatedProduct,
+          image: updatedProduct.images && updatedProduct.images.length > 0 ? addCacheBuster(updatedProduct.images[0].url) : null,
+          price: Number(updatedProduct.basePrice || 0),
+          type: updatedProduct.productType,
+          isAvailable: updatedProduct.isActive,
+          addOns: (updatedProduct.addOns || []).map(a => ({ 
+            ...a, 
+            price: Number(a.price || 0),
+            freeLimit: a.freeLimit || 0
+          }))
+        }
+      });
     } catch (error) {
       console.error('[VENDOR] Update Product error:', error);
       res.status(500).json({ error: 'Failed to update product', details: error.message });

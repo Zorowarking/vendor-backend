@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -41,11 +41,48 @@ export default function AddProduct() {
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
   const [addOnPrice, setAddOnPrice] = useState('');
+  const [addOnFreeLimit, setAddOnFreeLimit] = useState('0');
   const [showAddOnForm, setShowAddOnForm] = useState(false);
 
-  // Mock Categories and Types (Usually fetched from API)
-  const [categories, setCategories] = useState(['Pizza', 'Burgers', 'Pasta', 'Salads']);
+  // Categories and Types fetched from API
+  const [categories, setCategories] = useState([]);
   const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
+  const [allTemplates, setAllTemplates] = useState([]);
+
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const res = await vendorApi.getTemplates();
+        if (res.success && res.templates) {
+          setAllTemplates(res.templates);
+          // Extract unique categories
+          const cats = [...new Set(res.templates.map(t => t.category))];
+          setCategories(cats);
+        }
+      } catch (error) {
+        console.error('Failed to fetch templates:', error);
+      }
+    };
+    fetchTemplates();
+  }, []);
+
+  const handleTemplateSelect = (template) => {
+    setName(template.templateName);
+    setCategory(template.category);
+    if (template.templateData) {
+      setDescription(template.templateData.description || '');
+      setPrice(template.templateData.price?.toString() || '');
+      setType(template.templateData.type || 'Veg');
+      if (template.templateData.addOns) {
+        setAddOns(template.templateData.addOns.map(a => ({
+          id: Math.random().toString(),
+          name: a.name,
+          price: a.price,
+          freeLimit: a.freeLimit || 0
+        })));
+      }
+    }
+  };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -65,9 +102,15 @@ export default function AddProduct() {
       Alert.alert('Error', 'Please enter add-on name and price');
       return;
     }
-    setAddOns([...addOns, { id: Date.now().toString(), name: addOnName, price: parseFloat(addOnPrice) }]);
+    setAddOns([...addOns, { 
+      id: Date.now().toString(), 
+      name: addOnName, 
+      price: parseFloat(addOnPrice),
+      freeLimit: parseInt(addOnFreeLimit) || 0
+    }]);
     setAddOnName('');
     setAddOnPrice('');
+    setAddOnFreeLimit('0');
     setShowAddOnForm(false);
   };
 
@@ -116,7 +159,11 @@ export default function AddProduct() {
         isRestricted,
         isAvailable,
         image: imageUrl,
-        addOns
+        addOns: addOns.map(a => ({
+          name: a.name,
+          price: a.price,
+          freeLimit: a.freeLimit
+        }))
       };
 
       console.log('Attempting to save product:', productData);
@@ -185,9 +232,24 @@ export default function AddProduct() {
           />
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.label}>Quick Templates (Indian Food)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pickerContainer}>
+            {allTemplates.map(t => (
+              <TouchableOpacity 
+                key={t.id} 
+                style={styles.templateChip}
+                onPress={() => handleTemplateSelect(t)}
+              >
+                <Text style={styles.templateChipText}>{t.templateName}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         <View style={styles.row}>
           <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Price ($) *</Text>
+            <Text style={styles.label}>Price (₹) *</Text>
             <TextInput 
               style={styles.input} 
               placeholder="0.00" 
@@ -295,32 +357,58 @@ export default function AddProduct() {
 
         {showAddOnForm && (
           <View style={styles.addOnForm}>
-            <TextInput 
-              style={[styles.input, { flex: 1, marginRight: 8 }]} 
-              placeholder="Add-on Name" 
-              value={addOnName} 
-              onChangeText={setAddOnName} 
-            />
-            <TextInput 
-              style={[styles.input, { width: 80, marginRight: 8 }]} 
-              placeholder="Price" 
-              keyboardType="numeric"
-              value={addOnPrice} 
-              onChangeText={setAddOnPrice} 
-            />
-            <TouchableOpacity onPress={addAddOn} style={styles.saveAddOnButton}>
-              <Ionicons name="checkmark" size={24} color={Colors.white} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
-              <Ionicons name="close" size={24} color={Colors.white} />
-            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <TextInput 
+                style={[styles.input, { marginBottom: 8 }]} 
+                placeholder="Add-on Name" 
+                value={addOnName} 
+                onChangeText={setAddOnName} 
+              />
+              <View style={{ flexDirection: 'row' }}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Price (₹)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Price" 
+                    keyboardType="numeric"
+                    value={addOnPrice} 
+                    onChangeText={setAddOnPrice} 
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Free Qty Limit</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Limit" 
+                    keyboardType="numeric"
+                    value={addOnFreeLimit} 
+                    onChangeText={setAddOnFreeLimit} 
+                  />
+                </View>
+              </View>
+            </View>
+            <View style={{ marginLeft: 8 }}>
+              <TouchableOpacity onPress={addAddOn} style={[styles.saveAddOnButton, { marginBottom: 8 }]}>
+                <Ionicons name="checkmark" size={24} color={Colors.white} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
+                <Ionicons name="close" size={24} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
         {addOns.map(item => (
           <View key={item.id} style={styles.addOnListItem}>
-            <Text style={styles.addOnName}>{item.name}</Text>
-            <Text style={styles.addOnPrice}>+${item.price.toFixed(2)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.addOnName}>{item.name}</Text>
+              {item.freeLimit > 0 && (
+                <Text style={{ fontSize: 11, color: Colors.success, fontWeight: '500' }}>
+                  First {item.freeLimit} units free
+                </Text>
+              )}
+            </View>
+            <Text style={styles.addOnPrice}>+₹{item.price.toFixed(2)}</Text>
             <TouchableOpacity onPress={() => removeAddOn(item.id)}>
               <Ionicons name="trash-outline" size={20} color={Colors.error} />
             </TouchableOpacity>
@@ -415,6 +503,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     marginRight: 8,
+  },
+  templateChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.primary + '15',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    marginRight: 8,
+  },
+  templateChipText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   activeChip: {
     backgroundColor: Colors.primary,

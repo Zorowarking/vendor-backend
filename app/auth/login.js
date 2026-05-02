@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator, NativeModules } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { authService } from '../../services/auth';
@@ -7,68 +7,121 @@ import { useAuthStore } from '../../store/authStore';
 import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import { app } from '../../services/firebase';
 import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
-import { makeRedirectUri } from 'expo-auth-session';
+import { GoogleAuthProvider } from 'firebase/auth';
 
-// Allows the browser to handle the redirect back to the app
+let GoogleSignin = null;
+let statusCodes = {};
+
+const hasGoogleSigninModule = !!NativeModules.RNGoogleSignin;
+
+if (hasGoogleSigninModule) {
+  try {
+    const GoogleModule = require('@react-native-google-signin/google-signin');
+    GoogleSignin = GoogleModule.GoogleSignin;
+    statusCodes = GoogleModule.statusCodes;
+  } catch (e) {
+    console.warn('Google Sign-In module found but failed to load:', e.message);
+  }
+} else {
+  console.log('[AUTH] Running in Expo Go: Native Google Sign-In disabled.');
+}
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const router = useRouter();
-  const recaptchaVerifier = React.useRef(null);
+  const recaptchaVerifier = useRef(null);
 
   const [loading, setLoading] = useState(false);
   const [loginFailCount, setLoginFailCount] = useState(0);
   const [googleFailedCount, setGoogleFailedCount] = useState(0);
   const [isBotChecking, setIsBotChecking] = useState(false);
   const [showRecaptcha, setShowRecaptcha] = useState(false);
+  const [hasNativeGoogle, setHasNativeGoogle] = useState(true);
 
-  // Google Auth Request Hook
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    redirectUri: makeRedirectUri(),
-  });
-
-  // Handle Google Auth Response
-  React.useEffect(() => {
-    if (response?.type === 'success') {
-      const { id_token } = response.params;
-      handleGoogleLogin(id_token);
-    } else if (response?.type === 'error' || response?.type === 'cancel') {
-      console.log('UI: Google Login Cancelled or Failed');
-      setGoogleFailedCount(prev => prev + 1);
+  // Configure Google Sign-In
+  useEffect(() => {
+    if (!hasGoogleSigninModule) {
+      console.log('[AUTH] Native Google Sign-In module not found. Likely running in Expo Go.');
+      setHasNativeGoogle(false);
+      return;
     }
-  }, [response]);
 
-  const handleGoogleLogin = async (idToken) => {
+    try {
+      GoogleSignin.configure({
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+        offlineAccess: false,
+      });
+      setHasNativeGoogle(true);
+    } catch (e) {
+      console.error('Error configuring Google Sign-In:', e);
+      setHasNativeGoogle(false);
+    }
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    if (!hasNativeGoogle) {
+      Alert.alert(
+        'Feature Unavailable',
+        'Google Sign-In requires a custom APK build. It does not work inside the "Expo Go" app.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
-      console.log('UI: Starting Google Login...');
-      await authService.googleLogin(idToken);
-      console.log('UI: Google Login Success');
-      setGoogleFailedCount(0); // Reset on success
-    } catch (err) {
-      console.error('UI: Google Login Failed', err);
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo?.data?.idToken || userInfo?.idToken;
+
+      if (idToken) {
+        console.log('UI: Starting Google Login...');
+        await authService.googleLogin(idToken);
+        console.log('UI: Google Login Success');
+        setGoogleFailedCount(0); // Reset on success
+      }
+    } catch (error) {
       setGoogleFailedCount(prev => prev + 1);
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('User cancelled login flow');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        console.log('Login in progress');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Error', 'Play services not available or outdated.');
+      } else {
+        console.error('UI: Google Login Failed', error);
+        Alert.alert('Login Failed', error.message || 'An error occurred during Google Sign-In.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleGoogleLoginWithSecurity = async () => {
+    if (googleFailedCount >= 2 && !isBotChecking) {
+      setIsBotChecking(true);
+      Alert.alert(
+        'Security Check',
+        'Multiple failed attempts detected. Please complete the verification to continue.',
+        [{ text: 'Verify', onPress: () => recaptchaVerifier.current?.verify() }]
+      );
+      return;
+    }
+    handleGoogleLogin();
+  };
+
   const handleSendOTP = async () => {
     if (loading) return;
 
-    // Bot protection for Google/General failures
-    if (loginFailCount >= 3) {
+    // Bot protection for general failures
+    if (loginFailCount >= 3 && !showRecaptcha) {
       Alert.alert(
         'Security Check',
         'Multiple failed attempts detected. Please complete the verification to continue.',
         [{ text: 'OK', onPress: () => setShowRecaptcha(true) }]
       );
-      if (!showRecaptcha) return;
+      return;
     }
     
     if (phoneNumber.length !== 10) {
@@ -81,8 +134,9 @@ export default function LoginScreen() {
     
     try {
       const fullPhone = `+91${phoneNumber}`;
-      // Use the verifier. Modal is configured for invisible retries.
-      const confirmationResult = await authService.sendOTP(fullPhone, recaptchaVerifier.current);
+      
+      const verifier = (loginFailCount >= 2 || showRecaptcha) ? recaptchaVerifier.current : null;
+      const confirmationResult = await authService.sendOTP(fullPhone, verifier);
       
       authService._confirmationResult = confirmationResult;
       setLoginFailCount(0); // Reset on success
@@ -92,7 +146,6 @@ export default function LoginScreen() {
     } catch (err) {
       console.error('UI: OTP Request Failed', err);
       setLoginFailCount(prev => prev + 1);
-      // If it's a captcha failure, we might want to force it visible next time
       if (err.code === 'auth/captcha-check-failed') {
         setShowRecaptcha(true);
       }
@@ -109,7 +162,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Image 
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1160/1160358.png' }} // Placeholder logo
+            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1160/1160358.png' }} 
             style={styles.logo}
           />
           <Text style={styles.title}>Vendor & Partner App</Text>
@@ -130,6 +183,7 @@ export default function LoginScreen() {
               maxLength={10}
               placeholder="00000 00000"
               style={styles.input}
+              editable={!loading}
             />
           </View>
         </View>
@@ -146,7 +200,7 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Firebase Recaptcha Modal (Invisible by default) */}
+        {/* Firebase Recaptcha Modal */}
         <FirebaseRecaptchaVerifierModal
           ref={recaptchaVerifier}
           firebaseConfig={app.options}
@@ -156,7 +210,7 @@ export default function LoginScreen() {
             setIsBotChecking(false);
             setGoogleFailedCount(0);
             if (wasGoogleCheck) {
-              setTimeout(() => promptAsync(), 500);
+              setTimeout(() => handleGoogleLogin(), 500);
             }
           }}
         />
@@ -168,18 +222,9 @@ export default function LoginScreen() {
         </View>
 
         <TouchableOpacity 
-          style={styles.googleButton}
-          onPress={() => {
-            if (googleFailedCount >= 2 && !isBotChecking) {
-              setIsBotChecking(true);
-              Alert.alert('Security Check', 'Too many attempts. Please verify you are human.', [
-                { text: 'Verify', onPress: () => recaptchaVerifier.current?.verify() }
-              ]);
-              return;
-            }
-            promptAsync();
-          }}
-          disabled={!request || loading || isBotChecking}
+          style={[styles.googleButton, (loading || isBotChecking) && { opacity: 0.5 }]}
+          onPress={handleGoogleLoginWithSecurity}
+          disabled={loading || isBotChecking}
         >
           <Image 
             source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} 
@@ -276,6 +321,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   buttonText: {
     color: Colors.white,

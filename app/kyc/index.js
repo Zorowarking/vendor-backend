@@ -11,6 +11,7 @@ export default function KYCIndex() {
   // Use explicit selectors for better reactivity
   const role = useAuthStore((state) => state.role);
   const kycDocs = useAuthStore((state) => state.kycDocs);
+  const profileStatus = useAuthStore((state) => state.profileStatus);
   const setProfileStatus = useAuthStore((state) => state.setProfileStatus);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,7 +122,11 @@ export default function KYCIndex() {
           {isSubmitting ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.submitButtonText}>Submit KYC for Review</Text>
+            <Text style={styles.submitButtonText}>
+              {profileStatus === 'UNDER_REVIEW' ? 'Update & Resubmit KYC' : 
+               profileStatus === 'REJECTED' ? 'Fix & Resubmit KYC' : 
+               'Submit KYC for Review'}
+            </Text>
           )}
         </TouchableOpacity>
       </ScrollView>

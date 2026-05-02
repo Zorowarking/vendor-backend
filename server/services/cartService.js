@@ -19,14 +19,26 @@ class CartService {
     const { customerId, guestId } = identifier;
     console.log('[CART-SERVICE] Updating cart for:', identifier, { productId, vendorId });
 
+    // Validation: Ensure IDs are valid UUIDs if they exist
+    const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    
+    if (productId && !isUuid(productId)) {
+        throw { status: 400, message: `Invalid productId format: ${productId}` };
+    }
+    if (vendorId && !isUuid(vendorId)) {
+        throw { status: 400, message: `Invalid vendorId format: ${vendorId}` };
+    }
+
     try {
         const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours expiry
         let queryWhere = customerId ? { customerId } : { guestId };
 
+        const start = Date.now();
         let cart = await prisma.cart.findFirst({
           where: queryWhere,
           include: { items: true }
         });
+        console.log(`[CART-SERVICE] Lookup took ${Date.now() - start}ms`);
 
         if (cart) {
           cart = await prisma.cart.update({
@@ -101,7 +113,8 @@ class CartService {
           });
         }
     } catch (err) {
-        console.error('[CART-SERVICE] Update error:', err);
+        console.error('[CART-SERVICE] Critical Update Error:', err);
+        console.error('[CART-SERVICE] Payload:', { identifier, productId, vendorId, quantity, options });
         throw err;
     }
   }
@@ -160,10 +173,22 @@ class CartService {
           let itemAddonCharge = 0;
           const selectedAddons = item.options?.selectedAddons || [];
           
-          if (selectedAddons.length > this.CONFIG.FREE_ADDON_LIMIT) {
-            const chargeableUnits = selectedAddons.length - this.CONFIG.FREE_ADDON_LIMIT;
-            itemAddonCharge = chargeableUnits * this.CONFIG.PER_UNIT_CHARGE;
-          }
+          // Calculate charges per-addon based on their specific freeLimit
+          selectedAddons.forEach(selected => {
+            // Find the add-on details from the product's add-on list
+            // We match by name or ID (fallback to name for compatibility)
+            const addonName = typeof selected === 'string' ? selected : (selected.name || '');
+            const addonDetails = product.addOns.find(a => a.name === addonName || a.id === selected.id);
+            
+            if (addonDetails) {
+              const qty = selected.quantity || 1;
+              const freeLimit = addonDetails.freeLimit || 0;
+              const price = Number(addonDetails.price || 0);
+              
+              const chargeableQty = Math.max(0, qty - freeLimit);
+              itemAddonCharge += (chargeableQty * price);
+            }
+          });
 
           subtotal += itemSubtotal;
           totalAddonCharges += itemAddonCharge;

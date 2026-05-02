@@ -8,6 +8,7 @@ const config = getDefaultConfig(__dirname);
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
   '@unimodules/core': path.dirname(require.resolve('expo-modules-core/package.json')),
+  '@react-native-community/netinfo': path.resolve(__dirname, 'node_modules/@react-native-community/netinfo'),
 };
 
 module.exports = config;

@@ -11,19 +11,26 @@ const { generatePresignedUrl } = require('../lib/cloudflare');
 // GET /api/storage/presigned-url?fileName=logo.png&contentType=image/png
 router.get('/presigned-url', firebaseAuth, async (req, res) => {
     try {
-        const { fileName, contentType } = req.query;
+        const { fileName, contentType, key: customKey, isDeterministic } = req.query;
 
         if (!fileName || !contentType) {
             return res.status(400).json({ error: 'fileName and contentType are required' });
         }
 
-        // Add a timestamp or UUID to fileName to avoid collisions
-        const timestamp = Date.now();
-        const uniqueFileName = `${timestamp}_${fileName.replace(/\s+/g, '_')}`;
-
-        console.log(`[STORAGE] Generating presigned URL for: ${uniqueFileName}`);
+        console.log(`[STORAGE] Requesting URL for: ${fileName}, type: ${contentType}, customKey: ${customKey}, deterministic: ${isDeterministic}`);
         
-        const { uploadUrl, publicUrl } = await generatePresignedUrl(uniqueFileName, contentType);
+        let finalKey;
+        if (isDeterministic === 'true' && customKey) {
+            finalKey = customKey;
+        } else {
+            // Add a timestamp or UUID to fileName to avoid collisions
+            const timestamp = Date.now();
+            finalKey = `uploads/${timestamp}_${fileName.replace(/\s+/g, '_')}`;
+        }
+
+        console.log(`[STORAGE] Generated Presigned URL - Key: ${finalKey}`);
+        
+        const { uploadUrl, publicUrl } = await generatePresignedUrl(finalKey, contentType);
 
         res.json({
             success: true,

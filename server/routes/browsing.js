@@ -10,16 +10,25 @@ const guestSession = require('../middleware/guest');
 // GET /vendors — list all active (online) vendors
 router.get('/vendors', guestSession, async (req, res) => {
   try {
+    const { category } = req.query;
+    
+    const where = {
+      onlineStatus: 'online', 
+      accountStatus: { in: ['APPROVED', 'ACTIVE'] }
+    };
+
+    if (category && category !== 'All') {
+      where.businessCategory = category;
+    }
+
     const vendors = await prisma.vendor.findMany({
-      where: {
-        onlineStatus: 'online', 
-        accountStatus: 'APPROVED'
-      },
+      where,
       select: {
         id: true,
         businessName: true,
         businessCategory: true,
         logoUrl: true,
+        bannerUrl: true, // Added for banner display
         businessAddress: true,
         latitude: true,
         longitude: true,
@@ -30,10 +39,19 @@ router.get('/vendors', guestSession, async (req, res) => {
     const mappedVendors = vendors.map(v => ({
       ...v,
       name: v.businessName,      // Alias for frontend compatibility 
-      description: v.storeDescription // Alias for frontend compatibility
+      description: v.storeDescription, // Alias for frontend compatibility
+      logoUrl: v.logoUrl,
+      bannerUrl: v.bannerUrl
     }));
 
-    console.log('[DEBUG] Sending mapped vendors:', JSON.stringify(mappedVendors[0], null, 2));
+    console.log('[DEBUG] Sending mapped vendors count:', mappedVendors.length);
+    if (mappedVendors.length > 0) {
+        console.log('[DEBUG] First vendor images:', {
+            name: mappedVendors[0].name,
+            logo: mappedVendors[0].logoUrl,
+            banner: mappedVendors[0].bannerUrl
+        });
+    }
     res.json({ success: true, vendors: mappedVendors });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch vendors' });
@@ -63,12 +81,14 @@ router.get('/vendors/:id/products', guestSession, async (req, res) => {
       where: { 
         vendorId: id, 
         isActive: true, 
-        reviewStatus: 'approved' 
+        reviewStatus: { equals: 'APPROVED', mode: 'insensitive' }
       },
-      include: { addOns: true }
+      include: { addOns: true, images: true }
     });
     const mappedProducts = products.map(p => ({
       ...p,
+      image: p.images && p.images.length > 0 ? p.images[0].url : null,
+      imageUrl: p.images && p.images.length > 0 ? p.images[0].url : null,
       price: Number(p.basePrice), // Alias for frontend
       addons: p.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })) // Alias and numeric price
     }));
@@ -84,13 +104,14 @@ router.get('/products/:id', guestSession, async (req, res) => {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
       where: { id },
-      include: { addOns: true }
+      include: { addOns: true, images: true }
     });
 
     if (!product) return res.status(404).json({ error: 'Product not found' });
     
     const mappedProduct = {
       ...product,
+      image: product.images && product.images.length > 0 ? `${product.images[0].url}?t=${Date.now()}` : null,
       price: Number(product.basePrice),
       addons: product.addOns?.map(a => ({ ...a, price: Number(a.price || 0) }))
     };
