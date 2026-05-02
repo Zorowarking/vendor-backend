@@ -13,7 +13,7 @@ RUN npm install dotenv @prisma/config --legacy-peer-deps
 
 # Copy server package files and install
 COPY server/package*.json ./server/
-RUN cd server && npm install && npm install @prisma/client
+RUN cd server && npm install --ignore-scripts && npm install @prisma/client --ignore-scripts
 
 # Generate Prisma client (will use prisma.config.js and schema.prisma)
 # The output path in schema.prisma is "../server/node_modules/.prisma/client"
