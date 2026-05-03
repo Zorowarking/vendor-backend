@@ -5,9 +5,6 @@ import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
 import { authService } from '../../services/auth';
 import { Alert, ActivityIndicator } from 'react-native';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
-import { app } from '../../services/firebase';
-
 
 export default function OTPVerifyScreen() {
   const [otp, setOtp] = useState(['', '', '', '', '', '']); // 6 digits
@@ -17,7 +14,6 @@ export default function OTPVerifyScreen() {
   const router = useRouter();
   const { phone } = useLocalSearchParams();
   const inputRefs = useRef([]);
-  const recaptchaVerifier = useRef(null);
 
 
   useEffect(() => {
@@ -106,19 +102,14 @@ export default function OTPVerifyScreen() {
 
 
 
-  const [resendCount, setResendCount] = useState(0);
-
   const handleResend = async () => {
     if (timer === 0) {
       setLoading(true);
       try {
-        const verifier = resendCount >= 1 ? recaptchaVerifier.current : null;
-        await authService.sendOTP(`+91${phone}`, verifier);
+        await authService.sendOTP(`+91${phone}`);
         setTimer(30);
-        setResendCount(0); // Reset on success
       } catch (err) {
         console.error('UI: Resend Error', err);
-        setResendCount(prev => prev + 1);
         Alert.alert('Error', 'Failed to resend OTP. Please try again.');
       } finally {
         setLoading(false);
@@ -180,13 +171,6 @@ export default function OTPVerifyScreen() {
             <Text style={styles.buttonText}>Verify & Continue</Text>
           )}
         </TouchableOpacity>
-
-        {/* Firebase Recaptcha Modal */}
-        <FirebaseRecaptchaVerifierModal
-          ref={recaptchaVerifier}
-          firebaseConfig={app.options}
-          attemptInvisibleRetries={5}
-        />
 
       </ScrollView>
 

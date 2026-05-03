@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 5.9.1"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://vendor-backend-production-4439.up.railway.app",
+        "EXPO_PUBLIC_SOCKET_URL": "https://vendor-backend-production-4439.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "889299912788-9e8anedmtd1ng83b7cs4k3uadh5lh6tb.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "889299912788-lnu8bkdkblg9v8nanipt4vpqvsjspd0c.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o.apps.googleusercontent.com",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCDxTu_2sK2VFObrNLUICrddAi-hR67Tcs",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "vantyrn-e20f0.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "vantyrn-e20f0",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "vantyrn-e20f0.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "889299912788",
+        "EXPO_PUBLIC_FIREBASE_APP_ID_ANDROID": "1:889299912788:android:e6a50ef9a2df3c207445c1",
+        "EXPO_PUBLIC_FIREBASE_APP_ID_IOS": "1:889299912788:ios:533b355c58a3d1857445c1"
+      }
+    },
+    "production": {}
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CLIENT_ID</key>
+	<string>889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>889299912788-995h9ndrj57jl01t95pdd9ul462g5f0s.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyB7CzIb5sWD-yqdoas51KeapM7FJDJ1IhE</string>
 	<key>GCM_SENDER_ID</key>
@@ -9,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.vantyrn.app</string>
+	<string>com.vantyrn.vendor</string>
 	<key>PROJECT_ID</key>
 	<string>vantyrn-e20f0</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:889299912788:ios:44068750edbe922b7445c1</string>
+	<string>1:889299912788:ios:533b355c58a3d1857445c1</string>
 </dict>
 </plist>

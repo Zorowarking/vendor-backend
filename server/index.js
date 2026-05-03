@@ -18,6 +18,12 @@ const { initSocket } = require('./lib/socket');
 const io = initSocket(server);
 
 const PORT = process.env.PORT || 3000;
+console.log(`🚀 [STAGE 1] Startup Info:
+  - NODE_ENV: ${process.env.NODE_ENV}
+  - PORT: ${PORT}
+  - DATABASE_URL defined: ${!!process.env.DATABASE_URL}
+  - REDIS_URL defined: ${!!process.env.REDIS_URL}
+`);
 
 // Initialize Firebase Admin (Optional, will use mock if config is missing)
 try {

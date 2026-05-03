@@ -92,11 +92,17 @@ async function withRetry(operation, maxRetries = 3, delay = 1000) {
  */
 async function getOrCreateCustomerProfile(user) {
   const { uid, phoneNumber, name } = user;
-  const normalizedPhone = phoneNumber || 'unknown';
   
+  // Use a unique placeholder for missing phone numbers to avoid constraint violations
+  // while still being able to identify the record.
+  const normalizedPhone = phoneNumber || `google-user:${uid}`;
+  const isPlaceholder = !phoneNumber;
+  
+  console.log(`[PRISMA] Syncing profile for UID: ${uid}, Phone: ${normalizedPhone}`);
+
   // 1. Ensure Profile exists (Self-Healing Lookup)
   let profile = await withRetry(async () => {
-    // A. Check by Firebase UID first
+    // A. Check by Firebase UID first (Most reliable for social login)
     let p = await prisma.profile.findUnique({
       where: { firebaseUid: uid },
       include: { customer: true }
@@ -104,8 +110,9 @@ async function getOrCreateCustomerProfile(user) {
 
     if (p) return p;
 
-    // B. Check by Phone Number if UID didn't match
-    if (normalizedPhone !== 'unknown') {
+    // B. Check by Phone Number if UID didn't match (Identity Adoption)
+    // Only do this if it's a REAL phone number, not our placeholder
+    if (!isPlaceholder) {
       p = await prisma.profile.findFirst({
         where: { phoneNumber: normalizedPhone },
         include: { customer: true }
@@ -135,6 +142,7 @@ async function getOrCreateCustomerProfile(user) {
       });
     } catch (createError) {
       if (createError.code === 'P2002') {
+        console.log('[PRISMA] Profile creation race-condition, re-fetching...');
         return await prisma.profile.findFirst({
           where: { OR: [{ firebaseUid: uid }, { phoneNumber: normalizedPhone }] },
           include: { customer: true }
@@ -169,7 +177,7 @@ async function getOrCreateCustomerProfile(user) {
     profile.customer = customer;
   } else {
     // 3. Sync if needed
-    if (profile.phoneNumber !== normalizedPhone && normalizedPhone !== 'unknown') {
+    if (profile.phoneNumber !== normalizedPhone && !isPlaceholder) {
         profile = await prisma.profile.update({
             where: { id: profile.id },
             data: { phoneNumber: normalizedPhone },

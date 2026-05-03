@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "scheme": "vendor-app",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -14,14 +13,18 @@
       "backgroundColor": "#ffffff"
     },
     "android": {
+      "package": "com.vantyrn.vendor",
       "googleServicesFile": "./google-services.json",
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
+      "bundleIdentifier": "com.vantyrn.vendor",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries.",
         "NSLocationAlwaysUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries."
@@ -32,16 +35,37 @@
       "expo-document-picker",
       "expo-location",
       "expo-image-picker",
-      "@react-native-firebase/app",
-      "@react-native-firebase/auth",
-      "@react-native-firebase/messaging",
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-firebase/app",
+        {}
+      ],
+      [
+        "@react-native-firebase/auth",
+        {}
+      ],
+      [
+        "@react-native-firebase/messaging",
+        {}
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosClientId": "889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o.apps.googleusercontent.com",
+          "iosUrlScheme": "com.googleusercontent.apps.889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false
     },
     "updates": {
       "enabled": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7947780d-e319-41ed-8db8-0ffd70af17f0"
+      }
     }
   }
 }

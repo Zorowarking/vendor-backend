@@ -93,7 +93,7 @@ export const authService = {
   /**
    * Sends an OTP via Firebase Web SDK with Developer Mock Bypass
    */
-  sendOTP: async (phoneNumber, recaptchaVerifier) => {
+  sendOTP: async (phoneNumber) => {
     try {
       console.log('--- STARTING SEND_OTP ---');
       const cleanPhone = phoneNumber.trim();
@@ -127,39 +127,17 @@ export const authService = {
         return confirmationResult;
       }
 
-      // 2. Fallback to Web SDK (May require Recaptcha Modal)
-      if (!recaptchaVerifier) {
-        console.log('--- ATTEMPTING WEB signInWithPhoneNumber WITHOUT VERIFIER ---');
-        // This will succeed if the number is a test number in Firebase, or fail with auth/captcha-check-failed
-        return await signInWithPhoneNumber(auth, phoneNumber);
-      }
+      // 2. Fallback to Web SDK
+      console.log('--- FALLBACK: CALLING WEB signInWithPhoneNumber ---');
+      // This will succeed if the number is a test number in Firebase
+      return await signInWithPhoneNumber(auth, phoneNumber);
 
-      // Bugfix for Firebase JS SDK v9+ compatibility with expo-firebase-recaptcha
-      const applicationVerifier = {
-        type: 'recaptcha',
-        verify: async () => {
-          console.log('--- VERIFIER: STARTING VERIFICATION ---');
-          return await recaptchaVerifier.verify();
-        },
-        _reset: () => {
-          if (typeof recaptchaVerifier?._reset === 'function') {
-            recaptchaVerifier._reset();
-          }
-        }
-      };
-
-      console.log('--- CALLING signInWithPhoneNumber WITH PATCHED VERIFIER ---');
-      const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, applicationVerifier);
-      console.log('--- OTP SENT SUCCESSFULLY ---');
-      return confirmationResult;
     } catch (error) {
       console.error('--- SEND_OTP ERROR ---', error);
       let message = 'Failed to send OTP. Please try again.';
       
       if (error.code === 'auth/too-many-requests') {
         message = 'Too many attempts. Please try again later or use the test number +919999999999 (OTP: 123456) for development.';
-      } else if (error.code === 'auth/captcha-check-failed') {
-        message = 'Recaptcha verification failed. Please try again.';
       } else if (error.code === 'auth/invalid-phone-number') {
         message = 'Invalid phone number format.';
       }
