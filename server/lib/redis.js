@@ -1,20 +1,34 @@
 const Redis = require('ioredis');
 
 // Shared Redis connection logic
-const redisConfig = {
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  port: process.env.REDIS_PORT || 6379,
-  lazyConnect: false,
-  connectTimeout: 2000, 
-  maxRetriesPerRequest: null,
-  retryStrategy(times) {
-    const delay = Math.min(times * 500, 5000);
-    return delay;
-  },
-};
+let connection;
+const redisUrl = process.env.REDIS_URL;
 
-
-const connection = new Redis(redisConfig);
+if (redisUrl) {
+  console.log('[REDIS] Initializing with REDIS_URL');
+  connection = new Redis(redisUrl, {
+    maxRetriesPerRequest: null,
+    connectTimeout: 10000,
+    // Add TLS for rediss:// URLs
+    tls: redisUrl.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+    retryStrategy(times) {
+      return Math.min(times * 500, 5000);
+    }
+  });
+} else {
+  const redisConfig = {
+    host: process.env.REDIS_HOST || '127.0.0.1',
+    port: process.env.REDIS_PORT || 6379,
+    lazyConnect: false,
+    connectTimeout: 5000, 
+    maxRetriesPerRequest: null,
+    tls: process.env.REDIS_TLS === 'true' ? { rejectUnauthorized: false } : undefined,
+    retryStrategy(times) {
+      return Math.min(times * 500, 5000);
+    },
+  };
+  connection = new Redis(redisConfig);
+}
 
 connection.on('error', (err) => {
   // Silent error unless explicitly debugging to prevent terminal spam

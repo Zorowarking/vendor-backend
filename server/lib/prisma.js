@@ -10,8 +10,6 @@ const { Pool } = require('pg');
 
 let prismaClientInstance;
 
-console.log('[PRISMA] Client Path:', require.resolve('@prisma/client'));
-
 /**
  * Shared Prisma Client Initialization
  * Uses the standard 'pg' driver adapter for robust PostgreSQL connectivity.
@@ -21,38 +19,52 @@ function getPrismaClient() {
 
   let connectionString = process.env.DATABASE_URL;
   if (connectionString) {
+    // Strip quotes and handle potential search_path or other query params
     connectionString = connectionString.replace(/^["'](.+)["']$/, '$1').trim();
+    
+    // Safety check: ensure search_path is handled if using Neon multi-schema
+    if (connectionString.includes('neon.tech') && !connectionString.includes('search_path')) {
+       console.log('[PRISMA] Detected Neon DB without search_path. Adding defaults...');
+       const separator = connectionString.includes('?') ? '&' : '?';
+       connectionString += `${separator}search_path=customer,vendor_delivery,public`;
+    }
   }
 
   if (!connectionString) {
-    console.error('[PRISMA] CRITICAL: DATABASE_URL is not defined.');
+    console.error('[PRISMA] CRITICAL: DATABASE_URL is not defined. Falling back to local/default.');
+    // Don't crash immediately, let Stage 3 catch the failure
     return new PrismaClient();
   }
 
-  // Set the environment variable for the internal engine
+  // Set the environment variable for the internal engine (still needed by some Prisma internals)
   process.env.DATABASE_URL = connectionString;
 
   console.log('[PRISMA] Initializing standard Prisma Client with Driver Adapter...');
-  const pool = new Pool({ 
-    connectionString,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 60000, // 60s to handle NeonDB cold starts
-    ssl: {
-      rejectUnauthorized: false
-    }
-  });
-  const adapter = new PrismaPg(pool);
+  
+  try {
+    const pool = new Pool({ 
+      connectionString,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 60000, // 60s to handle NeonDB cold starts
+      ssl: {
+        rejectUnauthorized: false
+      }
+    });
 
-  prismaClientInstance = new PrismaClient({
-    adapter,
-    log: ['error', 'warn'],
-  });
-  
-  console.log('[PRISMA] Models available:', Object.keys(prismaClientInstance).filter(k => !k.startsWith('$') && !k.startsWith('_')));
-  console.log('[PRISMA] vendorBreach exists:', !!prismaClientInstance.vendorBreach);
-  
-  return prismaClientInstance;
+    const adapter = new PrismaPg(pool);
+
+    prismaClientInstance = new PrismaClient({
+      adapter,
+      log: ['error', 'warn'],
+    });
+    
+    return prismaClientInstance;
+  } catch (err) {
+    console.error('[PRISMA] Initialization Failed:', err.message);
+    // Return a dummy client that will fail on first query so Stage 3 can catch it
+    return new PrismaClient();
+  }
 }
 
 // Global instance management

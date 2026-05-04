@@ -51,7 +51,7 @@ setTimeout(async () => {
       Queue = bullmq.Queue;
       Worker = bullmq.Worker;
 
-      const prisma = require('./prisma');
+      const { prisma } = require('./prisma');
       const fcm = require('./fcm');
 
       vendorPollingQueue = new Queue('vendorPolling', { connection });

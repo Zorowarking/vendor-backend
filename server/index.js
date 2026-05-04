@@ -35,6 +35,32 @@ app.use(express.urlencoded({ extended: true }));
 console.log('🚀 [STAGE 2] Basic middleware initialized.');
 
 // ==========================================
+// STAGE 2.5: FIREBASE ADMIN INIT
+// ==========================================
+try {
+  const admin = require('firebase-admin');
+  if (admin.apps.length === 0) {
+    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    
+    if (serviceAccountVar) {
+      try {
+        const serviceAccount = JSON.parse(serviceAccountVar);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('✅ [FIREBASE] Admin SDK initialized successfully.');
+      } catch (parseError) {
+        console.error('❌ [FIREBASE] Failed to parse service account JSON:', parseError.message);
+      }
+    } else {
+      console.warn('⚠️ [FIREBASE] FIREBASE_SERVICE_ACCOUNT missing. Auth will run in mock/fallback mode.');
+    }
+  }
+} catch (fbError) {
+  console.error('❌ [FIREBASE] Initialization error:', fbError.message);
+}
+
+// ==========================================
 // STAGE 3: HEAVY INITIALIZATION (Background)
 // ==========================================
 (async () => {
@@ -78,7 +104,11 @@ console.log('🚀 [STAGE 2] Basic middleware initialized.');
     console.log('✨ [COMPLETE] All services and routes loaded successfully.');
 
   } catch (err) {
-    console.error('❌ [CRITICAL] Initialization Failure:', err.message);
+    console.error('❌ [CRITICAL] Stage 3 Initialization Failure:');
+    console.error('   Error Name:', err.name);
+    console.error('   Error Message:', err.message);
+    if (err.stack) console.error('   Stack Trace:', err.stack);
+    
     // We don't exit(1) here because we want the health check to stay alive 
     // so we can debug via logs.
   }
