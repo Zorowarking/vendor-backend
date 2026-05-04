@@ -3,16 +3,16 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy server package files and install ALL server dependencies first
-COPY server/package*.json ./server/
-RUN cd server && npm install --ignore-scripts
-
-# Copy the prisma schema (needed for prisma generate)
+# Copy the prisma schema first so postinstall can find it
 COPY prisma/ ./prisma/
 
-# Generate Prisma client — schema output path is ../server/node_modules/.prisma/client
-# We run from /app so the relative path in schema.prisma is correct
-RUN cd server && npx prisma generate --schema=../prisma/schema.prisma
+# Copy server package files and install dependencies
+# This will automatically trigger the 'postinstall' prisma generate script
+COPY server/package*.json ./server/
+RUN cd server && npm install
+
+# Copy server source code
+COPY server/ ./server/
 
 # Prune dev dependencies now that client is generated
 RUN cd server && npm prune --omit=dev
