@@ -8,9 +8,16 @@ let io;
  */
 const initSocket = (server) => {
   io = new Server(server, {
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    allowEIO3: true, // Compatibility for some older clients
     cors: {
-      origin: '*', // Adjust for production
-      methods: ['GET', 'POST']
+      origin: '*', // For production, use specific origins
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true
     }
   });
 
