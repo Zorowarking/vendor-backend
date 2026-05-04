@@ -3,23 +3,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy the root configuration files (needed by Prisma CLI)
-COPY prisma.config.js ./
-COPY prisma/ ./prisma/
-COPY package*.json ./
-
-# Install dotenv in root so prisma.config.js can load it
-RUN npm install dotenv @prisma/config --legacy-peer-deps
-
-# Copy server package files and install
+# Copy server package files and install ALL server dependencies first
 COPY server/package*.json ./server/
-RUN cd server && npm install --ignore-scripts && npm install @prisma/client --ignore-scripts
+RUN cd server && npm install --ignore-scripts
 
-# Generate Prisma client (will use prisma.config.js and schema.prisma)
-# The output path in schema.prisma is "../server/node_modules/.prisma/client"
-RUN npx prisma generate --schema=./prisma/schema.prisma
+# Copy the prisma schema (needed for prisma generate)
+COPY prisma/ ./prisma/
 
-# Prune dev dependencies from the server node_modules
+# Generate Prisma client — schema output path is ../server/node_modules/.prisma/client
+# We run from /app so the relative path in schema.prisma is correct
+RUN cd server && npx prisma generate --schema=../prisma/schema.prisma
+
+# Prune dev dependencies now that client is generated
 RUN cd server && npm prune --omit=dev
 
 # ─── Stage 2: Runner ───────────────────────────────────────────────────────────
@@ -36,9 +31,8 @@ COPY --from=builder /app/server/node_modules ./server/node_modules
 # Copy server source code
 COPY server/ ./server/
 
-# Copy Prisma schema and config (needed at runtime)
+# Copy Prisma schema (needed if Prisma runs at startup)
 COPY prisma/ ./prisma/
-COPY prisma.config.js ./
 
 EXPOSE 3000
 ENV NODE_ENV=production
