@@ -1,24 +1,28 @@
-# ─── Stage 1: Builder ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy the prisma schema first so postinstall can find it
+# Copy root package files and install (needed for Prisma CLI stability)
+COPY package*.json ./
+RUN npm install --ignore-scripts
+
+# Copy the prisma schema
 COPY prisma/ ./prisma/
 
-# Copy server package files and install dependencies
-# This will automatically trigger the 'postinstall' prisma generate script
+# Copy server package files and install server dependencies
 COPY server/package*.json ./server/
-RUN cd server && npm install
+RUN cd server && npm install --ignore-scripts
 
-# Copy server source code
-COPY server/ ./server/
+# Generate Prisma client
+# Since the schema defines output as "../server/node_modules/.prisma/client",
+# running this from the root will correctly place it in the server's node_modules.
+RUN npx prisma generate --schema=prisma/schema.prisma
 
-# Prune dev dependencies now that client is generated
+# Prune server dependencies
 RUN cd server && npm prune --omit=dev
 
 # ─── Stage 2: Runner ───────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
