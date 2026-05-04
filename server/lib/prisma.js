@@ -31,9 +31,16 @@ function getPrismaClient() {
   }
 
   if (!connectionString) {
-    console.error('[PRISMA] CRITICAL: DATABASE_URL is not defined. Falling back to local/default.');
-    // Don't crash immediately, let Stage 3 catch the failure
-    return new PrismaClient();
+    console.error('[PRISMA] CRITICAL: DATABASE_URL is not defined. Server will start but DB queries will fail.');
+    try {
+      return new PrismaClient();
+    } catch (e) {
+      console.error('[PRISMA] Cannot create fallback client:', e.message);
+      return {
+        $queryRaw: () => Promise.reject(new Error('DATABASE_URL not configured')),
+        $disconnect: () => Promise.resolve(),
+      };
+    }
   }
 
   // Set the environment variable for the internal engine (still needed by some Prisma internals)
@@ -62,8 +69,17 @@ function getPrismaClient() {
     return prismaClientInstance;
   } catch (err) {
     console.error('[PRISMA] Initialization Failed:', err.message);
-    // Return a dummy client that will fail on first query so Stage 3 can catch it
-    return new PrismaClient();
+    // Return a fallback client - will fail on first query, Stage 3 will catch it
+    try {
+      return new PrismaClient();
+    } catch (fallbackErr) {
+      console.error('[PRISMA] Fallback PrismaClient also failed:', fallbackErr.message);
+      // Return a null-safe mock that throws on use
+      return {
+        $queryRaw: () => Promise.reject(new Error('Prisma not initialized')),
+        $disconnect: () => Promise.resolve(),
+      };
+    }
   }
 }
 
