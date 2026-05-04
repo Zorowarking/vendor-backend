@@ -83,7 +83,7 @@ try {
     const browsingRoutes = require('./routes/browsing');
     const customerRoutes = require('./routes/customer');
     const vendorRoutes = require('./routes/vendor');
-    const orderRoutes = require('./routes/order');
+    const orderRoutes = require('./routes/orders');
     const shadowfaxRoutes = require('./src/modules/delivery/shadowfax/shadowfax.routes');
 
     app.use('/api/browsing', browsingRoutes);

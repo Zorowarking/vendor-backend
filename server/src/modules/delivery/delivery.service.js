@@ -3,6 +3,7 @@ const mapper = require('./shadowfax/shadowfax.mapper');
 const env = require('../../config/env');
 const OrderService = require('../../../services/orderService');
 const logger = require('../../../lib/logger');
+const { prisma } = require('../../../lib/prisma');
 
 /**
  * Orchestration layer for Delivery operations.
