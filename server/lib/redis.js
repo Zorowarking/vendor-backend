@@ -42,6 +42,5 @@ connection.on('connect', () => {
 });
 
 module.exports = {
-  connection,
-  redisConfig
+  connection
 };
