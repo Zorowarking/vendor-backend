@@ -3,8 +3,9 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy root package files and install (needed for Prisma CLI stability)
+# Using --legacy-peer-deps to ignore frontend/expo dependency conflicts during backend build
 COPY package*.json ./
-RUN npm install --ignore-scripts
+RUN npm install --ignore-scripts --legacy-peer-deps
 
 # Copy the prisma schema
 COPY prisma/ ./prisma/
