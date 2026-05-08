@@ -57,31 +57,25 @@ export default function KYCStatus() {
   }, [user?.uid, setProfileStatus]);
 
   useEffect(() => {
-    // Polling fallback every 10 seconds
+    // Initial fetch on mount just in case we missed a state change while offline
     const checkStatus = async () => {
       try {
-        // Add timestamp to bust any potential caches
         const vendor = await apiClient.get(`/api/vendor/profile?t=${Date.now()}`).then(res => res.data.vendor);
         if (vendor && vendor.kycStatus) {
           const remoteStatus = vendor.kycStatus.toUpperCase();
-          console.log(`[KYC-POLL] Current: ${kycStatus}, Remote: ${remoteStatus}`);
           if (remoteStatus !== kycStatus) {
-            console.log(`[KYC-POLL] Status CHANGE detected: ${kycStatus} -> ${remoteStatus}`);
+            console.log(`[KYC-SYNC] Status CHANGE detected: ${kycStatus} -> ${remoteStatus}`);
             setKycStatus(remoteStatus);
             setProfileStatus(remoteStatus);
           }
-        } else {
-          console.warn('[KYC-POLL] Vendor data or kycStatus missing in response', vendor);
         }
       } catch (err) {
-        console.error('[KYC-POLL] Network/Server Error:', err.message);
+        console.error('[KYC-SYNC] Network/Server Error:', err.message);
       }
     };
 
-    const interval = setInterval(checkStatus, 5000);
-    checkStatus(); // Run immediately on mount
-    return () => clearInterval(interval);
-  }, [kycStatus, setProfileStatus]);
+    checkStatus();
+  }, []);
 
   const renderStatusIcon = () => {
     switch (kycStatus) {

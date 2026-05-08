@@ -2,6 +2,7 @@ const { prisma } = require('../lib/prisma');
 const { orderSlaQueue } = require('../lib/bullmq');
 const { emitOrderStatusUpdate, emitIncomingOrder } = require('../lib/socket');
 const fcm = require('../lib/fcm');
+const { checkAndTransitionVendorOffline } = require('../lib/vendorStatusHelper');
 
 /**
  * Order Service for managing order lifecycle, status changes, and notifications.
@@ -190,16 +191,20 @@ class OrderService {
       });
     }
 
-    // Analytics
-    if (newStatus === 'Delivered') {
-      await prisma.analyticsEvent.create({
-        data: {
-          event: 'order_completed',
-          orderId: orderId,
-          customerId: order.customerId,
-          firedAt: new Date()
-        }
-      });
+    // Analytics and Offline Check for terminal states
+    if (newStatus === 'Delivered' || newStatus === 'CANCELLED' || newStatus === 'cancelled_by_vendor' || newStatus === 'ORDER_CANCELLED') {
+      await checkAndTransitionVendorOffline(order.vendorId);
+      
+      if (newStatus === 'Delivered') {
+        await prisma.analyticsEvent.create({
+          data: {
+            event: 'order_completed',
+            orderId: orderId,
+            customerId: order.customerId,
+            firedAt: new Date()
+          }
+        });
+      }
     }
 
     return order;

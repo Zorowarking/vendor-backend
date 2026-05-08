@@ -24,6 +24,7 @@ class SocketService {
     const namespaceUrl = role === 'VENDOR' ? `${SOCKET_URL}/vendor` : `${SOCKET_URL}/rider`;
     
     this.socket = io(namespaceUrl, {
+      transports: ['websocket'], // ONLY WebSocket to prevent 502 polling storms
       auth: { token },
       query: { 
         userId, 
@@ -31,9 +32,9 @@ class SocketService {
         ...(role === 'VENDOR' ? { vendorId: userId } : { riderId: userId })
       },
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 20,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
       randomizationFactor: 0.5,
       timeout: 20000,
     });

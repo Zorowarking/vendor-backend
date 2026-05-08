@@ -15,6 +15,7 @@ let prismaClientInstance;
  * Uses the standard 'pg' driver adapter for robust PostgreSQL connectivity.
  */
 function getPrismaClient() {
+  if (global.__prisma) return global.__prisma;
   if (prismaClientInstance) return prismaClientInstance;
 
   let connectionString = process.env.DATABASE_URL;
@@ -61,12 +62,14 @@ function getPrismaClient() {
 
     const adapter = new PrismaPg(pool);
 
-    prismaClientInstance = new PrismaClient({
+    const prisma = new PrismaClient({
       adapter,
       log: ['error', 'warn'],
     });
     
-    return prismaClientInstance;
+    global.__prisma = prisma;
+    prismaClientInstance = prisma;
+    return prisma;
   } catch (err) {
     console.error('[PRISMA] Initialization Failed:', err.message);
     // Return a fallback client - will fail on first query, Stage 3 will catch it

@@ -5,9 +5,10 @@ const requireKyc = require('../middleware/kyc');
 const { prisma, withRetry } = require('../lib/prisma');
 
 const fcm = require('../lib/fcm');
-const { vendorPollingQueue, orderSlaQueue } = require('../lib/bullmq');
+const { orderSlaQueue } = require('../lib/bullmq');
 const { emitOrderStatusUpdate, emitVendorStatusUpdate } = require('../lib/socket');
 const { getPresignedUploadUrl } = require('../lib/storage');
+const { checkAndTransitionVendorOffline } = require('../lib/vendorStatusHelper');
 
 // ==========================================
 // HELPER: Check if current time is within vendor's operating hours
@@ -428,7 +429,6 @@ router.put('/status/toggle', firebaseAuth, requireKyc, async (req, res) => {
     if (!isOnline && activeOrdersCount > 0) {
       const status = 'stop_new_orders';
       await prisma.vendor.update({ where: { id: vendorId }, data: { onlineStatus: status } });
-      await vendorPollingQueue.add('checkPending', { vendorId }, { delay: 60000 });
       await fcm.updateFloatingBubble(vendorId, false);
       emitVendorStatusUpdate(vendorId, false);
       return res.json({ 
@@ -538,6 +538,10 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
     });
 
     emitOrderStatusUpdate(id, 'cancelled_by_vendor', 'VENDOR');
+    
+    // Check if vendor should automatically go offline
+    await checkAndTransitionVendorOffline(profile.vendor.id);
+    
     res.json({ success: true });
   } catch (error) {
     console.error('[VENDOR] Reject order error:', error);

@@ -36,6 +36,21 @@ app.use((req, res, next) => {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 
+// Timeout Middleware (15 seconds)
+app.use((req, res, next) => {
+  req.setTimeout(15000, () => {
+    let err = new Error('Request Timeout');
+    err.status = 408;
+    next(err);
+  });
+  res.setTimeout(15000, () => {
+    let err = new Error('Service Unavailable - Timeout');
+    err.status = 503;
+    next(err);
+  });
+  next();
+});
+
 // Enhanced CORS for Expo/Mobile
 app.use(cors({
   origin: '*', // For production, replace with specific origins
@@ -173,3 +188,46 @@ try {
     // so we can debug via logs.
   }
 })();
+
+// ==========================================
+// GRACEFUL SHUTDOWN & GLOBAL ERROR HANDLERS
+// ==========================================
+const shutdown = async (signal) => {
+  console.log(`\n🛑 [SHUTDOWN] Received ${signal}. Closing gracefully...`);
+  server.close(async () => {
+    console.log('✅ [SHUTDOWN] HTTP server closed.');
+    try {
+      const { prisma } = require('./lib/prisma');
+      if (prisma) await prisma.$disconnect();
+      console.log('✅ [SHUTDOWN] Prisma disconnected.');
+      
+      const { connection } = require('./lib/redis');
+      if (connection) {
+        connection.disconnect();
+        console.log('✅ [SHUTDOWN] Redis disconnected.');
+      }
+      process.exit(0);
+    } catch (err) {
+      console.error('❌ [SHUTDOWN] Error during cleanup:', err);
+      process.exit(1);
+    }
+  });
+  
+  // Force kill if it takes too long (10s)
+  setTimeout(() => {
+    console.error('❌ [SHUTDOWN] Forcefully terminating after 10s.');
+    process.exit(1);
+  }, 10000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ [CRITICAL] Uncaught Exception:', err);
+  shutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ [CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
