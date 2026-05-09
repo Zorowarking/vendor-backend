@@ -18,6 +18,12 @@ const authenticateSocket = async (socket, next) => {
       return next();
     }
     
+    // DEV MOCK: Match the HTTP mock token
+    if (token === 'mock-session-token-123') {
+      socket.user = { uid: 'mock-uid-123', phoneNumber: '+919999999999', email: 'dev@test.com' };
+      return next();
+    }
+    
     // If admin app isn't initialized yet, we skip token verification
     if (admin.apps.length > 0) {
       const decodedToken = await admin.auth().verifyIdToken(token);
