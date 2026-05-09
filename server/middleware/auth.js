@@ -13,12 +13,22 @@ const firebaseAuth = async (req, res, next) => {
   const idToken = authHeader.split('Bearer ')[1];
 
   try {
-    // DEV MOCK: If token is 'mock-session-token-123', we return a mock user
+    // DEV MOCK: Vendor Token
     if (idToken === 'mock-session-token-123') {
       req.user = {
         uid: 'mock-uid-123',
         phoneNumber: '+919999999999',
         email: 'dev@test.com'
+      };
+      return next();
+    }
+
+    // DEV MOCK: Customer Token
+    if (idToken === 'mock-customer-token-123') {
+      req.user = {
+        uid: 'mock-uid-customer-123',
+        phoneNumber: '+917777777777',
+        email: 'customer@test.com'
       };
       return next();
     }

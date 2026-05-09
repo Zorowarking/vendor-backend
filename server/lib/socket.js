@@ -18,9 +18,15 @@ const authenticateSocket = async (socket, next) => {
       return next();
     }
     
-    // DEV MOCK: Match the HTTP mock token
+    // DEV MOCK: Vendor Token
     if (token === 'mock-session-token-123') {
       socket.user = { uid: 'mock-uid-123', phoneNumber: '+919999999999', email: 'dev@test.com' };
+      return next();
+    }
+    
+    // DEV MOCK: Customer Token
+    if (token === 'mock-customer-token-123') {
+      socket.user = { uid: 'mock-uid-customer-123', phoneNumber: '+917777777777', email: 'customer@test.com' };
       return next();
     }
     
