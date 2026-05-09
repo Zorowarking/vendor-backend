@@ -51,7 +51,13 @@ setTimeout(async () => {
       const { prisma } = require('./prisma');
       const { emitOrderStatusUpdate } = require('./socket');
 
-      orderSlaQueue = new Queue('orderSla', { connection });
+      orderSlaQueue = new Queue('orderSla', { 
+        connection,
+        defaultJobOptions: {
+          removeOnComplete: true, // [Upstash Fix] Delete successful jobs to save space & commands
+          removeOnFail: 50 // [Upstash Fix] Keep only the last 50 failed jobs
+        }
+      });
 
       // Worker Lifecycle Guard (Singleton Worker)
       if (!global.__workersInitialized) {
@@ -137,8 +143,8 @@ setTimeout(async () => {
           connection,
           autorun: true,
           metrics: { maxDataPoints: 0 }, // Disable metrics to save Redis ops
-          drainDelay: 5, // Check less frequently when idle
-          stalledInterval: 60000, // Check for stalled jobs less frequently (every 60s instead of 30s)
+          drainDelay: 60, // [Upstash Fix] Check once per minute when idle instead of every 5s
+          stalledInterval: 300000, // [Upstash Fix] Check for stalled jobs every 5 mins instead of every 60s
         });
 
         orderSlaWorker.on('error', err => {
