@@ -125,8 +125,9 @@ async function getOrCreateCustomerProfile(user) {
   const { uid, phoneNumber, name } = user;
   
   // Use a unique placeholder for missing phone numbers to avoid constraint violations
-  // while still being able to identify the record.
-  const normalizedPhone = phoneNumber || `google-user:${uid}`;
+  // Max length is 20 chars due to Customer.phone @db.VarChar(20). 
+  // 'g-' + 18 chars of uid = 20 chars.
+  const normalizedPhone = phoneNumber || `g-${uid.substring(0, 18)}`;
   const isPlaceholder = !phoneNumber;
   
   console.log(`[PRISMA] Syncing profile for UID: ${uid}, Phone: ${normalizedPhone}`);

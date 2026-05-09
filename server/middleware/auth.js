@@ -36,7 +36,11 @@ const firebaseAuth = async (req, res, next) => {
     // REAL AUTH: If admin is initialized, we try to verify
     if (admin.apps.length > 0) {
       const decodedToken = await admin.auth().verifyIdToken(idToken);
-      req.user = decodedToken;
+      req.user = {
+        ...decodedToken,
+        phoneNumber: decodedToken.phone_number || req.headers['x-mock-phone'],
+        uid: decodedToken.uid || decodedToken.user_id || decodedToken.sub
+      };
       return next();
     } 
 
