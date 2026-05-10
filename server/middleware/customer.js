@@ -12,10 +12,10 @@ const requireCustomer = async (req, res, next) => {
     // Self-healing: Get or create the profile
     const profile = await getOrCreateCustomerProfile(req.user);
 
-    if (!profile || profile.role !== 'CUSTOMER') {
+    if (!profile) {
       return res.status(403).json({ 
-        error: 'Forbidden: Customer role required',
-        message: 'Please login or register as a customer to continue.'
+        error: 'Forbidden: Profile not found',
+        message: 'Please login or register to continue.'
       });
     }
 
