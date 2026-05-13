@@ -42,7 +42,6 @@ model ProductTemplate {
   category     String?  @db.VarChar(100)
   templateName String   @map("template_name") @db.VarChar(255)
   templateData Json     @map("template_data")
-  isSkeletal   Boolean  @default(false) @map("is_skeletal")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   vendor       Vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
@@ -131,29 +130,16 @@ model Product {
   updatedAt                DateTime?                 @default(now()) @map("updated_at") @db.Timestamptz(6)
   customizationType        CustomizationType         @default(NORMAL) @map("customization_type")
   isCustomizable           Boolean                   @default(false) @map("is_customizable")
+  category                 String?                   @db.VarChar(100)
+  categories               Category[]                @relation("ProductToCategory")
   addOns                   ProductAddon[]
   customizationGroups      CustomizationGroup[]
   images                   ProductImage[]
   productReviewSnapshots   ProductReviewSnapshot[]
   productReviewSubmissions ProductReviewSubmission[]
-  categories               Category[]                @relation("ProductToCategory")
   vendor                   Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@map("products")
-  @@schema("vendor_delivery")
-}
-
-model Category {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  vendorId    String?   @map("vendor_id") @db.Uuid
-  name        String    @unique @db.VarChar(100)
-  description String?
-  displayOrder Int       @default(0) @map("display_order")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  products    Product[] @relation("ProductToCategory")
-  vendor      Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-
-  @@map("categories")
   @@schema("vendor_delivery")
 }
 
@@ -203,6 +189,20 @@ model Rider {
   profile       Profile?  @relation(fields: [profileId], references: [id])
 
   @@map("riders")
+  @@schema("vendor_delivery")
+}
+
+model Category {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorId    String?   @map("vendor_id") @db.Uuid
+  name        String    @unique @db.VarChar(100)
+  description String?
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  products    Product[] @relation("ProductToCategory")
+  vendor      Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("categories")
   @@schema("vendor_delivery")
 }
 
@@ -333,51 +333,54 @@ model VendorOperatingHour {
 }
 
 model Vendor {
-  id                       String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  businessName             String                    @map("business_name") @db.VarChar(255)
-  ownerName                String                    @map("owner_name") @db.VarChar(255)
-  phone                    String                    @unique @db.VarChar(20)
-  email                    String?                   @unique @db.VarChar(255)
-  businessAddress          String                    @map("business_address")
-  latitude                 Decimal?                  @db.Decimal(10, 7)
-  longitude                Decimal?                  @db.Decimal(10, 7)
-  deliveryRadius           Decimal?                  @map("delivery_radius") @db.Decimal(6, 2)
-  storeDescription         String?                   @map("store_description")
-  businessCategory         String?                   @map("business_category") @db.VarChar(100)
-  logoUrl                  String?                   @map("logo_url")
-  bannerUrl                String?                   @map("banner_url")
-  profilePicUrl            String?                   @map("profile_pic_url")
-  operatingHours           Json?                     @map("operating_hours")
-  bubbleEnabled            Boolean                   @default(false) @map("bubble_enabled")
-  bubbleLastSeenAt         DateTime?                 @map("bubble_last_seen_at") @db.Timestamptz(6)
-  onlineStatus             String?                   @default("offline") @map("online_status") @db.VarChar(30)
-  stopNewOrdersSince       DateTime?                 @map("stop_new_orders_since") @db.Timestamptz(6)
-  createdAt                DateTime?                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime?                 @default(now()) @map("updated_at") @db.Timestamptz(6)
-  profileId                String?                   @unique @map("profile_id") @db.Uuid
-  fcmToken                 String?                   @map("fcm_token")
-  accountStatus            AccountStatus             @default(KYC_SUBMITTED) @map("account_status")
-  commissionModel          CommissionModel?          @map("commission_model")
-  commissionRate           Decimal                   @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
-  sfxStoreCode             String?                   @map("sfx_store_code") @db.VarChar(100)
-  city                     String?                   @db.VarChar(100)
-  pincode                  String?                   @db.VarChar(10)
-  orders                   Order[]
-  productReviewSubmissions ProductReviewSubmission[]
-  productTemplates         ProductTemplate[]
-  products                 Product[]
-  bankDetails              VendorBankDetails?
-  breaches                 VendorBreach[]
-  complianceFlags          VendorComplianceFlag[]
-  earnings                 VendorEarning[]
-  kyc                      VendorKyc[]
-  operatingHoursList       VendorOperatingHour[]
-  orderActions             VendorOrderAction[]
-  ratingsSummary           VendorRatingsSummary?
-  slaMetrics               VendorSlaMetric?
-  supportRequests          VendorSupportRequest[]
-  categories               Category[]
-  profile                  Profile?                  @relation(fields: [profileId], references: [id])
+  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  businessName              String                      @map("business_name") @db.VarChar(255)
+  ownerName                 String                      @map("owner_name") @db.VarChar(255)
+  phone                     String                      @unique @db.VarChar(20)
+  email                     String?                     @unique @db.VarChar(255)
+  businessAddress           String                      @map("business_address")
+  latitude                  Decimal?                    @db.Decimal(10, 7)
+  longitude                 Decimal?                    @db.Decimal(10, 7)
+  deliveryRadius            Decimal?                    @map("delivery_radius") @db.Decimal(6, 2)
+  storeDescription          String?                     @map("store_description")
+  businessCategory          String?                     @map("business_category") @db.VarChar(100)
+  logoUrl                   String?                     @map("logo_url")
+  bannerUrl                 String?                     @map("banner_url")
+  profilePicUrl             String?                     @map("profile_pic_url")
+  operatingHours            Json?                       @map("operating_hours")
+  bubbleEnabled             Boolean                     @default(false) @map("bubble_enabled")
+  bubbleLastSeenAt          DateTime?                   @map("bubble_last_seen_at") @db.Timestamptz(6)
+  onlineStatus              String?                     @default("offline") @map("online_status") @db.VarChar(30)
+  stopNewOrdersSince        DateTime?                   @map("stop_new_orders_since") @db.Timestamptz(6)
+  createdAt                 DateTime?                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime?                   @default(now()) @map("updated_at") @db.Timestamptz(6)
+  profileId                 String?                     @unique @map("profile_id") @db.Uuid
+  fcmToken                  String?                     @map("fcm_token")
+  accountStatus             AccountStatus               @default(PENDING) @map("account_status")
+  commissionModel           CommissionModel?            @map("commission_model")
+  commissionRate            Decimal                     @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
+  sfxStoreCode              String?                     @map("sfx_store_code") @db.VarChar(100)
+  city                      String?                     @db.VarChar(100)
+  pincode                   String?                     @db.VarChar(10)
+  delivery_provider         String                      @default("SHADOWFAX") @db.VarChar(50)
+  shadowfax_linked          Boolean                     @default(false)
+  orders                    Order[]
+  productReviewSubmissions  ProductReviewSubmission[]
+  productTemplates          ProductTemplate[]
+  products                  Product[]
+  vendor_assigned_templates vendor_assigned_templates[]
+  bankDetails               VendorBankDetails?
+  breaches                  VendorBreach[]
+  complianceFlags           VendorComplianceFlag[]
+  earnings                  VendorEarning[]
+  kyc                       VendorKyc[]
+  operatingHoursList        VendorOperatingHour[]
+  orderActions              VendorOrderAction[]
+  ratingsSummary            VendorRatingsSummary?
+  slaMetrics                VendorSlaMetric?
+  supportRequests           VendorSupportRequest[]
+  categories                Category[]
+  profile                   Profile?                    @relation(fields: [profileId], references: [id])
 
   @@map("vendors")
   @@schema("vendor_delivery")
@@ -692,17 +695,16 @@ model CustomizationGroup {
 }
 
 model CustomizationOption {
-  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  groupId         String             @map("group_id") @db.Uuid
-  name            String             @db.VarChar(255)
-  priceModifier   Decimal            @default(0) @map("price_modifier") @db.Decimal(10, 2)
-  isAvailable     Boolean            @default(true) @map("is_available")
-  displayOrder    Int                @default(0) @map("display_order")
-  allowQuantity   Boolean            @default(false) @map("allow_quantity")
-  freeLimit       Int                @default(0) @map("free_limit")
-  conflicts       Json?              @map("conflicts")
-  linkedProductId String?            @map("linked_product_id") @db.Uuid
-  group           CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId       String             @map("group_id") @db.Uuid
+  name          String             @db.VarChar(255)
+  priceModifier Decimal            @default(0) @map("price_modifier") @db.Decimal(10, 2)
+  isAvailable   Boolean            @default(true) @map("is_available")
+  displayOrder  Int                @default(0) @map("display_order")
+  allowQuantity Boolean            @default(false) @map("allow_quantity")
+  freeLimit     Int                @default(0) @map("free_limit")
+  image_url     String?
+  group         CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@map("product_customization_options")
   @@schema("vendor_delivery")
@@ -749,6 +751,42 @@ model SfxRiderLocationLog {
   @@schema("customer")
 }
 
+model byo_template_groups {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  template_id    String        @db.Uuid
+  name           String        @db.VarChar(255)
+  selection_type String        @default("SINGLE") @db.VarChar(50)
+  is_required    Boolean       @default(false)
+  max_limit      Int?
+  display_order  Int           @default(0)
+  byo_templates  byo_templates @relation(fields: [template_id], references: [id], onDelete: Cascade)
+
+  @@schema("vendor_delivery")
+}
+
+model byo_templates {
+  id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                      String                      @db.VarChar(255)
+  category                  String?                     @db.VarChar(100)
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  byo_template_groups       byo_template_groups[]
+  vendor_assigned_templates vendor_assigned_templates[]
+
+  @@schema("vendor_delivery")
+}
+
+model vendor_assigned_templates {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendor_id     String        @db.Uuid
+  template_id   String        @db.Uuid
+  assigned_at   DateTime      @default(now()) @db.Timestamptz(6)
+  byo_templates byo_templates @relation(fields: [template_id], references: [id], onDelete: Cascade)
+  vendors       Vendor        @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@schema("vendor_delivery")
+}
+
 enum CommissionModel {
   ADD_ON
   DEDUCTED
@@ -764,6 +802,7 @@ enum AccountStatus {
   SUSPENDED
   DISABLED
   ACTIVE
+  PENDING
 
   @@schema("vendor_delivery")
 }
