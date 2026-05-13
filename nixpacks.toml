@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "openssl"]
+
+[phases.install]
+cmds = [
+  "cd server && npm install --ignore-scripts",
+  "npm install --ignore-scripts prisma@7.7.0 @prisma/client@7.7.0 @prisma/config@7.7.0"
+]
+
+[phases.build]
+cmds = ["npx prisma generate --schema=prisma/schema.prisma"]
+
+[start]
+cmd = "node server/index.js"
