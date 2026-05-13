@@ -83,9 +83,12 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     // SFX Serviceability Check
     let deliveryCost = 0;
     
-    if (env.USE_SANDBOX_PAYMENTS) {
-      console.log('[CHECKOUT] Sandbox mode: Skipping real SFX serviceability check.');
-      deliveryCost = 40.00; // Mock delivery fee for sandbox
+    const isSandbox = env.USE_SANDBOX_PAYMENTS || process.env.USE_SANDBOX_PAYMENTS === 'true';
+    console.log(`[CHECKOUT] Sandbox Check: ${isSandbox} (env: ${env.USE_SANDBOX_PAYMENTS}, process: ${process.env.USE_SANDBOX_PAYMENTS})`);
+
+    if (isSandbox) {
+      console.log('[CHECKOUT] Sandbox mode active: Applying mock delivery fee.');
+      deliveryCost = 40.00; 
     } else {
       try {
         const sfxResponse = await shadowfaxService.checkServiceability({
