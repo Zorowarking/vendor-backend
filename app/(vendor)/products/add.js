@@ -77,7 +77,7 @@ export default function AddProduct() {
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);
-    setCategory(template.category);
+    setSelectedCategories([template.category]);
     setTemplateId(template.id);
 
     if (template.isSkeletal) {
