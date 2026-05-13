@@ -82,30 +82,36 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
 
     // SFX Serviceability Check
     let deliveryCost = 0;
-    try {
-      const sfxResponse = await shadowfaxService.checkServiceability({
-        storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
-        orderValue: cart.total,
-        paid: true,
-        dropLat: address.latitude ? Number(address.latitude) : undefined,
-        dropLng: address.longitude ? Number(address.longitude) : undefined
-      });
-      
-      if (sfxResponse && sfxResponse.available_rider_count === 0) {
-        return res.status(422).json({ 
-          error: 'DELIVERY_UNAVAILABLE', 
-          message: 'Shadowfax has no available riders in this area right now.' 
+    
+    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+      console.log('[CHECKOUT] Sandbox mode: Skipping real SFX serviceability check.');
+      deliveryCost = 40.00; // Mock delivery fee for sandbox
+    } else {
+      try {
+        const sfxResponse = await shadowfaxService.checkServiceability({
+          storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
+          orderValue: cart.total,
+          paid: true,
+          dropLat: address.latitude ? Number(address.latitude) : undefined,
+          dropLng: address.longitude ? Number(address.longitude) : undefined
         });
-      }
-      
-      if (sfxResponse && sfxResponse.delivery_cost) {
-        deliveryCost = sfxResponse.delivery_cost;
-      }
-    } catch (error) {
-      console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
-      // If store code is missing, it's a configuration error
-      if (!vendor.sfxStoreCode && !env.SFX_STORE_CODE) {
-        return res.status(500).json({ error: 'DELIVERY_CONFIG_ERROR', message: 'Vendor delivery not configured.' });
+        
+        if (sfxResponse && sfxResponse.available_rider_count === 0) {
+          return res.status(422).json({ 
+            error: 'DELIVERY_UNAVAILABLE', 
+            message: 'Shadowfax has no available riders in this area right now.' 
+          });
+        }
+        
+        if (sfxResponse && sfxResponse.delivery_cost) {
+          deliveryCost = sfxResponse.delivery_cost;
+        }
+      } catch (error) {
+        console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
+        // If store code is missing, it's a configuration error
+        if (!vendor.sfxStoreCode && !env.SFX_STORE_CODE) {
+          return res.status(500).json({ error: 'DELIVERY_CONFIG_ERROR', message: 'Vendor delivery not configured.' });
+        }
       }
     }
 

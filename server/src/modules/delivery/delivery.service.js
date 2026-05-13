@@ -1,7 +1,6 @@
 const shadowfaxService = require('./shadowfax/shadowfax.service');
 const mapper = require('./shadowfax/shadowfax.mapper');
 const env = require('../../config/env');
-const OrderService = require('../../../services/orderService');
 const logger = require('../../../lib/logger');
 const { prisma } = require('../../../lib/prisma');
 
@@ -167,6 +166,7 @@ class DeliveryService {
       }
 
       if (internalStatus) {
+        const OrderService = require('../../../services/orderService');
         await OrderService.updateOrderStatus(sfxOrder.internalOrderId, internalStatus, 'SYSTEM');
         
         await prisma.sfxOrder.update({
@@ -210,11 +210,11 @@ class DeliveryService {
    */
   async startSandboxSimulation(orderId) {
     const transitions = [
-      { status: 'ACCEPTED', delay: 5000 },
-      { status: 'PREPARING', delay: 10000 },
-      { status: 'READY_FOR_PICKUP', delay: 15000 },
-      { status: 'PICKED_UP', delay: 20000 },
-      { status: 'DELIVERED', delay: 30000 },
+      { status: 'accepted', delay: 5000 },
+      { status: 'preparing', delay: 10000 },
+      { status: 'ready_for_pickup', delay: 15000 },
+      { status: 'picked_up', delay: 20000 },
+      { status: 'delivered', delay: 30000 },
     ];
 
     for (const t of transitions) {

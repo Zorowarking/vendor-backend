@@ -31,12 +31,13 @@ export default function OrderDetailScreen() {
     );
   }
 
-  const isFlagged = order.status === 'FLAGGED';
+  const isFlagged = order.status?.toUpperCase() === 'FLAGGED';
 
   const [trackingData, setTrackingData] = React.useState(null);
 
   React.useEffect(() => {
-    if (order && order.status !== 'DELIVERED' && order.status !== 'CANCELLED') {
+    const status = order?.status?.toLowerCase();
+    if (order && status !== 'delivered' && status !== 'cancelled') {
       const handleLocationUpdate = (data) => {
         if (data.orderId === orderId) {
           setTrackingData(prev => ({ ...prev, ...data }));
@@ -65,7 +66,7 @@ export default function OrderDetailScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       useVendorStore.getState().updateOrder(order.id, { status: newStatus });
       // If marking as ready, we stay on page to see rider assignment
-      if (newStatus !== 'READY_FOR_PICKUP') {
+      if (newStatus !== 'ready_for_pickup') {
         router.back();
       }
     } catch (err) {
@@ -98,13 +99,13 @@ export default function OrderDetailScreen() {
         <Text style={styles.customerName}>Customer: {order.customerName}</Text>
         <Text style={styles.timeText}>Created: {new Date(order.createdAt).toLocaleTimeString()}</Text>
         
-        {order.status !== 'PENDING' && order.acceptedAt && (
+        {order.status?.toLowerCase() !== 'pending' && order.acceptedAt && (
           <Text style={styles.timeTextDark}>Accepted: {new Date(order.acceptedAt).toLocaleTimeString()}</Text>
         )}
       </View>
 
       {/* Shadowfax Delivery Tracking Section */}
-      {(order.status === 'READY_FOR_PICKUP' || order.status === 'OUT_FOR_DELIVERY' || trackingData) && (
+      {(order.status?.toLowerCase() === 'ready_for_pickup' || order.status?.toLowerCase() === 'out_for_delivery' || trackingData) && (
         <View style={styles.trackingCard}>
           <View style={styles.trackingHeader}>
             <Ionicons name="bicycle" size={20} color={Colors.primary} />
@@ -176,14 +177,14 @@ export default function OrderDetailScreen() {
       </View>
 
       <View style={styles.actionContainer}>
-        {order.status === 'ACCEPTED' && (
-          <TouchableOpacity style={styles.primaryButton} onPress={() => handleStatusUpdate('PREPARING')}>
+        {order.status?.toLowerCase() === 'accepted' && (
+          <TouchableOpacity style={styles.primaryButton} onPress={() => handleStatusUpdate('preparing')}>
             <Text style={styles.primaryButtonText}>Start Preparing</Text>
           </TouchableOpacity>
         )}
 
-        {order.status === 'PREPARING' && (
-          <TouchableOpacity style={styles.successButton} onPress={() => handleStatusUpdate('READY_FOR_PICKUP')}>
+        {order.status?.toLowerCase() === 'preparing' && (
+          <TouchableOpacity style={styles.successButton} onPress={() => handleStatusUpdate('ready_for_pickup')}>
             <Text style={styles.successButtonText}>Mark as Ready</Text>
           </TouchableOpacity>
         )}
