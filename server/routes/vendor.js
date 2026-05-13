@@ -879,7 +879,15 @@ router.get('/products', firebaseAuth, async (req, res) => {
 
 router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
   try {
-    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    const profile = await prisma.profile.findUnique({ 
+      where: { firebaseUid: req.user.uid }, 
+      include: { vendor: true } 
+    });
+
+    if (!profile || !profile.vendor) {
+      return res.status(403).json({ error: 'Vendor profile not found or initialized' });
+    }
+
     const { 
       name, description, category, type, price, isRestricted, isAvailable, 
       addOns, image, images,

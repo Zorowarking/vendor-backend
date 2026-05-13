@@ -296,7 +296,8 @@ export default function AddProduct() {
 
     } catch (error) {
       console.error('Add Product Error:', error);
-      Alert.alert('Error', 'Failed to add product');
+      const errorMsg = error.response?.data?.details || error.response?.data?.error || 'Failed to add product';
+      Alert.alert('Error', errorMsg);
     } finally {
       setLoading(false);
     }
