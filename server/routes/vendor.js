@@ -72,6 +72,34 @@ router.get('/products/templates', firebaseAuth, async (req, res) => {
   }
 });
 
+// GET /api/vendor/products/byo-assigned
+// Returns the admin-assigned BYO template for this vendor (read-only)
+router.get('/products/byo-assigned', firebaseAuth, async (req, res) => {
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { firebaseUid: req.user.uid },
+      include: { vendor: true }
+    });
+    if (!profile?.vendor) return res.json({ success: true, template: null });
+
+    const assignment = await prisma.vendor_assigned_templates.findFirst({
+      where: { vendor_id: profile.vendor.id },
+      include: {
+        byo_templates: {
+          include: { byo_template_groups: { orderBy: { display_order: 'asc' } } }
+        }
+      }
+    });
+
+    if (!assignment) return res.json({ success: true, template: null });
+
+    res.json({ success: true, template: assignment.byo_templates });
+  } catch (error) {
+    console.error('[BYO] Assigned template fetch error:', error);
+    res.status(500).json({ error: 'Failed fetching BYO template', details: error.message });
+  }
+});
+
 // ==========================================
 // HELPER: Check if current time is within vendor's operating hours
 // operatingHours is stored as JSON: { Monday: { isClosed, open: "09:00", close: "22:00" }, ... }
@@ -894,23 +922,46 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       templateId 
     } = req.body;
 
+    // Resolve categories (IDs or Names)
+    const categoryInputs = Array.isArray(category) ? category : [category].filter(Boolean);
+    const resolvedCategoryIds = [];
+    const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+    for (const catInput of categoryInputs) {
+      if (isUuid(catInput)) {
+        resolvedCategoryIds.push(catInput);
+      } else {
+        // Try to find by name
+        let cat = await prisma.category.findFirst({
+          where: { 
+            name: catInput,
+            OR: [{ vendorId: profile.vendor.id }, { vendorId: null }]
+          }
+        });
+        if (!cat) {
+          cat = await prisma.category.create({
+            data: { name: catInput, vendorId: profile.vendor.id }
+          });
+        }
+        resolvedCategoryIds.push(cat.id);
+      }
+    }
+
     const productPayload = {
       vendorId: profile.vendor.id, 
       name, 
       description, 
       productType: type, 
       basePrice: parseFloat(price) || 0,
-      category: Array.isArray(category) ? category[0] : category,
+      category: resolvedCategoryIds[0] || 'Uncategorized',
       isRestricted: isRestricted === 'true' || isRestricted === true,
-      isActive: false, // NEW PRODUCTS ARE INACTIVE BY DEFAULT
+      isActive: false, 
       reviewStatus: 'pending_review',
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizationType: customizationType || 'NORMAL',
       templateId: templateId || null,
       categories: {
-        connect: Array.isArray(category) 
-          ? category.map(id => ({ id })) 
-          : []
+        connect: resolvedCategoryIds.map(id => ({ id }))
       }
     };
 
@@ -999,9 +1050,36 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
       const updateData = {};
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
+      // Resolve categories if provided
       if (category !== undefined) {
-        updateData.category = Array.isArray(category) ? category[0] : category;
+        const categoryInputs = Array.isArray(category) ? category : [category].filter(Boolean);
+        const resolvedCategoryIds = [];
+        const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+        for (const catInput of categoryInputs) {
+          if (isUuid(catInput)) {
+            resolvedCategoryIds.push(catInput);
+          } else {
+            let cat = await prisma.category.findFirst({
+              where: { 
+                name: catInput,
+                OR: [{ vendorId: profile.vendor.id }, { vendorId: null }]
+              }
+            });
+            if (!cat) {
+              cat = await prisma.category.create({
+                data: { name: catInput, vendorId: profile.vendor.id }
+              });
+            }
+            resolvedCategoryIds.push(cat.id);
+          }
+        }
+        updateData.category = resolvedCategoryIds[0] || 'Uncategorized';
+        updateData.categories = {
+          set: resolvedCategoryIds.map(id => ({ id }))
+        };
       }
+  
       if (type !== undefined) updateData.productType = type;
       if (isRestricted !== undefined) updateData.isRestricted = isRestricted === 'true' || isRestricted === true;
       if (isAvailable !== undefined) updateData.isActive = isAvailable === 'true' || isAvailable === true;
@@ -1045,79 +1123,64 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
 
       // Use a transaction to ensure updates are atomic
       const updatedProduct = await prisma.$transaction(async (tx) => {
-        // 1. Handle Categories (Relation)
-        if (category !== undefined) {
-          // If category is an array of IDs, connect them. If it's a single ID/Name string, handle it.
-          const categoryIds = Array.isArray(category) ? category : (typeof category === 'string' && category.length > 20 ? [category] : []);
-          
-          if (categoryIds.length > 0) {
-            updateData.categories = {
-              set: categoryIds.map(id => ({ id }))
-            };
-          }
-        }
+        // Prepare nested updates for the main product update call
+        const nestedData = { ...updateData };
 
-        // 2. Handle Images
+        // 1. Handle Images
         if (image !== undefined || images !== undefined) {
           const imageList = (images ? images : (image ? [image] : [])).map(url => stripCacheBuster(url));
-          await tx.productImage.deleteMany({ where: { productId: id } });
-          if (imageList.length > 0) {
-            updateData.images = {
-              create: imageList.filter(img => !!img).map((url, index) => ({
-                url,
-                sortOrder: index
-              }))
-            };
-          }
+          nestedData.images = {
+            deleteMany: {},
+            create: imageList.filter(img => !!img).map((url, index) => ({
+              url,
+              sortOrder: index
+            }))
+          };
         }
 
-        // 3. Handle Add-ons
+        // 2. Handle Add-ons
         if (addOns !== undefined) {
-          await tx.productAddon.deleteMany({ where: { productId: id } });
-          if (Array.isArray(addOns) && addOns.length > 0) {
-            updateData.addOns = {
-              create: addOns.map(a => ({
-                name: a.name,
-                price: parseFloat(a.price) || 0,
-                freeLimit: parseInt(a.freeLimit) || 0,
-                isActive: true
-              }))
-            };
-          }
+          nestedData.addOns = {
+            deleteMany: {},
+            create: (Array.isArray(addOns) ? addOns : []).map(a => ({
+              name: a.name,
+              price: parseFloat(a.price) || 0,
+              freeLimit: parseInt(a.freeLimit) || 0,
+              isActive: true
+            }))
+          };
         }
 
-        // 4. Handle Customization Groups
+        // 3. Handle Customization Groups
         if (customizationGroups !== undefined) {
-          await tx.customizationGroup.deleteMany({ where: { productId: id } });
-          if (Array.isArray(customizationGroups) && customizationGroups.length > 0) {
-            updateData.customizationGroups = {
-              create: customizationGroups.map((group, gIdx) => ({
-                name: group.name,
-                isRequired: group.isRequired === 'true' || group.isRequired === true,
-                selectionType: group.selectionType || 'SINGLE',
-                maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
-                displayOrder: group.displayOrder ?? gIdx,
-                options: {
-                  create: (Array.isArray(group.options) ? group.options : []).map((opt, oIdx) => ({
-                    name: opt.name,
-                    priceModifier: parseFloat(opt.priceModifier) || 0,
-                    isAvailable: opt.isAvailable !== false,
-                    displayOrder: opt.displayOrder ?? oIdx,
-                    allowQuantity: !!opt.allowQuantity,
-                    freeLimit: parseInt(opt.freeLimit) || 0,
-                    conflicts: opt.conflicts || null,
-                    linkedProductId: opt.linkedProductId || null
-                  }))
-                }
-              }))
-            };
-          }
+          nestedData.customizationGroups = {
+            deleteMany: {},
+            create: (Array.isArray(customizationGroups) ? customizationGroups : []).map((group, gIdx) => ({
+              name: group.name,
+              isRequired: group.isRequired === 'true' || group.isRequired === true,
+              selectionType: group.selectionType || 'SINGLE',
+              maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
+              displayOrder: group.displayOrder ?? gIdx,
+              options: {
+                create: (Array.isArray(group.options) ? group.options : []).map((opt, oIdx) => ({
+                  name: opt.name,
+                  priceModifier: parseFloat(opt.priceModifier) || 0,
+                  isAvailable: opt.isAvailable !== false,
+                  displayOrder: opt.displayOrder ?? oIdx,
+                  allowQuantity: !!opt.allowQuantity,
+                  freeLimit: parseInt(opt.freeLimit) || 0,
+                  conflicts: opt.conflicts || null,
+                  linkedProductId: opt.linkedProductId || null
+                }))
+              }
+            }))
+          };
         }
 
-        // 5. Final Update
+        // Final Atomic Update
         return await tx.product.update({
           where: { id },
-          data: updateData,
+          data: nestedData,
           include: { 
             addOns: true, 
             images: true,
@@ -1127,6 +1190,8 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
             }
           }
         });
+      }, {
+        timeout: 20000 // Increase timeout to 20 seconds for complex BYO updates
       });
 
       res.json({ 

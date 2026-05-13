@@ -6,14 +6,14 @@ const getApiBaseUrl = () => {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
   // Fallback for local development if env is missing
-  return 'http://192.168.0.105:3000';
+  return 'https://vendor-backend-production-c171.up.railway.app/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000, // 15 seconds timeout
+  timeout: 30000, // 30 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   },

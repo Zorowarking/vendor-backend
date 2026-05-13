@@ -545,28 +545,41 @@ export default function EditProduct() {
         </View>
 
         {/* Build Your Own Customization Section */}
-        <View style={styles.customHeader}>
-          <View>
-            <Text style={styles.label}>Build Your Own</Text>
-            <Text style={styles.subLabel}>Enable advanced customization options</Text>
+        {!templateId && (
+          <View style={styles.customHeader}>
+            <View>
+              <Text style={styles.label}>Build Your Own</Text>
+              <Text style={styles.subLabel}>Enable advanced customization options</Text>
+            </View>
+            <Switch 
+              value={isCustomizable} 
+              onValueChange={setIsCustomizable}
+              trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+              thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+            />
           </View>
-          <Switch 
-            value={isCustomizable} 
-            onValueChange={setIsCustomizable}
-            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
-            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
-          />
-        </View>
+        )}
 
         {isCustomizable && (
           <View style={styles.customizationSection}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Options Groups</Text>
-              <TouchableOpacity onPress={addCustomizationGroup} style={styles.addGroupBtn}>
-                <Ionicons name="add" size={20} color={Colors.white} />
-                <Text style={styles.addGroupBtnText}>New Group</Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionTitle}>
+                {templateId ? 'Admin Template (BYO)' : 'Options Groups'}
+              </Text>
+              {!templateId && (
+                <TouchableOpacity onPress={addCustomizationGroup} style={styles.addGroupBtn}>
+                  <Ionicons name="add" size={20} color={Colors.white} />
+                  <Text style={styles.addGroupBtnText}>New Group</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {templateId && (
+              <View style={styles.byoInfoBox}>
+                <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+                <Text style={styles.byoInfoText}>This structure is pre-defined by the Admin. You can manage your items below.</Text>
+              </View>
+            )}
 
             {customizationGroups.map((group, index) => (
               <View key={group.id} style={styles.groupCard}>
@@ -574,21 +587,25 @@ export default function EditProduct() {
                   <View style={styles.groupBadge}>
                     <Text style={styles.groupBadgeText}>Group #{index + 1}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
-                    <Ionicons name="close-circle" size={22} color={Colors.error} />
-                  </TouchableOpacity>
+                  {!templateId && (
+                    <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
+                      <Ionicons name="close-circle" size={22} color={Colors.error} />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <TextInput 
-                  style={[styles.input, { marginBottom: 12, fontWeight: '500' }]} 
+                  style={[styles.input, { marginBottom: 12, fontWeight: '500' }, templateId && styles.disabledInput]} 
                   placeholder="Group Title (e.g. Extra Toppings)" 
                   value={group.name} 
+                  editable={!templateId}
                   onChangeText={(text) => updateCustomizationGroup(group.id, { name: text })} 
                 />
 
                 <View style={styles.groupControls}>
                   <TouchableOpacity 
-                    style={[styles.controlBtn, group.isRequired && styles.activeControl]}
+                    disabled={!!templateId}
+                    style={[styles.controlBtn, group.isRequired && styles.activeControl, templateId && { opacity: 0.8 }]}
                     onPress={() => updateCustomizationGroup(group.id, { isRequired: !group.isRequired })}
                   >
                     <Ionicons name={group.isRequired ? "checkbox" : "square-outline"} size={18} color={group.isRequired ? Colors.primary : Colors.subText} />
@@ -596,7 +613,8 @@ export default function EditProduct() {
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={[styles.controlBtn, group.selectionType === 'MULTIPLE' && styles.activeControl]}
+                    disabled={!!templateId}
+                    style={[styles.controlBtn, group.selectionType === 'MULTIPLE' && styles.activeControl, templateId && { opacity: 0.8 }]}
                     onPress={() => updateCustomizationGroup(group.id, { selectionType: group.selectionType === 'MULTIPLE' ? 'SINGLE' : 'MULTIPLE' })}
                   >
                     <Ionicons name={group.selectionType === 'MULTIPLE' ? "layers" : "stop-outline"} size={18} color={group.selectionType === 'MULTIPLE' ? Colors.primary : Colors.subText} />
@@ -1227,5 +1245,25 @@ const styles = StyleSheet.create({
   },
   optionTabContent: {
     paddingBottom: 8,
+  },
+  disabledInput: {
+    backgroundColor: Colors.border + '30',
+    opacity: 0.7,
+  },
+  byoInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '08',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+    marginBottom: 16,
+  },
+  byoInfoText: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginLeft: 8,
+    flex: 1,
   },
 });

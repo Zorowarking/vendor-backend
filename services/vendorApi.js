@@ -43,6 +43,11 @@ export const vendorApi = {
     return response.data;
   },
 
+  getByoAssigned: async () => {
+    const response = await apiClient.get('/api/vendor/products/byo-assigned');
+    return response.data;
+  },
+
   addProduct: async (data) => {
     const client = getClient();
     const response = await client.post('/api/vendor/products', data);

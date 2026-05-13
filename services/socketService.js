@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://192.168.0.105:3000';
+const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'https://vendor-backend-production-c171.up.railway.app';
 
 class SocketService {
   constructor() {

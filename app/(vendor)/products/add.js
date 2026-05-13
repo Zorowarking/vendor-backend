@@ -9,6 +9,7 @@ import {
   Switch, 
   Image, 
   Alert,
+  Modal,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform
@@ -41,6 +42,9 @@ export default function AddProduct() {
   const [customizationGroups, setCustomizationGroups] = useState([]);
   const [templateId, setTemplateId] = useState(null);
   const [showByoTemplates, setShowByoTemplates] = useState(false);
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [savingCategory, setSavingCategory] = useState(false);
   
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
@@ -52,26 +56,31 @@ export default function AddProduct() {
   const [categories, setCategories] = useState([]);
   const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
   const [allTemplates, setAllTemplates] = useState([]);
+  const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      const [templatesResult, categoriesResult] = await Promise.allSettled([
+      const [templatesResult, categoriesResult, assignedByoResult] = await Promise.allSettled([
         vendorApi.getTemplates(),
-        vendorApi.getCategoryList()
+        vendorApi.getCategoryList(),
+        vendorApi.getByoAssigned()
       ]);
 
       if (templatesResult.status === 'fulfilled') {
         const data = templatesResult.value;
         if (data?.success && data.templates) setAllTemplates(data.templates);
-      } else {
-        console.warn('[AddProduct] Templates fetch failed:', templatesResult.reason?.message);
       }
 
       if (categoriesResult.status === 'fulfilled') {
         const data = categoriesResult.value;
         if (data?.success && data.categories) setCategories(data.categories);
-      } else {
-        console.warn('[AddProduct] Categories fetch failed:', categoriesResult.reason?.message);
+      }
+
+      if (assignedByoResult.status === 'fulfilled') {
+        const data = assignedByoResult.value;
+        if (data?.success && data.template) {
+          setAssignedByoTemplate(data.template);
+        }
       }
     };
     fetchData();
@@ -348,56 +357,164 @@ export default function AddProduct() {
           />
         </View>
 
+        {/* ── New Category Modal (cross-platform) ── */}
+        <Modal visible={showNewCategoryModal} transparent animationType="fade" onRequestClose={() => setShowNewCategoryModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>New Category</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Beverages, Snacks…"
+                value={newCategoryInput}
+                onChangeText={setNewCategoryInput}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowNewCategoryModal(false); setNewCategoryInput(''); }}>
+                  <Text style={{ color: Colors.subText, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalConfirm, savingCategory && { opacity: 0.6 }]}
+                  disabled={savingCategory}
+                  onPress={async () => {
+                    if (!newCategoryInput.trim()) return;
+                    setSavingCategory(true);
+                    try {
+                      const res = await vendorApi.createCategory(newCategoryInput.trim());
+                      if (res.success) {
+                        setCategories(prev => [...prev, res.category]);
+                        setSelectedCategories(prev => [...prev, res.category.id]);
+                        setNewCategoryInput('');
+                        setShowNewCategoryModal(false);
+                      }
+                    } catch (e) {
+                      Alert.alert('Error', 'Could not create category');
+                    } finally {
+                      setSavingCategory(false);
+                    }
+                  }}
+                >
+                  {savingCategory ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={{ color: Colors.white, fontWeight: '700' }}>Create</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         <View style={styles.section}>
-          <Text style={styles.label}>Categories & Templates</Text>
-          <Text style={styles.subLabel}>Select a category or a quick template to pre-fill details</Text>
+          <Text style={styles.label}>{showByoTemplates ? 'Admin BYO Template' : 'Category'}</Text>
+          <Text style={styles.subLabel}>
+            {showByoTemplates
+              ? 'Template & category are set by admin — not editable'
+              : 'Select which category this product belongs to'}
+          </Text>
+
+          {/* Tab switcher */}
           <View style={styles.byoToggleContainer}>
-            <TouchableOpacity 
-              style={[styles.byoToggleButton, !showByoTemplates && styles.activeByoToggleButton]} 
-              onPress={() => setShowByoTemplates(false)}
+            <TouchableOpacity
+              style={[styles.byoToggleButton, !showByoTemplates && styles.activeByoToggleButton]}
+              onPress={() => { 
+                setShowByoTemplates(false); 
+                setTemplateId(null); 
+                setSelectedCategories([]); 
+                setCustomizationGroups([]);
+                setIsCustomizable(false);
+              }}
             >
               <Text style={[styles.byoToggleText, !showByoTemplates && styles.activeByoToggleText]}>Regular Item</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.byoToggleButton, showByoTemplates && styles.activeByoToggleButton]} 
-              onPress={() => setShowByoTemplates(true)}
+            <TouchableOpacity
+              style={[styles.byoToggleButton, showByoTemplates && styles.activeByoToggleButton]}
+              onPress={() => { 
+                setShowByoTemplates(true); 
+                setTemplateId(null); 
+                setSelectedCategories([]); 
+                setCustomizationGroups([]);
+                setIsCustomizable(false);
+              }}
             >
-              <Ionicons name="construct-outline" size={16} color={showByoTemplates ? Colors.white : Colors.primary} style={{ marginRight: 4 }} />
+              <Ionicons name="construct-outline" size={14} color={showByoTemplates ? Colors.white : Colors.primary} style={{ marginRight: 4 }} />
               <Text style={[styles.byoToggleText, showByoTemplates && styles.activeByoToggleText]}>Admin BYO</Text>
             </TouchableOpacity>
           </View>
 
           {showByoTemplates ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-              {allTemplates.map(t => (
-                <TouchableOpacity 
-                  key={t.id} 
-                  style={[styles.templateChip, templateId === t.id && styles.activeTemplateChip]}
-                  onPress={() => handleTemplateSelect(t)}
-                >
-                  <Ionicons 
-                    name={t.isSkeletal ? "color-wand-outline" : "flash-outline"} 
-                    size={14} 
-                    color={templateId === t.id ? Colors.white : Colors.primary} 
-                  />
-                  <Text style={[styles.templateChipText, templateId === t.id && styles.activeTemplateChipText]}>
-                    {t.templateName}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            /* ── ADMIN BYO: Single Assigned Template ── */
+            <View>
+              {!assignedByoTemplate ? (
+                <View style={styles.byoInfoBox}>
+                  <Ionicons name="information-circle-outline" size={20} color={Colors.subText} />
+                  <Text style={[styles.byoInfoText, { color: Colors.subText }]}>No BYO template assigned by admin yet.</Text>
+                </View>
+              ) : (
+                <View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.byoTemplateCard,
+                      templateId === assignedByoTemplate.id && styles.byoTemplateCardActive
+                    ]}
+                    onPress={() => {
+                      setTemplateId(assignedByoTemplate.id);
+                      setName(assignedByoTemplate.name);
+                      setSelectedCategories([assignedByoTemplate.category]); 
+                      setIsCustomizable(true);
+                      
+                      if (assignedByoTemplate.byo_template_groups) {
+                        setCustomizationGroups(assignedByoTemplate.byo_template_groups.map(g => ({
+                          id: Math.random().toString(),
+                          name: g.name,
+                          isRequired: g.is_required,
+                          selectionType: g.selection_type,
+                          maxSelections: g.max_limit || 1,
+                          options: [] 
+                        })));
+                      }
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Ionicons
+                        name="construct-outline"
+                        size={18}
+                        color={templateId === assignedByoTemplate.id ? Colors.primary : Colors.subText}
+                        style={{ marginRight: 10 }}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.byoTemplateName, templateId === assignedByoTemplate.id && { color: Colors.primary }]}>
+                          {assignedByoTemplate.name}
+                        </Text>
+                        <View style={styles.byoCategoryBadge}>
+                          <Ionicons name="lock-closed-outline" size={10} color={Colors.subText} style={{ marginRight: 3 }} />
+                          <Text style={styles.byoCategoryBadgeText}>{assignedByoTemplate.category}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    {templateId === assignedByoTemplate.id && (
+                      <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Locked Category Display */}
+                  <View style={[styles.byoInfoBox, { marginTop: 12 }]}>
+                    <Ionicons name="pricetag-outline" size={16} color={Colors.primary} />
+                    <Text style={styles.byoInfoText}>
+                      Assigned Category: <Text style={{ fontWeight: 'bold' }}>{assignedByoTemplate.category}</Text>
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
           ) : (
+            /* ── REGULAR: Selectable category chips + + New button ── */
             <View style={styles.chipGrid}>
               {categories.map(cat => (
-                <TouchableOpacity 
-                  key={cat.id} 
+                <TouchableOpacity
+                  key={cat.id}
                   style={[styles.categoryChip, selectedCategories.includes(cat.id) && styles.activeCategoryChip]}
                   onPress={() => {
-                    if (selectedCategories.includes(cat.id)) {
-                      setSelectedCategories(selectedCategories.filter(id => id !== cat.id));
-                    } else {
-                      setSelectedCategories([...selectedCategories, cat.id]);
-                    }
+                    setSelectedCategories(prev =>
+                      prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id]
+                    );
                   }}
                 >
                   <Text style={[styles.categoryChipText, selectedCategories.includes(cat.id) && styles.activeCategoryChipText]}>
@@ -405,20 +522,7 @@ export default function AddProduct() {
                   </Text>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity 
-                style={styles.addChipButton}
-                onPress={async () => {
-                  Alert.prompt('New Category', 'Enter category name:', async (text) => {
-                    if (text) {
-                      const res = await vendorApi.createCategory(text);
-                      if (res.success) {
-                        setCategories([...categories, res.category]);
-                        setSelectedCategories([...selectedCategories, res.category.id]);
-                      }
-                    }
-                  });
-                }}
-              >
+              <TouchableOpacity style={styles.addChipButton} onPress={() => setShowNewCategoryModal(true)}>
                 <Ionicons name="add" size={16} color={Colors.primary} />
                 <Text style={styles.addChipText}>New</Text>
               </TouchableOpacity>
@@ -565,18 +669,20 @@ export default function AddProduct() {
         ))}
 
         {/* Advanced Customization Section */}
-        <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
-          <View>
-            <Text style={styles.label}>Advanced Customization</Text>
-            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+        {!templateId && (
+          <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
+            <View>
+              <Text style={styles.label}>Advanced Customization</Text>
+              <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+            </View>
+            <Switch 
+              value={isCustomizable} 
+              onValueChange={setIsCustomizable}
+              trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+              thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+            />
           </View>
-          <Switch 
-            value={isCustomizable} 
-            onValueChange={setIsCustomizable}
-            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
-            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
-          />
-        </View>
+        )}
 
         {isCustomizable && (
           <View style={styles.customizationSection}>
@@ -603,15 +709,18 @@ export default function AddProduct() {
               <View key={group.id} style={styles.groupCard}>
                 <View style={styles.groupHeader}>
                   <Text style={styles.groupNumber}>Group #{index + 1}</Text>
-                  <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
-                    <Ionicons name="close-circle" size={24} color={Colors.error} />
-                  </TouchableOpacity>
+                  {!templateId && (
+                    <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
+                      <Ionicons name="close-circle" size={24} color={Colors.error} />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <TextInput 
-                  style={styles.input} 
+                  style={[styles.input, templateId && styles.disabledInput]} 
                   placeholder="Group Name (e.g. Choose Your Base)" 
                   value={group.name} 
+                  editable={!templateId}
                   onChangeText={(text) => updateCustomizationGroup(group.id, { name: text })} 
                 />
 
@@ -619,6 +728,7 @@ export default function AddProduct() {
                   <View style={styles.settingItem}>
                     <Text style={styles.settingLabel}>Required?</Text>
                     <Switch 
+                      disabled={!!templateId}
                       value={group.isRequired} 
                       onValueChange={(val) => updateCustomizationGroup(group.id, { isRequired: val })} 
                     />
@@ -626,6 +736,7 @@ export default function AddProduct() {
                   <View style={styles.settingItem}>
                     <Text style={styles.settingLabel}>Multi-select?</Text>
                     <Switch 
+                      disabled={!!templateId}
                       value={group.selectionType === 'MULTIPLE'} 
                       onValueChange={(val) => updateCustomizationGroup(group.id, { selectionType: val ? 'MULTIPLE' : 'SINGLE' })} 
                     />
@@ -636,8 +747,9 @@ export default function AddProduct() {
                   <View style={styles.settingItem}>
                     <Text style={styles.settingLabel}>Max Selections</Text>
                     <TextInput 
-                      style={[styles.input, { width: 60, textAlign: 'center' }]} 
+                      style={[styles.input, { width: 60, textAlign: 'center' }, templateId && styles.disabledInput]} 
                       keyboardType="numeric"
+                      editable={!templateId}
                       value={group.maxSelections === undefined || group.maxSelections === null ? '' : group.maxSelections.toString()}
                       onChangeText={(text) => {
                         const val = text === '' ? null : parseInt(text);
@@ -799,6 +911,10 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: Colors.grey,
+  },
+  disabledInput: {
+    backgroundColor: Colors.border + '30',
+    opacity: 0.7,
   },
   textArea: {
     height: 100,
@@ -1350,5 +1466,93 @@ const styles = StyleSheet.create({
   },
   optionTabContent: {
     paddingVertical: 8,
+  },
+  // ── New Category Modal ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  modalBox: {
+    width: '100%',
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 20,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 14,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalCancel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.border,
+  },
+  modalConfirm: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  // ── BYO Template Cards ──
+  byoTemplateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 13,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    marginTop: 8,
+  },
+  byoTemplateCardActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '08',
+  },
+  byoTemplateName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  byoCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  byoCategoryBadgeText: {
+    fontSize: 11,
+    color: Colors.subText,
+  },
+  clearTemplateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    alignSelf: 'flex-start',
   },
 });

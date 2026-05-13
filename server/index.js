@@ -43,14 +43,14 @@ app.use((req, res, next) => {
 
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// Timeout Middleware (15 seconds)
+// Timeout Middleware (30 seconds)
 app.use((req, res, next) => {
-  req.setTimeout(15000, () => {
+  req.setTimeout(30000, () => {
     let err = new Error('Request Timeout');
     err.status = 408;
     next(err);
   });
-  res.setTimeout(15000, () => {
+  res.setTimeout(30000, () => {
     let err = new Error('Service Unavailable - Timeout');
     err.status = 503;
     next(err);
@@ -66,8 +66,8 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ limit: '5mb', extended: true }));
 
 console.log('🚀 [STAGE 2] Basic middleware initialized.');
 
