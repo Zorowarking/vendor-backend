@@ -263,7 +263,7 @@ export default function EditProduct() {
         name,
         description,
         price: parseFloat(price),
-        category: [category], // Send as array of IDs for relation
+        category: [category],
         type,
         isRestricted,
         isAvailable,
@@ -288,7 +288,7 @@ export default function EditProduct() {
       setProducts(updatedProducts);
 
       const message = res.reviewTriggered 
-        ? 'Product details updated and submitted for review. It will be re-activated once approved.'
+        ? 'Product details updated and submitted for review.'
         : 'Product updated successfully.';
 
       Alert.alert(res.reviewTriggered ? 'Under Review' : 'Success', message, [
@@ -305,7 +305,7 @@ export default function EditProduct() {
   const handleDelete = () => {
     Alert.alert(
       'Delete Product',
-      'Are you sure you want to delete this product? This action cannot be undone.',
+      'Are you sure you want to delete this product?',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -412,6 +412,7 @@ export default function EditProduct() {
                   <Text style={[styles.chipText, templateId === t.id && styles.activeChipText]}>{t.templateName}</Text>
                 </TouchableOpacity>
               ))}
+              {allTemplates.length === 0 && <Text style={styles.emptyText}>No templates found</Text>}
             </ScrollView>
           </View>
         </View>
@@ -634,22 +635,45 @@ export default function EditProduct() {
                       
                       <View style={styles.optionSubSettings}>
                         <TouchableOpacity 
-                          style={styles.subSettingBtn}
+                          style={[styles.subSettingBtn, opt.allowQuantity && styles.activeSubSetting]}
                           onPress={() => updateOptionInGroup(group.id, opt.id, { allowQuantity: !opt.allowQuantity })}
                         >
-                          <Ionicons name={opt.allowQuantity ? "add-circle" : "ellipse-outline"} size={16} color={opt.allowQuantity ? Colors.success : Colors.subText} />
-                          <Text style={styles.subSettingText}>Qty?</Text>
+                          <Ionicons name={opt.allowQuantity ? "add-circle" : "add-circle-outline"} size={18} color={opt.allowQuantity ? Colors.success : Colors.subText} />
+                          <Text style={[styles.subSettingText, opt.allowQuantity && styles.activeSubSettingText]}>Allow Qty?</Text>
                         </TouchableOpacity>
 
                         {opt.allowQuantity && (
-                          <TextInput 
-                            style={styles.miniInput} 
-                            placeholder="Free" 
-                            keyboardType="numeric"
-                            value={opt.freeLimit?.toString()}
-                            onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
-                          />
+                          <View style={styles.miniInputContainer}>
+                            <Text style={styles.miniLabel}>Free Limit:</Text>
+                            <TextInput 
+                              style={styles.miniInput} 
+                              placeholder="0" 
+                              keyboardType="numeric"
+                              value={opt.freeLimit?.toString()}
+                              onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
+                            />
+                          </View>
                         )}
+                      </View>
+
+                      <View style={styles.conflictArea}>
+                        <Text style={styles.tinyLabel}>Conflicts with (names, comma separated):</Text>
+                        <TextInput 
+                          style={styles.conflictInput} 
+                          placeholder="e.g. Milk, Tea" 
+                          value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : (opt.conflicts || '')} 
+                          onChangeText={(text) => {
+                            // Don't auto-trim here to allow typing spaces between words
+                            updateOptionInGroup(group.id, opt.id, { conflicts: text });
+                          }}
+                          onBlur={() => {
+                            // Clean up on blur if it's a string, converting to array if needed for backend
+                            if (typeof opt.conflicts === 'string') {
+                              const list = opt.conflicts.split(',').map(s => s.trim()).filter(s => !!s);
+                              updateOptionInGroup(group.id, opt.id, { conflicts: list });
+                            }
+                          }}
+                        />
                       </View>
                     </View>
                   ))}
@@ -793,6 +817,12 @@ const styles = StyleSheet.create({
   },
   activeChipText: {
     color: '#fff',
+  },
+  emptyText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+    padding: 10,
   },
   typeContainer: {
     flexDirection: 'row',
@@ -1030,23 +1060,66 @@ const styles = StyleSheet.create({
   subSettingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
     marginRight: 15,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  activeSubSetting: {
+    backgroundColor: Colors.success + '10',
+    borderColor: Colors.success + '30',
   },
   subSettingText: {
     fontSize: 11,
     color: '#666',
-    marginLeft: 4,
-    fontWeight: '500',
+    marginLeft: 6,
+    fontWeight: '600',
   },
-  miniInput: {
-    width: 60,
-    height: 28,
+  activeSubSettingText: {
+    color: Colors.success,
+  },
+  miniInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#eee',
+  },
+  miniLabel: {
+    fontSize: 10,
+    color: '#999',
+    marginRight: 4,
+    fontWeight: '600',
+  },
+  miniInput: {
+    width: 35,
+    height: 24,
     fontSize: 11,
+    color: '#1a1a1a',
     textAlign: 'center',
+    padding: 0,
+  },
+  conflictArea: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  conflictInput: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 12,
+    color: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#eee',
+    marginTop: 4,
   },
   addOptBtn: {
     flexDirection: 'row',
@@ -1100,269 +1173,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     marginBottom: 2,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-  },
-  addButtonText: {
-    marginLeft: 4,
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  addOnForm: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 16,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-  },
-  formActions: {
-    marginLeft: 12,
-    justifyContent: 'center',
-  },
-  saveAddOnButton: {
-    backgroundColor: Colors.success,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  cancelAddOnButton: {
-    backgroundColor: '#666',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addOnListItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  addOnName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  addOnPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.primary,
-    marginRight: 12,
-  },
-  freeLimitText: {
-    fontSize: 11,
-    color: Colors.success,
-    marginTop: 2,
-  },
-  removeBtn: {
-    padding: 4,
-  },
-  customHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginTop: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: Colors.primary + '20',
-  },
-  addGroupBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  addGroupBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-    marginLeft: 4,
-  },
-  groupCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  groupHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  groupBadge: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  groupBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#666',
-    textTransform: 'uppercase',
-  },
-  groupControls: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  controlBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  activeControl: {
-    backgroundColor: Colors.primary + '10',
-    borderColor: Colors.primary + '30',
-  },
-  controlText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginLeft: 6,
-  },
-  activeControlText: {
-    color: Colors.primary,
-  },
-  optionRowWrapper: {
-    backgroundColor: '#fcfcfc',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  optionMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  optionSubSettings: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  subSettingBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  subSettingText: {
-    fontSize: 11,
-    color: '#666',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  miniInput: {
-    width: 60,
-    height: 28,
-    backgroundColor: '#fff',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#eee',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  addOptBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    borderRadius: 10,
-    marginTop: 5,
-  },
-  addOptText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
-    marginLeft: 4,
-  },
-  footer: {
-    marginTop: 20,
-  },
-  saveBtn: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  delBtn: {
-    marginTop: 15,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  delBtnText: {
-    color: Colors.error,
-    fontSize: 14,
-    fontWeight: '600',
   }
 });
