@@ -257,14 +257,13 @@ export default function AddProduct() {
         imageUrl = uploadResult.url;
       }
 
-      const finalCategory = category === 'New' ? newCategory : category;
       const finalType = type === 'New' ? newType : type;
 
       const productData = {
         name,
         description,
         price: parseFloat(price),
-        category: selectedCategories, // Send array of IDs
+        category: selectedCategories, // Use the array of selected category IDs
         type: finalType,
         isRestricted,
         isAvailable,
