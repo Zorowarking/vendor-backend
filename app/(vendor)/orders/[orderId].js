@@ -85,7 +85,14 @@ export default function OrderDetailScreen() {
 
       <View style={styles.headerCard}>
         <View style={styles.row}>
-          <Text style={styles.orderIdTitle}>Order #{order.id.substring(0, 8)}</Text>
+          <View>
+            <Text style={styles.orderIdTitle}>Order #{order.id.substring(0, 8)}</Text>
+            {order.paymentMethod?.startsWith('Sandbox') && (
+              <View style={styles.sandboxBadge}>
+                <Text style={styles.sandboxText}>SANDBOX TEST ORDER</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.statusBadge, { backgroundColor: Colors.primary + '15', color: Colors.primary }]}>{order.status}</Text>
         </View>
         <Text style={styles.customerName}>Customer: {order.customerName}</Text>
@@ -157,6 +164,10 @@ export default function OrderDetailScreen() {
       <View style={styles.summaryCard}>
         <Text style={styles.sectionTitle}>Summary</Text>
         <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Payment Method</Text>
+          <Text style={styles.summaryValue}>{order.paymentMethod || 'Online'}</Text>
+        </View>
+        <View style={[styles.summaryRow, { marginTop: 8 }]}>
           <Text style={styles.summaryLabel}>Total Amount</Text>
           <Text style={styles.summaryTotal}>
             ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
@@ -358,5 +369,25 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
     marginRight: 4,
+  },
+  sandboxBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderColor: Colors.primary,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 4,
+    alignSelf: 'flex-start'
+  },
+  sandboxText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: 'bold'
+  },
+  summaryValue: {
+    fontSize: 16,
+    color: Colors.black,
+    fontWeight: '500'
   }
 });

@@ -109,23 +109,33 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
       }
     }
 
-    // 6. Initiate Payment (Mock)
-    // In real app, call Stripe/Razorpay here
-    const paymentIntentId = `pi_${Math.random().toString(36).substring(7)}`;
-
-    // Store checkout session data in Redis or Temp table if needed, 
-    // but here we'll just wait for the webhook to use the cart
-    
-    res.json({
+    // 6. Initiate Payment (Sandbox or Real)
+    let paymentData = {
       success: true,
-      paymentIntentId,
       amount: cart.total,
       deliveryFee: deliveryCost,
       totalToPay: cart.total + deliveryCost,
       currency: 'INR',
       clientSecret: 'mock_secret_123',
-      message: 'Payment initiated. Awaiting confirmation.'
-    });
+    };
+
+    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+      const sandboxPaymentService = require('../services/sandboxPaymentService');
+      const sandboxIntent = sandboxPaymentService.createPaymentIntent(
+        cart.total + deliveryCost,
+        req.customer.id,
+        cart.vendorId
+      );
+      paymentData.paymentIntentId = sandboxIntent.id;
+      paymentData.isSandbox = true;
+      paymentData.message = 'Sandbox payment initiated.';
+    } else {
+      // In real app, call Stripe/Razorpay here
+      paymentData.paymentIntentId = `pi_${Math.random().toString(36).substring(7)}`;
+      paymentData.message = 'Payment initiated. Awaiting confirmation.';
+    }
+    
+    res.json(paymentData);
 
   } catch (error) {
     console.error('[CHECKOUT] error:', error);

@@ -16,6 +16,11 @@ class DeliveryService {
    * @returns {Promise<void>}
    */
   async initiateDelivery(orderId) {
+    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+      logger.info(`[DeliveryService] Sandbox mode detected. Simulating delivery for order ${orderId}`);
+      this.startSandboxSimulation(orderId);
+      return;
+    }
     logger.info(`[DeliveryService] initiateDelivery called for order ${orderId}`);
     try {
       const order = await prisma.order.findUnique({
@@ -197,6 +202,43 @@ class DeliveryService {
       }
     } catch (socketErr) {
       logger.error(`[DeliveryService] Failed to emit admin error: ${socketErr.message}`);
+    }
+  }
+
+  /**
+   * Simulates delivery progress for sandbox testing.
+   */
+  async startSandboxSimulation(orderId) {
+    const transitions = [
+      { status: 'ACCEPTED', delay: 5000 },
+      { status: 'PREPARING', delay: 10000 },
+      { status: 'READY_FOR_PICKUP', delay: 15000 },
+      { status: 'PICKED_UP', delay: 20000 },
+      { status: 'DELIVERED', delay: 30000 },
+    ];
+
+    for (const t of transitions) {
+      setTimeout(async () => {
+        try {
+          // Check if order still exists and is not cancelled
+          const currentOrder = await prisma.order.findUnique({ where: { id: orderId } });
+          if (!currentOrder) {
+             logger.info(`[SandboxDelivery] Order ${orderId} no longer exists. Stopping simulation.`);
+             return;
+          }
+          
+          if (['CANCELLED', 'ORDER_CANCELLED', 'CANCELLED_BY_VENDOR'].includes(currentOrder.status.toUpperCase())) {
+             logger.info(`[SandboxDelivery] Order ${orderId} is cancelled. Stopping simulation.`);
+             return;
+          }
+
+          logger.info(`[SandboxDelivery] Transitioning order ${orderId} to ${t.status}`);
+          const OrderService = require('../../../services/orderService');
+          await OrderService.updateOrderStatus(orderId, t.status, 'SYSTEM');
+        } catch (err) {
+          logger.error(`[SandboxDelivery] Failed transition to ${t.status}: ${err.message}`);
+        }
+      }, t.delay);
     }
   }
 }

@@ -8,6 +8,11 @@ const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
 
+// Prevent JSON serialization errors for BigInt fields (used in Shadowfax Order IDs)
+BigInt.prototype.toJSON = function() {
+  return this.toString();
+};
+
 let prismaClientInstance;
 
 /**

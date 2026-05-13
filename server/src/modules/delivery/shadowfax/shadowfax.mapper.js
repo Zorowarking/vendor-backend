@@ -58,8 +58,8 @@ function mapSfxStatusToInternal(sfxStatus) {
     case 'UNDELIVERED':
       return 'ADDRESS_NOT_FOUND';
     default:
-      console.warn(`[Shadowfax Mapper] Unknown SFX Status received: ${sfxStatus}`);
-      return null;
+      logger.warn(`[Shadowfax Mapper] Unknown SFX Status received: ${sfxStatus}. Falling back to PENDING_DELIVERY_UPDATE.`);
+      return 'PENDING_DELIVERY_UPDATE';
   }
 }
 

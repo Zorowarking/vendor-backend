@@ -11,7 +11,7 @@ class OrderService {
   /**
    * Create order after payment verification
    */
-  static async createOrderFromCart(cart, customerId, customerName, deliveryPreference) {
+  static async createOrderFromCart(cart, customerId, customerName, deliveryPreference, paymentMethod = null, paymentGatewayRef = null) {
     if (!cart.vendorId) {
       console.error('[ORDER-SERVICE] CRITICAL: Attempted to create order with NO vendorId');
       throw new Error('CART_INVALID: Missing vendor identification');
@@ -47,6 +47,8 @@ class OrderService {
         totalAmount: Number(cart.total || 0),
         status: 'pending_vendor',
         deliveryPreference: deliveryPreference || 'standard',
+        paymentMethod: paymentMethod,
+        paymentGatewayRef: paymentGatewayRef,
         ageVerifiedCheckbox: cart.items.some(i => i.ageVerified),
         statusHistory: {
           create: {
@@ -158,7 +160,8 @@ class OrderService {
    * Update order status and notify all parties
    */
   static async updateOrderStatus(orderId, newStatus, actorRole) {
-    if (newStatus === 'CANCELLED' || newStatus === 'cancelled_by_vendor' || newStatus === 'ORDER_CANCELLED') {
+    const terminalStatuses = ['CANCELLED', 'CANCELLED_BY_VENDOR', 'ORDER_CANCELLED'];
+    if (terminalStatuses.includes(newStatus.toUpperCase())) {
       try {
         const deliveryService = require('../src/modules/delivery/delivery.service');
         await deliveryService.cancelDelivery(orderId, `Order cancelled by ${actorRole}`);
@@ -195,11 +198,44 @@ class OrderService {
       });
     }
 
-    // Analytics and Offline Check for terminal states
-    if (newStatus === 'Delivered' || newStatus === 'CANCELLED' || newStatus === 'cancelled_by_vendor' || newStatus === 'ORDER_CANCELLED') {
+    // Analytics and Offline Check for terminal states (case-insensitive)
+    const upperStatus = newStatus.toUpperCase();
+    if (['DELIVERED', 'CANCELLED', 'CANCELLED_BY_VENDOR', 'ORDER_CANCELLED'].includes(upperStatus)) {
       await checkAndTransitionVendorOffline(order.vendorId);
       
-      if (newStatus === 'Delivered') {
+      if (upperStatus === 'DELIVERED') {
+        // Create Vendor Earning Record
+        try {
+          const v = await prisma.vendor.findUnique({ where: { id: order.vendorId } });
+          const orderTotal = Number(order.totalAmount);
+          const rate = Number(v?.commissionRate || 5.0);
+          const commissionAmt = (orderTotal * rate) / 100;
+          const payout = orderTotal - commissionAmt;
+
+          await prisma.vendorEarning.upsert({
+            where: { orderId: orderId },
+            update: {
+              orderTotal: orderTotal,
+              commissionRate: rate,
+              commissionAmt: commissionAmt,
+              vendorPayout: payout,
+              earnedAt: new Date()
+            },
+            create: {
+              vendorId: order.vendorId,
+              orderId: orderId,
+              orderTotal: orderTotal,
+              commissionRate: rate,
+              commissionAmt: commissionAmt,
+              vendorPayout: payout,
+              earnedAt: new Date()
+            }
+          });
+          console.log(`[ORDER-SERVICE] Earning record created for order ${orderId}`);
+        } catch (earningErr) {
+          console.error(`[ORDER-SERVICE] Failed to create earning record: ${earningErr.message}`);
+        }
+
         await prisma.analyticsEvent.create({
           data: {
             event: 'order_completed',

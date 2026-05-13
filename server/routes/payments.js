@@ -57,13 +57,27 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
       cart, 
       customerId, 
       req.customer?.fullName || req.body.customerName || 'Customer', 
-      deliveryPreference
+      deliveryPreference,
+      req.body.paymentMethod || 'Online',
+      paymentIntentId
     ).catch(err => {
         console.error('[PAYMENT] OrderService.createOrderFromCart CRASH:', err.message);
         throw err; // rethrow to hit main catch
     });
 
     console.log('[PAYMENT] Order created successfully:', order.id);
+    
+    // 4. Log the transaction in the database
+    await prisma.paymentTransaction.create({
+      data: {
+        orderId: order.id,
+        gateway: paymentIntentId.startsWith('pi_sandbox_') ? 'SANDBOX' : 'RAZORPAY', // Auto-detect
+        txnId: paymentIntentId,
+        status: 'SUCCESS',
+        amount: order.totalAmount,
+        webhookPayload: { paymentIntentId, deliveryPreference, addressId }
+      }
+    }).catch(e => console.warn('[PAYMENT] Failed to log transaction record:', e.message));
 
     // INITIATE SFX DELIVERY
     try {

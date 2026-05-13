@@ -142,7 +142,14 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
           )}
 
           <View style={styles.cardHeader}>
-            <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
+            <View>
+              <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
+              {order.paymentMethod?.startsWith('Sandbox') && (
+                <View style={styles.sandboxBadge}>
+                  <Text style={styles.sandboxText}>SANDBOX TEST</Text>
+                </View>
+              )}
+            </View>
             <View style={[styles.timerBadge, isDanger && styles.timerBadgeDanger]}>
               <Text style={[styles.timerText, isDanger && styles.timerTextDanger]}>
                 {isBreached ? 'SLA BREACHED' : `${minutes}:${seconds.toString().padStart(2, '0')} left`}
@@ -378,6 +385,11 @@ function ActiveOrderCard({ order, router }) {
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
+          {order.paymentMethod?.startsWith('Sandbox') && (
+            <View style={[styles.sandboxBadge, { marginLeft: 8 }]}>
+              <Text style={styles.sandboxText}>SANDBOX</Text>
+            </View>
+          )}
           {(order.isFlagged || order.isFlaggedAdmin) && (
             <View style={styles.flaggedBadge}>
               <Ionicons name="flag" size={10} color={Colors.white} />
@@ -759,6 +771,21 @@ const styles = StyleSheet.create({
   timeSinceText: { color: Colors.subText, fontSize: 12, fontStyle: 'italic', marginBottom: 8 },
 
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  
+  sandboxBadge: {
+    backgroundColor: Colors.primary + '20',
+    borderColor: Colors.primary,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 2
+  },
+  sandboxText: {
+    color: Colors.primary,
+    fontSize: 9,
+    fontWeight: 'bold'
+  },
 
   // Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },

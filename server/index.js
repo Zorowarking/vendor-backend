@@ -150,6 +150,7 @@ try {
     app.use('/api/delivery/shadowfax', shadowfaxRoutes);
     app.use('/api/feedback', feedbackRoutes);
     app.use('/api/admin', require('./routes/admin'));
+    app.use('/api/sandbox', require('./routes/sandbox'));
 
     // Stage 3 Diagnostic health
     app.get('/api/health/status', (req, res) => {
