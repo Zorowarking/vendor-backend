@@ -42,6 +42,7 @@ model ProductTemplate {
   category     String?  @db.VarChar(100)
   templateName String   @map("template_name") @db.VarChar(255)
   templateData Json     @map("template_data")
+  isSkeletal   Boolean  @default(false) @map("is_skeletal")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   vendor       Vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 

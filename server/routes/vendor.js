@@ -69,7 +69,8 @@ router.get('/products/templates', firebaseAuth, async (req, res) => {
     });
     res.json({ success: true, templates });
   } catch (error) {
-    res.status(500).json({ error: 'Failed fetching templates' });
+    console.error('[VENDOR-API] Templates fetch error:', error);
+    res.status(500).json({ error: 'Failed fetching templates', details: error.message });
   }
 });
 
@@ -901,6 +902,7 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       description, 
       productType: type, 
       basePrice: parseFloat(price) || 0,
+      category: Array.isArray(category) ? category[0] : category,
       isRestricted: isRestricted === 'true' || isRestricted === true,
       isActive: false, // NEW PRODUCTS ARE INACTIVE BY DEFAULT
       reviewStatus: 'pending_review',
@@ -999,7 +1001,9 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
       const updateData = {};
       if (name !== undefined) updateData.name = name;
       if (description !== undefined) updateData.description = description;
-      if (category !== undefined) updateData.category = category;
+      if (category !== undefined) {
+        updateData.category = Array.isArray(category) ? category[0] : category;
+      }
       if (type !== undefined) updateData.productType = type;
       if (isRestricted !== undefined) updateData.isRestricted = isRestricted === 'true' || isRestricted === true;
       if (isAvailable !== undefined) updateData.isActive = isAvailable === 'true' || isAvailable === true;
