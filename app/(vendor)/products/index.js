@@ -53,7 +53,7 @@ export default function ProductsList() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [products, setProducts]);
+  }, [setProducts]);
 
   // Refresh data when screen comes into focus
   useFocusEffect(

@@ -17,34 +17,30 @@ import { SkeletonLoader } from '../../components/SkeletonLoader';
 import EmptyState from '../../components/EmptyState';
 
 const { width } = Dimensions.get('window');
-const INCOMING_SLA_SECONDS = 60; // 1 minute (for testing)
+const INCOMING_SLA_SECONDS = 300; // 5 minutes as per MVP Requirements
 
-const checkOperatingHours = (hoursRange) => {
-  if (!hoursRange) return true; // Default to open if not set
+const checkOperatingHours = (operatingHours) => {
+  if (!operatingHours || typeof operatingHours !== 'object') return true;
   try {
-    const [startStr, endStr] = hoursRange.split(' - ');
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const now = new Date();
-    
-    const parseTime = (timeStr) => {
-      const [time, modifier] = timeStr.split(' ');
-      let [hours, minutes] = time.split(':');
-      if (hours === '12') hours = '00';
-      if (modifier === 'PM') hours = parseInt(hours, 10) + 12;
-      const d = new Date();
-      d.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-      return d;
-    };
+    const dayName = days[now.getDay()];
+    const todayHours = operatingHours[dayName];
 
-    const startTime = parseTime(startStr);
-    const endTime = parseTime(endStr);
-    
-    // Handle overnight shifts (e.g., 10 PM - 2 AM)
-    if (endTime < startTime) {
-      return now >= startTime || now <= endTime;
+    if (!todayHours || todayHours.isClosed) return false;
+
+    const [openH, openM] = todayHours.open.split(':').map(Number);
+    const [closeH, closeM] = todayHours.close.split(':').map(Number);
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+    const openMins = openH * 60 + openM;
+    const closeMins = closeH * 60 + closeM;
+
+    if (closeMins < openMins) {
+      return currentMins >= openMins || currentMins <= closeMins;
     }
-    return now >= startTime && now <= endTime;
+    return currentMins >= openMins && currentMins <= closeMins;
   } catch (e) {
-    return true; // Fallback to avoid blocking orders on parse error
+    return true;
   }
 };
 
@@ -91,7 +87,7 @@ function PrepTimer({ startTime }) {
   );
 }
 
-function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, isOutsideHours }) {
+function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, isOutsideHours, onContactSupport }) {
   const order = orders[0]; // Show the oldest pending order
   const [timeLeft, setTimeLeft] = useState(INCOMING_SLA_SECONDS);
 
@@ -174,9 +170,18 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
             </View>
           ) : (
             <View style={styles.actionRowModal}>
-              <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
-                <Text style={styles.rejectText}>Reject</Text>
-              </TouchableOpacity>
+              {!isOutsideHours ? (
+                <TouchableOpacity 
+                  style={[styles.rejectButtonModal, { backgroundColor: Colors.warning }]} 
+                  onPress={() => onContactSupport(order.id)}
+                >
+                  <Text style={styles.rejectText}>Contact Support</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
+                  <Text style={styles.rejectText}>Reject</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.acceptButtonModal} onPress={() => onAccept(order.id)}>
                 <Text style={styles.acceptText}>Accept Order</Text>
               </TouchableOpacity>
@@ -554,6 +559,20 @@ export default function VendorOrdersDashboard() {
     setRejectOrderId(orderId);
   };
 
+  const handleContactSupport = async (orderId) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await vendorApi.contactSupport(orderId);
+      Alert.alert(
+        'Support Contacted', 
+        'Support has been notified about this order. They will contact you shortly to assist with the rejection request during operating hours.',
+        [{ text: 'OK', onPress: () => handleDismiss(orderId) }]
+      );
+    } catch (e) {
+      Alert.alert('Error', 'Failed to reach support. Please try again.');
+    }
+  };
+
   const confirmRejection = async (reason) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -665,6 +684,7 @@ export default function VendorOrdersDashboard() {
         onAccept={handleAccept} 
         onReject={handleReject}
         onDismiss={handleDismiss}
+        onContactSupport={handleContactSupport}
         isOutsideHours={profile ? !checkOperatingHours(profile.operatingHours) : false}
       />
 

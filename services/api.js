@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
   // Fallback for local development if env is missing
-  return 'http://192.168.0.107:3001';
+  return 'http://192.168.0.105:3000';
 };
 
 const API_BASE_URL = getApiBaseUrl();

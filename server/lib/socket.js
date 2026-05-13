@@ -136,19 +136,25 @@ const initSocket = (server) => {
 /**
  * Emit Location Update
  */
-const emitLocationUpdate = (orderId, lat, lng, pickupEta = null, dropEta = null) => {
+const emitLocationUpdate = (orderId, lat, lng, pickupEta = null, dropEta = null, vendorId = null) => {
   if (!io) return;
   io.of('/customer').to(`order_${orderId}`).emit('rider_location_update', { lat, lng, pickupEta, dropEta });
   io.of('/admin').to('admin_global').emit('rider_location_update', { orderId, lat, lng, pickupEta, dropEta });
+  if (vendorId) {
+    io.of('/vendor').to(`vendor_${vendorId}`).emit('rider_location_update', { orderId, lat, lng, pickupEta, dropEta });
+  }
 };
 
 /**
  * Emit Order Status Change
  */
-const emitOrderStatusUpdate = (orderId, status, actor) => {
+const emitOrderStatusUpdate = (orderId, status, actor, vendorId = null) => {
   if (!io) return;
   io.of('/customer').to(`order_${orderId}`).emit('order_status_update', { orderId, status, updatedBy: actor });
   io.of('/admin').to('admin_global').emit('order_status_update', { orderId, status, updatedBy: actor });
+  if (vendorId) {
+    io.of('/vendor').to(`vendor_${vendorId}`).emit('order_status_update', { orderId, status, updatedBy: actor });
+  }
 };
 
 /**

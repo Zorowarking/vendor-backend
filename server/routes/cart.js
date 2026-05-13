@@ -76,10 +76,21 @@ router.get('/', firebaseAuthOptional, guestSession, async (req, res) => {
 router.delete('/item/:id', firebaseAuthOptional, guestSession, async (req, res) => {
   try {
     const { id } = req.params;
-    await prisma.cartItem.delete({ where: { id } });
+    const identifier = { 
+      customerId: null, 
+      guestId: req.guestId 
+    };
+    
+    if (req.user) {
+        const profile = await getOrCreateCustomerProfile(req.user);
+        identifier.customerId = profile.customer.id;
+    }
+
+    await CartService.removeItem(identifier, id);
     res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to remove item' });
+    console.error('[CART] Remove item error:', error);
+    res.status(500).json({ error: 'Failed to remove item', details: error.message });
   }
 });
 

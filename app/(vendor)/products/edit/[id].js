@@ -38,6 +38,9 @@ export default function EditProduct() {
   const [isAvailable, setIsAvailable] = useState(true);
   const [image, setImage] = useState(null);
   const [addOns, setAddOns] = useState([]);
+  const [isCustomizable, setIsCustomizable] = useState(false);
+  const [customizationGroups, setCustomizationGroups] = useState([]);
+  const [templateId, setTemplateId] = useState(null);
   
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
@@ -45,14 +48,25 @@ export default function EditProduct() {
   const [addOnFreeLimit, setAddOnFreeLimit] = useState('0');
   const [showAddOnForm, setShowAddOnForm] = useState(false);
 
-  // Mock Categories and Types
-  const [categories, setCategories] = useState(['Pizza', 'Burgers', 'Pasta', 'Salads']);
+  // Categories and Types fetched from API
+  const [categories, setCategories] = useState([]);
   const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
+  const [allTemplates, setAllTemplates] = useState([]);
 
   useEffect(() => {
-    const fetchProduct = async () => {
+    const fetchData = async () => {
       try {
-        const products = await vendorApi.getProducts();
+        const [products, templatesRes] = await Promise.all([
+          vendorApi.getProducts(),
+          vendorApi.getTemplates()
+        ]);
+
+        if (templatesRes.success && templatesRes.templates) {
+          setAllTemplates(templatesRes.templates);
+          const cats = [...new Set(templatesRes.templates.map(t => t.category))];
+          setCategories(cats);
+        }
+
         const product = products.find(p => p.id === id);
         if (product) {
           setName(product.name);
@@ -62,11 +76,10 @@ export default function EditProduct() {
           setType(product.type);
           setIsAvailable(product.isAvailable);
           setImage(product.image);
-          // Mocking add-ons if they don't exist in the list
-          setAddOns(product.addOns || [
-            { id: 'a1', name: 'Extra Cheese', price: 20.00 },
-            { id: 'a2', name: 'Mushrooms', price: 15.00 }
-          ]);
+          setIsCustomizable(product.isCustomizable || false);
+          setCustomizationGroups(product.customizationGroups || []);
+          setAddOns(product.addOns || []);
+          setTemplateId(product.templateId || null);
         }
       } catch (error) {
         Alert.alert('Error', 'Failed to fetch product data');
@@ -74,8 +87,42 @@ export default function EditProduct() {
         setLoading(false);
       }
     };
-    fetchProduct();
+    fetchData();
   }, [id]);
+
+  const handleTemplateSelect = (template) => {
+    setName(template.templateName);
+    setCategory(template.category);
+    setTemplateId(template.id);
+    if (template.templateData) {
+      setDescription(template.templateData.description || '');
+      setPrice(template.templateData.price?.toString() || '');
+      setType(template.templateData.type || 'Veg');
+      if (template.templateData.addOns) {
+        setAddOns(template.templateData.addOns.map(a => ({
+          id: Math.random().toString(),
+          name: a.name,
+          price: a.price,
+          freeLimit: a.freeLimit || 0
+        })));
+      }
+      if (template.templateData?.customizationGroups) {
+        setCustomizationGroups(template.templateData.customizationGroups.map(g => ({
+          ...g,
+          id: Math.random().toString(),
+          options: (g.options || []).map(o => ({
+            ...o,
+            id: Math.random().toString(),
+            priceModifier: o.priceModifier || 0,
+            allowQuantity: o.allowQuantity || false,
+            freeLimit: o.freeLimit || 0,
+            conflicts: o.conflicts || []
+          }))
+        })));
+        setIsCustomizable(true);
+      }
+    }
+  };
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -109,6 +156,68 @@ export default function EditProduct() {
 
   const removeAddOn = (id) => {
     setAddOns(addOns.filter(item => item.id !== id));
+  };
+
+  // Customization Logic
+  const addCustomizationGroup = () => {
+    setCustomizationGroups([...customizationGroups, {
+      id: Date.now().toString(),
+      name: '',
+      isRequired: false,
+      selectionType: 'SINGLE', // SINGLE, MULTIPLE
+      maxSelections: 1,
+      options: []
+    }]);
+  };
+
+  const removeCustomizationGroup = (groupId) => {
+    setCustomizationGroups(customizationGroups.filter(g => g.id !== groupId));
+  };
+
+  const updateCustomizationGroup = (groupId, updates) => {
+    setCustomizationGroups(customizationGroups.map(g => g.id === groupId ? { ...g, ...updates } : g));
+  };
+
+  const addOptionToGroup = (groupId) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: [...g.options, { 
+            id: Date.now().toString(), 
+            name: '', 
+            priceModifier: 0,
+            allowQuantity: false,
+            freeLimit: 0
+          }]
+        };
+      }
+      return g;
+    }));
+  };
+
+  const removeOptionFromGroup = (groupId, optionId) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: g.options.filter(o => o.id !== optionId)
+        };
+      }
+      return g;
+    }));
+  };
+
+  const updateOptionInGroup = (groupId, optionId, updates) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: g.options.map(o => o.id === optionId ? { ...o, ...updates } : o)
+        };
+      }
+      return g;
+    }));
   };
 
   const handleSave = async () => {
@@ -152,11 +261,15 @@ export default function EditProduct() {
         isRestricted,
         isAvailable,
         image: imageUrl,
+        isCustomizable,
+        customizationType: isCustomizable ? 'BUILD_YOUR_OWN' : 'NORMAL',
+        customizationGroups: isCustomizable ? customizationGroups : [],
         addOns: addOns.map(a => ({
           name: a.name,
           price: parseFloat(a.price) || 0,
           freeLimit: parseInt(a.freeLimit) || 0
-        }))
+        })),
+        templateId
       };
 
       const res = await vendorApi.updateProduct(id, productData);
@@ -245,15 +358,56 @@ export default function EditProduct() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput 
-            style={[styles.input, styles.textArea]} 
-            placeholder="Enter description" 
-            multiline 
-            numberOfLines={4}
-            value={description}
-            onChangeText={setDescription}
-          />
+          <Text style={styles.label}>Categories & Templates</Text>
+          <Text style={styles.subLabel}>Select a category or a quick template to pre-fill details</Text>
+          <View style={styles.verticalPicker}>
+            {[...new Set([...categories, ...allTemplates.map(t => t.category)])].map(cat => (
+              <View key={cat} style={styles.categoryGroup}>
+                <TouchableOpacity 
+                  style={[styles.categoryHeader, category === cat && styles.activeCategoryHeader]}
+                  onPress={() => setCategory(cat)}
+                >
+                  <Text style={[styles.categoryHeaderText, category === cat && styles.activeCategoryHeaderText]}>{cat}</Text>
+                  <Ionicons name={category === cat ? "chevron-down" : "chevron-forward"} size={16} color={category === cat ? Colors.white : Colors.subText} />
+                </TouchableOpacity>
+                
+                {category === cat && (
+                  <View style={styles.templateList}>
+                    {allTemplates.filter(t => t.category === cat).map(t => (
+                      <TouchableOpacity 
+                        key={t.id} 
+                        style={styles.templateItem}
+                        onPress={() => handleTemplateSelect(t)}
+                      >
+                        <Ionicons name="flash-outline" size={14} color={Colors.primary} />
+                        <Text style={styles.templateItemText}>{t.templateName}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity 
+                      style={styles.templateItem}
+                      onPress={() => {}}
+                    >
+                      <Text style={[styles.templateItemText, { color: Colors.subText, fontStyle: 'italic' }]}>Custom {cat} item</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity 
+              style={[styles.categoryHeader, category === 'New' && styles.activeCategoryHeader]}
+              onPress={() => setCategory('New')}
+            >
+              <Text style={[styles.categoryHeaderText, category === 'New' && styles.activeCategoryHeaderText]}>+ Add New Category</Text>
+            </TouchableOpacity>
+            {category === 'New' && (
+              <TextInput 
+                style={[styles.input, { marginTop: 8 }]} 
+                placeholder="New Category Name" 
+                value={newCategory} 
+                onChangeText={setNewCategory} 
+              />
+            )}
+          </View>
         </View>
 
         <View style={styles.row}>
@@ -266,36 +420,6 @@ export default function EditProduct() {
               value={price}
               onChangeText={setPrice}
             />
-          </View>
-          <View style={[styles.section, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Category</Text>
-            <View style={styles.pickerContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {categories.map(cat => (
-                  <TouchableOpacity 
-                    key={cat} 
-                    style={[styles.chip, category === cat && styles.activeChip]}
-                    onPress={() => setCategory(cat)}
-                  >
-                    <Text style={[styles.chipText, category === cat && styles.activeChipText]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity 
-                  style={[styles.chip, category === 'New' && styles.activeChip]}
-                  onPress={() => setCategory('New')}
-                >
-                  <Text style={[styles.chipText, category === 'New' && styles.activeChipText]}>+ New</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-            {category === 'New' && (
-              <TextInput 
-                style={[styles.input, { marginTop: 8 }]} 
-                placeholder="New Category Name" 
-                value={newCategory} 
-                onChangeText={setNewCategory} 
-              />
-            )}
           </View>
         </View>
 
@@ -423,6 +547,146 @@ export default function EditProduct() {
             </TouchableOpacity>
           </View>
         ))}
+
+        {/* Advanced Customization Section */}
+        <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
+          <View>
+            <Text style={styles.label}>Advanced Customization</Text>
+            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+          </View>
+          <Switch 
+            value={isCustomizable} 
+            onValueChange={setIsCustomizable}
+            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+          />
+        </View>
+
+        {isCustomizable && (
+          <View style={styles.customizationSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Customization Groups</Text>
+              <TouchableOpacity onPress={addCustomizationGroup} style={styles.addButton}>
+                <Ionicons name="add-circle" size={24} color={Colors.primary} />
+                <Text style={styles.addButtonText}>Add Group</Text>
+              </TouchableOpacity>
+            </View>
+
+            {customizationGroups.map((group, index) => (
+              <View key={group.id} style={styles.groupCard}>
+                <View style={styles.groupHeader}>
+                  <Text style={styles.groupNumber}>Group #{index + 1}</Text>
+                  <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
+                    <Ionicons name="close-circle" size={24} color={Colors.error} />
+                  </TouchableOpacity>
+                </View>
+
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Group Name (e.g. Choose Your Base)" 
+                  value={group.name} 
+                  onChangeText={(text) => updateCustomizationGroup(group.id, { name: text })} 
+                />
+
+                <View style={styles.groupSettings}>
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Required?</Text>
+                    <Switch 
+                      value={group.isRequired} 
+                      onValueChange={(val) => updateCustomizationGroup(group.id, { isRequired: val })} 
+                    />
+                  </View>
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Multi-select?</Text>
+                    <Switch 
+                      value={group.selectionType === 'MULTIPLE'} 
+                      onValueChange={(val) => updateCustomizationGroup(group.id, { selectionType: val ? 'MULTIPLE' : 'SINGLE' })} 
+                    />
+                  </View>
+                </View>
+
+                {group.selectionType === 'MULTIPLE' && (
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Max Selections</Text>
+                    <TextInput 
+                      style={[styles.input, { width: 60, textAlign: 'center' }]} 
+                      keyboardType="numeric"
+                      value={group.maxSelections === undefined || group.maxSelections === null ? '' : group.maxSelections.toString()}
+                      onChangeText={(text) => {
+                        const val = text === '' ? null : parseInt(text);
+                        updateCustomizationGroup(group.id, { maxSelections: isNaN(val) ? null : val });
+                      }}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.optionsList}>
+                  <Text style={styles.optionsTitle}>Options</Text>
+                  {group.options.map((opt) => (
+                    <View key={opt.id} style={styles.optionCard}>
+                      <View style={styles.optionRow}>
+                        <TextInput 
+                          style={[styles.input, { flex: 2, marginRight: 8 }]} 
+                          placeholder="Option Name" 
+                          value={opt.name} 
+                          onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { name: text })} 
+                        />
+                        <TextInput 
+                          style={[styles.input, { flex: 1, marginRight: 8 }]} 
+                          placeholder="+₹ Price" 
+                          keyboardType="numeric"
+                          value={opt.priceModifier?.toString()} 
+                          onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { priceModifier: parseFloat(text) || 0 })} 
+                        />
+                        <TouchableOpacity onPress={() => removeOptionFromGroup(group.id, opt.id)}>
+                          <Ionicons name="remove-circle-outline" size={24} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <View style={styles.optionExtras}>
+                        <View style={styles.settingItem}>
+                          <Text style={styles.extraLabel}>Allow Qty?</Text>
+                          <Switch 
+                            value={opt.allowQuantity} 
+                            onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                          />
+                        </View>
+                        {opt.allowQuantity && (
+                          <View style={styles.settingItem}>
+                            <Text style={styles.extraLabel}>Free Limit</Text>
+                            <TextInput 
+                              style={[styles.input, { width: 50, padding: 4, textAlign: 'center' }]} 
+                              keyboardType="numeric"
+                              value={opt.freeLimit?.toString()}
+                              onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
+                            />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={{ marginTop: 8, paddingHorizontal: 4 }}>
+                        <Text style={[styles.extraLabel, { marginBottom: 4 }]}>Conflicts with (names, comma separated):</Text>
+                        <TextInput 
+                          style={[styles.input, { height: 35, fontSize: 12, backgroundColor: Colors.white }]} 
+                          placeholder="e.g. Milk, Tea" 
+                          value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : ''} 
+                          onChangeText={(text) => {
+                            const list = text.split(',').map(s => s.trim()).filter(s => !!s);
+                            updateOptionInGroup(group.id, opt.id, { conflicts: list });
+                          }} 
+                        />
+                      </View>
+                    </View>
+                  ))}
+                  <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptionButton}>
+                    <Ionicons name="add" size={20} color={Colors.primary} />
+                    <Text style={styles.addOptionText}>Add Option</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity 
           style={[styles.saveButton, saving && styles.disabledButton]} 
@@ -641,5 +905,137 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  customizationSection: {
+    marginTop: 10,
+  },
+  groupCard: {
+    backgroundColor: Colors.grey,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  groupNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.subText,
+  },
+  groupSettings: {
+    flexDirection: 'row',
+    marginTop: 12,
+    justifyContent: 'space-between',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingLabel: {
+    fontSize: 14,
+    color: Colors.black,
+    marginRight: 8,
+  },
+  optionsList: {
+    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 16,
+  },
+  optionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: 12,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  addOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  addOptionText: {
+    color: Colors.primary,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  verticalPicker: {
+    marginTop: 10,
+  },
+  categoryGroup: {
+    marginBottom: 8,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: Colors.grey,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: Colors.white,
+  },
+  activeCategoryHeader: {
+    backgroundColor: Colors.primary,
+  },
+  categoryHeaderText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  activeCategoryHeaderText: {
+    color: Colors.white,
+  },
+  templateList: {
+    padding: 10,
+    backgroundColor: Colors.grey,
+  },
+  templateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '40',
+  },
+  templateItemText: {
+    fontSize: 14,
+    color: Colors.black,
+    marginLeft: 8,
+  },
+  optionCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  optionExtras: {
+    flexDirection: 'row',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border + '40',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  extraLabel: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginRight: 6,
   }
 });

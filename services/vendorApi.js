@@ -65,6 +65,16 @@ export const vendorApi = {
     return response.data;
   },
 
+  getCategoryList: async () => {
+    const response = await apiClient.get('/api/vendor/categories');
+    return response.data;
+  },
+
+  createCategory: async (name, description = '') => {
+    const response = await apiClient.post('/api/vendor/categories', { name, description });
+    return response.data;
+  },
+
   getProfile: async () => {
     try {
       const response = await apiClient.get('/api/vendor/profile');

@@ -5,59 +5,64 @@ const requireCustomer = require('../middleware/customer');
 const { prisma, withRetry, getOrCreateCustomerProfile } = require('../lib/prisma');
 
 /**
- * MODULE 4 — AGE VERIFICATION
+ * MODULE 4 — AGE VERIFICATION (DOB-based, no document upload)
+ *
+ * Rules:
+ *  - 18+ users  → isVerified = true, expiresAt = 30 days from now
+ *  - Under-18   → isVerified = false, underageAcknowledged = true recorded in verificationId
+ *                 Returns 200 so the frontend soft-block can proceed
+ *  - No ID document upload is required (DOB self-declaration only)
  */
-// POST /age-verify — verify age for restricted products
 router.post('/age-verify', firebaseAuth, async (req, res) => {
   try {
-    let { birthDate, idType, verificationId, documentReference } = req.body;
+    const { birthDate, idType, underageAcknowledged } = req.body;
     const profile = await getOrCreateCustomerProfile(req.user);
 
-    // If only documentReference is provided (Phase 1 simplicity), use defaults
-    if (!birthDate && documentReference) {
-        birthDate = new Date(Date.now() - 20 * 365.25 * 24 * 60 * 60 * 1000).toISOString(); // Default to 20 years ago
-        idType = idType || 'ID_DOCUMENT';
-        verificationId = verificationId || documentReference.substring(0, 50);
-    }
-
-    // Enforce 18+ check
     if (!birthDate) return res.status(400).json({ error: 'Birth date is required.' });
-    
+
     const bday = new Date(birthDate);
     if (isNaN(bday.getTime())) {
       return res.status(400).json({ error: 'Invalid birth date format.' });
     }
 
-    const age = (Date.now() - bday.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-    
-    if (age < 18) {
-      return res.status(403).json({ error: 'You must be 18+ to verify.' });
-    }
+    // Calculate age in years
+    const ageMs   = Date.now() - bday.getTime();
+    const ageYears = ageMs / (1000 * 60 * 60 * 24 * 365.25);
+    const isAdult  = ageYears >= 18;
+
+    // 30-day verification window (per MVP spec §12)
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + THIRTY_DAYS_MS);
+
+    const upsertData = {
+      birthDate: bday,
+      idType: idType || 'DOB_SELF_DECLARED',
+      // Store underage acknowledgement flag in verificationId field
+      verificationId: underageAcknowledged ? 'UNDERAGE_ACKNOWLEDGED' : null,
+      isVerified: isAdult,
+      verifiedAt: isAdult ? new Date() : null,
+      expiresAt: expiresAt
+    };
+
+    console.log(`[AGE-VERIFY] Upserting for Customer: ${profile.customer.id}`, upsertData);
 
     const verification = await prisma.ageVerification.upsert({
       where: { customerId: profile.customer.id },
-      update: {
-        birthDate: bday,
-        idType,
-        verificationId,
-        isVerified: true,
-        verifiedAt: new Date(),
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 year
-      },
-      create: {
-        customerId: profile.customer.id,
-        birthDate: bday,
-        idType,
-        verificationId,
-        isVerified: true,
-        verifiedAt: new Date(),
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-      }
+      update: upsertData,
+      create: { customerId: profile.customer.id, ...upsertData },
     });
 
-    res.json({ success: true, verification });
+    console.log(`[AGE-VERIFY] Success! Verification Record:`, verification.id);
+
+    // Always return 200 — frontend handles the soft-warning UX for under-18
+    res.json({
+      success: true,
+      isAdult,
+      underageAcknowledged: !!underageAcknowledged,
+      verification,
+    });
   } catch (error) {
-    console.error('[AGE-VERIFY] CRITICAL Error:', error);
+    console.error('[AGE-VERIFY] Error:', error);
     res.status(500).json({ error: 'Verification failed', details: error.message });
   }
 });
@@ -224,7 +229,7 @@ router.get('/support/options', (req, res) => {
   res.json({
     success: true,
     whatsapp: {
-      number: '+1234567890',
+      number: '+919063851105',
       message: 'Hi, I need help with my order.',
       options: [
         { label: 'Order Delayed', value: 'delay' },

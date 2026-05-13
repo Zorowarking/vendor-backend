@@ -42,6 +42,7 @@ model ProductTemplate {
   category     String?  @db.VarChar(100)
   templateName String   @map("template_name") @db.VarChar(255)
   templateData Json     @map("template_data")
+  isSkeletal   Boolean  @default(false) @map("is_skeletal")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   vendor       Vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
@@ -120,7 +121,6 @@ model Product {
   vendorId                 String                    @map("vendor_id") @db.Uuid
   name                     String                    @db.VarChar(255)
   description              String?
-  category                 String?                   @db.VarChar(100)
   productType              String?                   @map("product_type") @db.VarChar(100)
   basePrice                Decimal                   @map("base_price") @db.Decimal(10, 2)
   isRestricted             Boolean?                  @default(false) @map("is_restricted")
@@ -129,13 +129,31 @@ model Product {
   reviewStatus             String                    @default("pending_review") @map("review_status") @db.VarChar(30)
   createdAt                DateTime?                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime?                 @default(now()) @map("updated_at") @db.Timestamptz(6)
+  customizationType        CustomizationType         @default(NORMAL) @map("customization_type")
+  isCustomizable           Boolean                   @default(false) @map("is_customizable")
   addOns                   ProductAddon[]
+  customizationGroups      CustomizationGroup[]
   images                   ProductImage[]
   productReviewSnapshots   ProductReviewSnapshot[]
   productReviewSubmissions ProductReviewSubmission[]
+  categories               Category[]                @relation("ProductToCategory")
   vendor                   Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@map("products")
+  @@schema("vendor_delivery")
+}
+
+model Category {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorId    String?   @map("vendor_id") @db.Uuid
+  name        String    @unique @db.VarChar(100)
+  description String?
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  products    Product[] @relation("ProductToCategory")
+  vendor      Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("categories")
   @@schema("vendor_delivery")
 }
 
@@ -341,6 +359,9 @@ model Vendor {
   accountStatus            AccountStatus             @default(KYC_SUBMITTED) @map("account_status")
   commissionModel          CommissionModel?          @map("commission_model")
   commissionRate           Decimal                   @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
+  sfxStoreCode             String?                   @map("sfx_store_code") @db.VarChar(100)
+  city                     String?                   @db.VarChar(100)
+  pincode                  String?                   @db.VarChar(10)
   orders                   Order[]
   productReviewSubmissions ProductReviewSubmission[]
   productTemplates         ProductTemplate[]
@@ -355,6 +376,7 @@ model Vendor {
   ratingsSummary           VendorRatingsSummary?
   slaMetrics               VendorSlaMetric?
   supportRequests          VendorSupportRequest[]
+  categories               Category[]
   profile                  Profile?                  @relation(fields: [profileId], references: [id])
 
   @@map("vendors")
@@ -577,7 +599,6 @@ model Order {
   vendorId                 String                 @map("vendor_id") @db.Uuid
   riderId                  String?                @map("rider_id") @db.Uuid
   addressSnapshot          Json                   @map("address_snapshot")
-  sfxOrderId               BigInt?                @unique @map("sfx_order_id")
   deliveryPreference       String?                @map("delivery_preference") @db.VarChar(50)
   scheduledFor             DateTime?              @map("scheduled_for") @db.Timestamptz(6)
   status                   String                 @default("payment_successful") @db.VarChar(50)
@@ -601,6 +622,7 @@ model Order {
   deliveryFailureReason    String?                @map("delivery_failure_reason") @db.VarChar(255)
   preparingAt              DateTime?              @map("preparing_at") @db.Timestamptz(6)
   readyAt                  DateTime?              @map("ready_at") @db.Timestamptz(6)
+  sfxOrderId               BigInt?                @unique @map("sfx_order_id")
   analyticsEvents          AnalyticsEvent[]
   feedback                 Feedback?
   items                    OrderItem[]
@@ -610,12 +632,12 @@ model Order {
   rider                    Rider?                 @relation(fields: [riderId], references: [id])
   vendor                   Vendor                 @relation(fields: [vendorId], references: [id])
   paymentTransactions      PaymentTransaction[]
+  sfxOrder                 SfxOrder?
   supportRequests          SupportRequest[]
   breaches                 VendorBreach[]
   vendorComplianceFlags    VendorComplianceFlag[]
   vendorEarnings           VendorEarning?
   vendorOrderActions       VendorOrderAction[]
-  sfxOrder                 SfxOrder?
 
   @@map("orders")
   @@schema("customer")
@@ -652,6 +674,81 @@ model SupportRequest {
   @@schema("customer")
 }
 
+model CustomizationGroup {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId     String                @map("product_id") @db.Uuid
+  name          String                @db.VarChar(255)
+  isRequired    Boolean               @default(false) @map("is_required")
+  selectionType String                @default("SINGLE") @map("selection_type") @db.VarChar(50)
+  maxSelections Int?                  @map("max_selections")
+  displayOrder  Int                   @default(0) @map("display_order")
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  product       Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options       CustomizationOption[]
+
+  @@map("product_customization_groups")
+  @@schema("vendor_delivery")
+}
+
+model CustomizationOption {
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId         String             @map("group_id") @db.Uuid
+  name            String             @db.VarChar(255)
+  priceModifier   Decimal            @default(0) @map("price_modifier") @db.Decimal(10, 2)
+  isAvailable     Boolean            @default(true) @map("is_available")
+  displayOrder    Int                @default(0) @map("display_order")
+  allowQuantity   Boolean            @default(false) @map("allow_quantity")
+  freeLimit       Int                @default(0) @map("free_limit")
+  conflicts       Json?              @map("conflicts")
+  linkedProductId String?            @map("linked_product_id") @db.Uuid
+  group           CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("product_customization_options")
+  @@schema("vendor_delivery")
+}
+
+model SfxOrder {
+  id              Int      @id @default(autoincrement())
+  internalOrderId String   @unique @map("internal_order_id") @db.Uuid
+  sfxOrderId      BigInt   @unique @map("sfx_order_id")
+  storeCode       String   @map("store_code") @db.VarChar(100)
+  clientOrderId   String   @map("client_order_id") @db.VarChar(100)
+  sfxStatus       String?  @map("sfx_status") @db.VarChar(50)
+  trackUrl        String?  @map("track_url")
+  deliveryCost    Decimal? @map("delivery_cost") @db.Decimal(10, 2)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order           Order    @relation(fields: [internalOrderId], references: [id], onDelete: Cascade)
+
+  @@map("sfx_orders")
+  @@schema("customer")
+}
+
+model SfxCallback {
+  id         Int      @id @default(autoincrement())
+  sfxOrderId BigInt?  @map("sfx_order_id")
+  payload    Json?
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+  processed  Boolean  @default(false)
+
+  @@index([sfxOrderId, processed])
+  @@map("sfx_callbacks")
+  @@schema("customer")
+}
+
+model SfxRiderLocationLog {
+  id         Int      @id @default(autoincrement())
+  sfxOrderId BigInt   @map("sfx_order_id")
+  lat        Decimal? @db.Decimal(10, 7)
+  lng        Decimal? @db.Decimal(10, 7)
+  pickupEta  Int?     @map("pickup_eta")
+  dropEta    Int?     @map("drop_eta")
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  @@map("sfx_rider_location_log")
+  @@schema("customer")
+}
+
 enum CommissionModel {
   ADD_ON
   DEDUCTED
@@ -683,44 +780,9 @@ enum VendorRejectReason {
   @@schema("vendor_delivery")
 }
 
-model SfxOrder {
-  id              Int      @id @default(autoincrement())
-  internalOrderId String   @unique @map("internal_order_id") @db.Uuid
-  sfxOrderId      BigInt   @unique @map("sfx_order_id")
-  storeCode       String   @map("store_code") @db.VarChar(100)
-  clientOrderId   String   @map("client_order_id") @db.VarChar(100)
-  sfxStatus       String?  @map("sfx_status") @db.VarChar(50)
-  trackUrl        String?  @map("track_url")
-  deliveryCost    Decimal? @map("delivery_cost") @db.Decimal(10, 2)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+enum CustomizationType {
+  NORMAL
+  BUILD_YOUR_OWN
 
-  order Order @relation(fields: [internalOrderId], references: [id], onDelete: Cascade)
-
-  @@map("sfx_orders")
-  @@schema("customer")
-}
-
-model SfxCallback {
-  id         Int      @id @default(autoincrement())
-  sfxOrderId BigInt?  @map("sfx_order_id")
-  payload    Json?
-  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
-  processed  Boolean  @default(false)
-
-  @@index([sfxOrderId, processed])
-  @@map("sfx_callbacks")
-  @@schema("customer")
-}
-
-model SfxRiderLocationLog {
-  id         Int      @id @default(autoincrement())
-  sfxOrderId BigInt   @map("sfx_order_id")
-  lat        Decimal? @db.Decimal(10, 7)
-  lng        Decimal? @db.Decimal(10, 7)
-  pickupEta  Int?     @map("pickup_eta")
-  dropEta    Int?     @map("drop_eta")
-  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
-
-  @@map("sfx_rider_location_log")
-  @@schema("customer")
+  @@schema("vendor_delivery")
 }

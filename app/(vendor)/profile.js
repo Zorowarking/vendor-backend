@@ -540,6 +540,28 @@ export default function VendorProfile() {
 
 
 
+        <TouchableOpacity 
+          style={[styles.logoutBtn, { borderColor: Colors.primary + '40', marginBottom: 12 }]} 
+          onPress={async () => {
+            const message = `Hello Foodie Support, I am Vendor: ${profile.businessName}. I need assistance.`;
+            const whatsappUrl = `whatsapp://send?phone=919063851105&text=${encodeURIComponent(message)}`;
+            const fallbackUrl = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+            try {
+              const supported = await Linking.canOpenURL(whatsappUrl);
+              if (supported) {
+                await Linking.openURL(whatsappUrl);
+              } else {
+                await Linking.openURL(fallbackUrl);
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Could not open WhatsApp.');
+            }
+          }}
+        >
+          <Ionicons name="logo-whatsapp" size={20} color={Colors.primary} />
+          <Text style={[styles.logoutBtnText, { color: Colors.primary }]}>Contact Support</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={Colors.error} />
           <Text style={styles.logoutBtnText}>Logout</Text>

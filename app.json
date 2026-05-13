@@ -15,11 +15,24 @@
     "android": {
       "package": "com.vantyrn.vendor",
       "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDEUqPA15poXPNybxUcDYiM3XdfoiJ_suk"
+        }
+      },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.RECORD_AUDIO"
+      ],
+      "intentFilters": [
+        {
+          "action": "android.intent.action.VIEW",
+          "data": {
+            "scheme": "whatsapp"
+          }
+        }
       ]
     },
     "ios": {

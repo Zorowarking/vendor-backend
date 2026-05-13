@@ -95,19 +95,21 @@ class ShadowfaxWebhookHandler {
         }
       });
 
-      // Find internal order
+      // Find internal order with vendor info
       const sfxOrder = await prisma.sfxOrder.findUnique({
-        where: { sfxOrderId: validatedData.sfx_order_id }
+        where: { sfxOrderId: validatedData.sfx_order_id },
+        include: { order: true }
       });
 
-      if (sfxOrder) {
+      if (sfxOrder && sfxOrder.order) {
         const { emitLocationUpdate } = require('../../../../lib/socket');
         emitLocationUpdate(
           sfxOrder.internalOrderId,
           validatedData.rider_latitude,
           validatedData.rider_longitude,
           validatedData.pickup_eta,
-          validatedData.drop_eta
+          validatedData.drop_eta,
+          sfxOrder.order.vendorId
         );
       }
     } catch (error) {

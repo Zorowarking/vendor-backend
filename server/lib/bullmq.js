@@ -105,7 +105,7 @@ setTimeout(async () => {
                 vendorId: order.vendorId,
                 orderId: orderId,
                 type: 'SLA_TIMEOUT',
-                reason: 'Vendor failed to accept order within 1 minute'
+                reason: 'Vendor failed to accept order within 5 minutes'
               }
             });
           } else if (type === 'vendor_support' && order.status === 'pending_vendor_response') {

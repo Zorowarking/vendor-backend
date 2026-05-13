@@ -12,8 +12,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://vendor-backend-production-4439.up.railway.app",
-        "EXPO_PUBLIC_SOCKET_URL": "https://vendor-backend-production-4439.up.railway.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://vendor-backend-production-c171.up.railway.app",
+        "EXPO_PUBLIC_SOCKET_URL": "https://vendor-backend-production-c171.up.railway.app",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "889299912788-9e8anedmtd1ng83b7cs4k3uadh5lh6tb.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "889299912788-lnu8bkdkblg9v8nanipt4vpqvsjspd0c.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o.apps.googleusercontent.com",

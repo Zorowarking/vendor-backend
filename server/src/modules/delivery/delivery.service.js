@@ -32,7 +32,7 @@ class DeliveryService {
           }
           
           const sfxResponse = await shadowfaxService.placeOrder({
-            storeCode: env.SFX_STORE_CODE,
+            storeCode: order.vendor.sfxStoreCode || env.SFX_STORE_CODE,
             orderDetails: payload.orderDetails,
             customerDetails: payload.customerDetails,
             productDetails: payload.productDetails
@@ -69,7 +69,7 @@ class DeliveryService {
           create: {
             internalOrderId: order.id,
             sfxOrderId: BigInt(sfxResponse.sfx_order_id),
-            storeCode: env.SFX_STORE_CODE,
+            storeCode: order.vendor.sfxStoreCode || env.SFX_STORE_CODE,
             clientOrderId: clientOrderId,
             sfxStatus: sfxResponse.status,
             trackUrl: sfxResponse.track_url || null

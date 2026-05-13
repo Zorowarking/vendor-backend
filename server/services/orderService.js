@@ -47,6 +47,7 @@ class OrderService {
         totalAmount: Number(cart.total || 0),
         status: 'pending_vendor',
         deliveryPreference: deliveryPreference || 'standard',
+        ageVerifiedCheckbox: cart.items.some(i => i.ageVerified),
         statusHistory: {
           create: {
             status: 'pending_vendor',
@@ -60,7 +61,10 @@ class OrderService {
             quantity: item.quantity,
             unitPrice: Number(item.unitPrice || item.price || 0),
             lineTotal: Number(item.total || 0),
-            addonsSummary: item.options?.selectedAddons || []
+            addonsSummary: {
+              selectedAddons: item.options?.selectedAddons || [],
+              customizations: item.options?.customizations || []
+            }
           }))
         }
       },
@@ -141,10 +145,10 @@ class OrderService {
       orderId: order.id
     });
 
-    // 4. Start BullMQ SLA Timer (1 minute)
+    // 4. Start BullMQ SLA Timer (5 minutes)
     await orderSlaQueue.add('vendorSlaTimeout', 
       { orderId: order.id, type: 'vendor_accept' }, 
-      { delay: 1 * 60 * 1000 }
+      { delay: 5 * 60 * 1000 }
     );
 
     return order;
@@ -181,7 +185,7 @@ class OrderService {
       }
     });
 
-    emitOrderStatusUpdate(orderId, newStatus, actorRole);
+    emitOrderStatusUpdate(orderId, newStatus, actorRole, order.vendorId);
     
     if (order.customer?.profile?.firebaseUid) {
       await fcm.sendToCustomer(order.customer.profile.firebaseUid, {

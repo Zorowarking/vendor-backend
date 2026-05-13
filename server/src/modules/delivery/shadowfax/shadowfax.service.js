@@ -9,7 +9,8 @@ const ERROR_CODES = {
   SFX_SERVICE_UNAVAILABLE: 'SFX_SERVICE_UNAVAILABLE',
   SFX_TIMEOUT: 'SFX_TIMEOUT',
   SFX_VALIDATION_ERROR: 'SFX_VALIDATION_ERROR',
-  SFX_INVALID_RESPONSE: 'SFX_INVALID_RESPONSE'
+  SFX_INVALID_RESPONSE: 'SFX_INVALID_RESPONSE',
+  SFX_STORE_CREATE_FAILED: 'SFX_STORE_CREATE_FAILED'
 };
 
 class AppError extends Error {
@@ -218,6 +219,51 @@ class ShadowfaxService {
       return response.data;
     } catch (error) {
       handleSfxError(error, 'getOrderStatus');
+    }
+  }
+
+  /**
+   * Create a new store (vendor location) in Shadowfax.
+   * @param {Object} params
+   * @param {string} params.name - Store name.
+   * @param {string} params.contactName - Contact person name.
+   * @param {string} params.contactNumber - Contact phone number.
+   * @param {string} params.address - Full address.
+   * @param {string} params.pincode - 6-digit pincode.
+   * @param {string} params.city - City name.
+   * @param {number} params.latitude - Latitude.
+   * @param {number} params.longitude - Longitude.
+   * @returns {Promise<Object>} Response containing store_code
+   */
+  async createStore({ name, contactName, contactNumber, address, pincode, city, latitude, longitude }) {
+    if (!name || !contactNumber || !address || !pincode || !latitude || !longitude) {
+      throw new AppError('Missing required fields for store creation', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
+    }
+
+    try {
+      const payload = {
+        name,
+        contact_name: contactName || name,
+        contact_number: contactNumber,
+        address_line_1: address,
+        pincode,
+        city: city || 'Default',
+        latitude: Number(latitude),
+        longitude: Number(longitude)
+      };
+
+      logger.info(`[Shadowfax Service] Creating store: ${name} at ${address}`);
+      const response = await shadowfaxClient.post('/api/v2/stores/', payload);
+      
+      if (!response.data || !response.data.store_code) {
+        throw new AppError('Invalid response: missing store_code', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
+      }
+      
+      logger.info(`[Shadowfax Service] Store created successfully. Code: ${response.data.store_code}`);
+      return response.data;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      handleSfxError(error, 'createStore');
     }
   }
 }

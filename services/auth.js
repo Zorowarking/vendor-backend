@@ -129,8 +129,7 @@ export const authService = {
 
       // 2. Fallback to Web SDK
       console.log('--- FALLBACK: CALLING WEB signInWithPhoneNumber ---');
-      // This will succeed if the number is a test number in Firebase
-      return await signInWithPhoneNumber(auth, phoneNumber);
+      throw new Error('Native Firebase Auth is not available in Expo Go and the Web SDK requires Recaptcha. Please use the developer test number (+919999999999) for testing, or build the app (development build/APK) to test real phone numbers.');
 
     } catch (error) {
       console.error('--- SEND_OTP ERROR ---', error);

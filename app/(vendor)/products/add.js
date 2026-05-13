@@ -29,7 +29,7 @@ export default function AddProduct() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [category, setCategory] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [newCategory, setNewCategory] = useState('');
   const [type, setType] = useState('Veg');
   const [newType, setNewType] = useState('');
@@ -37,6 +37,10 @@ export default function AddProduct() {
   const [isAvailable, setIsAvailable] = useState(true);
   const [image, setImage] = useState(null);
   const [addOns, setAddOns] = useState([]);
+  const [isCustomizable, setIsCustomizable] = useState(false);
+  const [customizationGroups, setCustomizationGroups] = useState([]);
+  const [templateId, setTemplateId] = useState(null);
+  const [showByoTemplates, setShowByoTemplates] = useState(false);
   
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
@@ -50,25 +54,58 @@ export default function AddProduct() {
   const [allTemplates, setAllTemplates] = useState([]);
 
   useEffect(() => {
-    const fetchTemplates = async () => {
+    const fetchData = async () => {
       try {
-        const res = await vendorApi.getTemplates();
-        if (res.success && res.templates) {
-          setAllTemplates(res.templates);
-          // Extract unique categories
-          const cats = [...new Set(res.templates.map(t => t.category))];
-          setCategories(cats);
+        const [templatesRes, categoriesRes] = await Promise.all([
+          vendorApi.getTemplates(),
+          vendorApi.getCategoryList() // NEW ENDPOINT
+        ]);
+        
+        if (templatesRes.success && templatesRes.templates) {
+          setAllTemplates(templatesRes.templates);
+        }
+        
+        if (categoriesRes.success && categoriesRes.categories) {
+          setCategories(categoriesRes.categories);
         }
       } catch (error) {
-        console.error('Failed to fetch templates:', error);
+        console.error('Failed to fetch data:', error);
       }
     };
-    fetchTemplates();
+    fetchData();
   }, []);
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);
     setCategory(template.category);
+    setTemplateId(template.id);
+
+    if (template.isSkeletal) {
+      // Skeletal templates provide structure, but can also include default options
+      setPrice(''); 
+      setDescription(template.templateData?.description || '');
+      setType(template.templateData?.type || 'Veg');
+      
+      if (template.templateData?.customizationGroups) {
+        setCustomizationGroups(template.templateData.customizationGroups.map(g => ({
+          name: g.name,
+          isRequired: g.isRequired || false,
+          selectionType: g.selectionType || 'SINGLE',
+          maxSelections: g.maxSelections || 1,
+          id: Math.random().toString(),
+          options: (g.options || []).map(o => ({
+            ...o,
+            id: Math.random().toString(),
+            priceModifier: o.priceModifier || 0,
+            allowQuantity: o.allowQuantity || false,
+            freeLimit: o.freeLimit || 0
+          }))
+        })));
+        setIsCustomizable(true);
+      }
+      return;
+    }
+
     if (template.templateData) {
       setDescription(template.templateData.description || '');
       setPrice(template.templateData.price?.toString() || '');
@@ -80,6 +117,17 @@ export default function AddProduct() {
           price: a.price,
           freeLimit: a.freeLimit || 0
         })));
+      }
+      if (template.templateData.customizationGroups) {
+        setCustomizationGroups(template.templateData.customizationGroups.map(g => ({
+          ...g,
+          id: Math.random().toString(),
+          options: (g.options || []).map(o => ({
+            ...o,
+            id: Math.random().toString()
+          }))
+        })));
+        setIsCustomizable(true);
       }
     }
   };
@@ -118,6 +166,68 @@ export default function AddProduct() {
     setAddOns(addOns.filter(item => item.id !== id));
   };
 
+  // Customization Logic
+  const addCustomizationGroup = () => {
+    setCustomizationGroups([...customizationGroups, {
+      id: Date.now().toString(),
+      name: '',
+      isRequired: false,
+      selectionType: 'SINGLE', // SINGLE, MULTIPLE
+      maxSelections: 1,
+      options: []
+    }]);
+  };
+
+  const removeCustomizationGroup = (groupId) => {
+    setCustomizationGroups(customizationGroups.filter(g => g.id !== groupId));
+  };
+
+  const updateCustomizationGroup = (groupId, updates) => {
+    setCustomizationGroups(customizationGroups.map(g => g.id === groupId ? { ...g, ...updates } : g));
+  };
+
+  const addOptionToGroup = (groupId) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: [...g.options, { 
+            id: Date.now().toString(), 
+            name: '', 
+            priceModifier: 0,
+            allowQuantity: false,
+            freeLimit: 0
+          }]
+        };
+      }
+      return g;
+    }));
+  };
+
+  const removeOptionFromGroup = (groupId, optionId) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: g.options.filter(o => o.id !== optionId)
+        };
+      }
+      return g;
+    }));
+  };
+
+  const updateOptionInGroup = (groupId, optionId, updates) => {
+    setCustomizationGroups(customizationGroups.map(g => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          options: g.options.map(o => o.id === optionId ? { ...o, ...updates } : o)
+        };
+      }
+      return g;
+    }));
+  };
+
   const handleSave = async () => {
     if (!name || !price) {
       Alert.alert('Error', 'Product Name and Price are required');
@@ -129,8 +239,8 @@ export default function AddProduct() {
       return;
     }
 
-    if (!category || (category === 'New' && !newCategory)) {
-      Alert.alert('Error', 'Please select or enter a category');
+    if (selectedCategories.length === 0) {
+      Alert.alert('Error', 'Please select at least one category');
       return;
     }
 
@@ -154,16 +264,20 @@ export default function AddProduct() {
         name,
         description,
         price: parseFloat(price),
-        category: finalCategory,
+        category: selectedCategories, // Send array of IDs
         type: finalType,
         isRestricted,
         isAvailable,
         image: imageUrl,
+        isCustomizable,
+        customizationType: isCustomizable ? 'BUILD_YOUR_OWN' : 'NORMAL',
+        customizationGroups: isCustomizable ? customizationGroups : [],
         addOns: addOns.map(a => ({
           name: a.name,
           price: a.price,
           freeLimit: a.freeLimit
-        }))
+        })),
+        templateId
       };
 
       console.log('Attempting to save product:', productData);
@@ -233,18 +347,81 @@ export default function AddProduct() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Quick Templates (Indian Food)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pickerContainer}>
-            {allTemplates.map(t => (
+          <Text style={styles.label}>Categories & Templates</Text>
+          <Text style={styles.subLabel}>Select a category or a quick template to pre-fill details</Text>
+          <View style={styles.byoToggleContainer}>
+            <TouchableOpacity 
+              style={[styles.byoToggleButton, !showByoTemplates && styles.activeByoToggleButton]} 
+              onPress={() => setShowByoTemplates(false)}
+            >
+              <Text style={[styles.byoToggleText, !showByoTemplates && styles.activeByoToggleText]}>Regular Item</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.byoToggleButton, showByoTemplates && styles.activeByoToggleButton]} 
+              onPress={() => setShowByoTemplates(true)}
+            >
+              <Ionicons name="construct-outline" size={16} color={showByoTemplates ? Colors.white : Colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.byoToggleText, showByoTemplates && styles.activeByoToggleText]}>Admin BYO</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showByoTemplates ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+              {allTemplates.map(t => (
+                <TouchableOpacity 
+                  key={t.id} 
+                  style={[styles.templateChip, templateId === t.id && styles.activeTemplateChip]}
+                  onPress={() => handleTemplateSelect(t)}
+                >
+                  <Ionicons 
+                    name={t.isSkeletal ? "color-wand-outline" : "flash-outline"} 
+                    size={14} 
+                    color={templateId === t.id ? Colors.white : Colors.primary} 
+                  />
+                  <Text style={[styles.templateChipText, templateId === t.id && styles.activeTemplateChipText]}>
+                    {t.templateName}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.chipGrid}>
+              {categories.map(cat => (
+                <TouchableOpacity 
+                  key={cat.id} 
+                  style={[styles.categoryChip, selectedCategories.includes(cat.id) && styles.activeCategoryChip]}
+                  onPress={() => {
+                    if (selectedCategories.includes(cat.id)) {
+                      setSelectedCategories(selectedCategories.filter(id => id !== cat.id));
+                    } else {
+                      setSelectedCategories([...selectedCategories, cat.id]);
+                    }
+                  }}
+                >
+                  <Text style={[styles.categoryChipText, selectedCategories.includes(cat.id) && styles.activeCategoryChipText]}>
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
               <TouchableOpacity 
-                key={t.id} 
-                style={styles.templateChip}
-                onPress={() => handleTemplateSelect(t)}
+                style={styles.addChipButton}
+                onPress={async () => {
+                  Alert.prompt('New Category', 'Enter category name:', async (text) => {
+                    if (text) {
+                      const res = await vendorApi.createCategory(text);
+                      if (res.success) {
+                        setCategories([...categories, res.category]);
+                        setSelectedCategories([...selectedCategories, res.category.id]);
+                      }
+                    }
+                  });
+                }}
               >
-                <Text style={styles.templateChipText}>{t.templateName}</Text>
+                <Ionicons name="add" size={16} color={Colors.primary} />
+                <Text style={styles.addChipText}>New</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </View>
+          )}
         </View>
 
         <View style={styles.row}>
@@ -257,36 +434,6 @@ export default function AddProduct() {
               value={price}
               onChangeText={setPrice}
             />
-          </View>
-          <View style={[styles.section, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>Category</Text>
-            <View style={styles.pickerContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {categories.map(cat => (
-                  <TouchableOpacity 
-                    key={cat} 
-                    style={[styles.chip, category === cat && styles.activeChip]}
-                    onPress={() => setCategory(cat)}
-                  >
-                    <Text style={[styles.chipText, category === cat && styles.activeChipText]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity 
-                  style={[styles.chip, category === 'New' && styles.activeChip]}
-                  onPress={() => setCategory('New')}
-                >
-                  <Text style={[styles.chipText, category === 'New' && styles.activeChipText]}>+ New</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            </View>
-            {category === 'New' && (
-              <TextInput 
-                style={[styles.input, { marginTop: 8 }]} 
-                placeholder="New Category Name" 
-                value={newCategory} 
-                onChangeText={setNewCategory} 
-              />
-            )}
           </View>
         </View>
 
@@ -414,6 +561,167 @@ export default function AddProduct() {
             </TouchableOpacity>
           </View>
         ))}
+
+        {/* Advanced Customization Section */}
+        <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
+          <View>
+            <Text style={styles.label}>Advanced Customization</Text>
+            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+          </View>
+          <Switch 
+            value={isCustomizable} 
+            onValueChange={setIsCustomizable}
+            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+          />
+        </View>
+
+        {isCustomizable && (
+          <View style={styles.customizationSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                {templateId ? 'Admin Template (BYO)' : 'Customization Groups'}
+              </Text>
+              {!templateId && (
+                <TouchableOpacity onPress={addCustomizationGroup} style={styles.addButton}>
+                  <Ionicons name="add-circle" size={24} color={Colors.primary} />
+                  <Text style={styles.addButtonText}>Add Group</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {templateId && (
+              <View style={styles.byoInfoBox}>
+                <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+                <Text style={styles.byoInfoText}>This structure is pre-defined by the Admin. You can add your items below.</Text>
+              </View>
+            )}
+
+            {customizationGroups.map((group, index) => (
+              <View key={group.id} style={styles.groupCard}>
+                <View style={styles.groupHeader}>
+                  <Text style={styles.groupNumber}>Group #{index + 1}</Text>
+                  <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
+                    <Ionicons name="close-circle" size={24} color={Colors.error} />
+                  </TouchableOpacity>
+                </View>
+
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Group Name (e.g. Choose Your Base)" 
+                  value={group.name} 
+                  onChangeText={(text) => updateCustomizationGroup(group.id, { name: text })} 
+                />
+
+                <View style={styles.groupSettings}>
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Required?</Text>
+                    <Switch 
+                      value={group.isRequired} 
+                      onValueChange={(val) => updateCustomizationGroup(group.id, { isRequired: val })} 
+                    />
+                  </View>
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Multi-select?</Text>
+                    <Switch 
+                      value={group.selectionType === 'MULTIPLE'} 
+                      onValueChange={(val) => updateCustomizationGroup(group.id, { selectionType: val ? 'MULTIPLE' : 'SINGLE' })} 
+                    />
+                  </View>
+                </View>
+
+                {group.selectionType === 'MULTIPLE' && (
+                  <View style={styles.settingItem}>
+                    <Text style={styles.settingLabel}>Max Selections</Text>
+                    <TextInput 
+                      style={[styles.input, { width: 60, textAlign: 'center' }]} 
+                      keyboardType="numeric"
+                      value={group.maxSelections === undefined || group.maxSelections === null ? '' : group.maxSelections.toString()}
+                      onChangeText={(text) => {
+                        const val = text === '' ? null : parseInt(text);
+                        updateCustomizationGroup(group.id, { maxSelections: isNaN(val) ? null : val });
+                      }}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.optionsList}>
+                  <Text style={styles.optionsTitle}>Options</Text>
+                  {group.options.map((opt) => (
+                    <View key={opt.id} style={styles.optionCard}>
+                      <View style={styles.optionHeader}>
+                        <TextInput 
+                          style={[styles.input, { flex: 2, marginRight: 8 }]} 
+                          placeholder="Name (e.g. Grilled)" 
+                          value={opt.name} 
+                          onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { name: text })} 
+                        />
+                        <TextInput 
+                          style={[styles.input, { flex: 1, marginRight: 8 }]} 
+                          placeholder="+₹ Price" 
+                          keyboardType="numeric"
+                          value={opt.priceModifier?.toString()} 
+                          onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { priceModifier: parseFloat(text) || 0 })} 
+                        />
+                        <TouchableOpacity onPress={() => removeOptionFromGroup(group.id, opt.id)}>
+                          <Ionicons name="close-circle" size={24} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
+
+                      <TouchableOpacity 
+                        style={styles.linkProductButton}
+                        onPress={() => {
+                          Alert.alert('Link Product', 'This will allow you to pick from your existing products.');
+                        }}
+                      >
+                        <Ionicons name="link-outline" size={14} color={Colors.primary} />
+                        <Text style={styles.linkProductText}>Link Menu Item</Text>
+                      </TouchableOpacity>
+                      
+                      <View style={styles.optionExtras}>
+                        <View style={styles.settingItem}>
+                          <Text style={styles.extraLabel}>Allow Qty?</Text>
+                          <Switch 
+                            value={opt.allowQuantity} 
+                            onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                          />
+                        </View>
+                        {opt.allowQuantity && (
+                          <View style={styles.settingItem}>
+                            <Text style={styles.extraLabel}>Free Limit</Text>
+                            <TextInput 
+                              style={[styles.input, { width: 50, padding: 4, textAlign: 'center' }]} 
+                              keyboardType="numeric"
+                              value={opt.freeLimit?.toString()}
+                              onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
+                            />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.conflictContainer}>
+                        <Text style={styles.conflictLabel}>Conflicts with (e.g. Milk, Tea):</Text>
+                        <TextInput 
+                          style={styles.conflictInput} 
+                          placeholder="Comma separated names..." 
+                          value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : ''} 
+                          onChangeText={(text) => {
+                            const list = text.split(',').map(s => s.trim()).filter(s => !!s);
+                            updateOptionInGroup(group.id, opt.id, { conflicts: list });
+                          }} 
+                        />
+                      </View>
+                    </View>
+                  ))}
+                  <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptionButton}>
+                    <Ionicons name="add" size={20} color={Colors.primary} />
+                    <Text style={styles.addOptionText}>Add Option</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity 
           style={[styles.saveButton, loading && styles.disabledButton]} 
@@ -617,5 +925,372 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
-  }
+  },
+  customizationSection: {
+    marginTop: 10,
+  },
+  groupCard: {
+    backgroundColor: Colors.grey,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  groupNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.subText,
+  },
+  groupSettings: {
+    flexDirection: 'row',
+    marginTop: 12,
+    justifyContent: 'space-between',
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  settingLabel: {
+    fontSize: 14,
+    color: Colors.black,
+    marginRight: 8,
+  },
+  optionsList: {
+    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 16,
+  },
+  optionsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: 12,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  addOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  addOptionText: {
+    color: Colors.primary,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  verticalPicker: {
+    marginTop: 10,
+  },
+  categoryGroup: {
+    marginBottom: 8,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: Colors.grey,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    backgroundColor: Colors.white,
+  },
+  activeCategoryHeader: {
+    backgroundColor: Colors.primary,
+  },
+  categoryHeaderText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  activeCategoryHeaderText: {
+    color: Colors.white,
+  },
+  templateList: {
+    padding: 10,
+    backgroundColor: Colors.grey,
+  },
+  templateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '40',
+  },
+  templateItemText: {
+    fontSize: 14,
+    color: Colors.black,
+    marginLeft: 8,
+  },
+  optionCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  optionExtras: {
+    flexDirection: 'row',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border + '40',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  extraLabel: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginRight: 6,
+  },
+  byoToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.grey,
+    borderRadius: 12,
+    padding: 4,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  byoToggleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  activeByoToggleButton: {
+    backgroundColor: Colors.primary,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+  },
+  byoToggleText: {
+    fontSize: 14,
+    color: Colors.subText,
+    fontWeight: '500',
+  },
+  activeByoToggleText: {
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  categoryList: {
+    marginTop: 10,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.background,
+  },
+  activeCategoryCheckbox: {
+    backgroundColor: Colors.primary + '10',
+  },
+  categoryText: {
+    fontSize: 14,
+    color: Colors.text,
+    marginLeft: 10,
+  },
+  activeCategoryText: {
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  newCategoryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  addCategoryIcon: {
+    marginLeft: 10,
+  },
+  templateList: {
+    marginTop: 10,
+  },
+  templateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border + '40',
+  },
+  templateItemText: {
+    fontSize: 14,
+    color: Colors.black,
+    marginLeft: 8,
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  saveButtonText: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  optionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  linkProductButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  linkProductText: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginLeft: 4,
+    fontWeight: '600',
+  },
+  conflictContainer: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: Colors.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  conflictLabel: {
+    fontSize: 11,
+    color: Colors.subText,
+    marginBottom: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  conflictInput: {
+    backgroundColor: Colors.white,
+    borderRadius: 6,
+    padding: 8,
+    fontSize: 13,
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    height: 40,
+  },
+  horizontalScroll: {
+    marginTop: 10,
+    paddingBottom: 5,
+  },
+  templateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    marginRight: 10,
+  },
+  activeTemplateChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  templateChipText: {
+    fontSize: 13,
+    color: Colors.primary,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  activeTemplateChipText: {
+    color: Colors.white,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+  },
+  categoryChip: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  activeCategoryChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: Colors.text,
+  },
+  activeCategoryChipText: {
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  addChipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: Colors.primary,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  addChipText: {
+    fontSize: 13,
+    color: Colors.primary,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  byoInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '10',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  byoInfoText: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+  },
 });

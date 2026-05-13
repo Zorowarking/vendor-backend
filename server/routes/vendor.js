@@ -1,5 +1,11 @@
 const express = require('express');
 const router = express.Router();
+
+// DIAGNOSTIC: Log all requests hitting the vendor router
+router.use((req, res, next) => {
+  console.log(`📡 [VENDOR-ROUTER] ${req.method} ${req.originalUrl}`);
+  next();
+});
 const firebaseAuth = require('../middleware/auth');
 const requireKyc = require('../middleware/kyc');
 const { prisma, withRetry } = require('../lib/prisma');
@@ -9,6 +15,63 @@ const { orderSlaQueue } = require('../lib/bullmq');
 const { emitOrderStatusUpdate, emitVendorStatusUpdate } = require('../lib/socket');
 const { getPresignedUploadUrl } = require('../lib/storage');
 const { checkAndTransitionVendorOffline } = require('../lib/vendorStatusHelper');
+
+// ==========================================
+// HIGH PRIORITY: Taxonomy & Static Routes
+// ==========================================
+
+// IMPORTANT: Static routes must come BEFORE parameterized routes (:id)
+router.get('/categories', firebaseAuth, async (req, res) => {
+  try {
+    const profile = await prisma.profile.findUnique({ 
+      where: { firebaseUid: req.user.uid }, 
+      include: { vendor: true } 
+    });
+
+    const vendorId = profile?.vendor?.id || null;
+
+    // Fetch system categories (vendorId is null) + vendor specific categories
+    const categories = await prisma.category.findMany({
+      where: {
+        OR: [
+          vendorId ? { vendorId: vendorId } : null,
+          { vendorId: null } // System categories
+        ].filter(Boolean)
+      },
+      orderBy: { displayOrder: 'asc' }
+    });
+
+    console.log(`[DEBUG] Categories fetched: ${categories.length} items for vendor ${vendorId}`);
+    res.json({ success: true, categories });
+  } catch (error) {
+    console.error('[VENDOR] Fetch Categories error:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
+
+router.post('/categories', firebaseAuth, async (req, res) => {
+  try {
+    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    const { name, description } = req.body;
+    const category = await prisma.category.create({
+      data: { vendorId: profile.vendor.id, name, description }
+    });
+    res.json({ success: true, category });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to create category' });
+  }
+});
+
+router.get('/products/templates', firebaseAuth, async (req, res) => {
+  try {
+    const templates = await prisma.productTemplate.findMany({
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json({ success: true, templates });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed fetching templates' });
+  }
+});
 
 // ==========================================
 // HELPER: Check if current time is within vendor's operating hours
@@ -450,9 +513,6 @@ router.put('/status/toggle', firebaseAuth, requireKyc, async (req, res) => {
   }
 });
 
-// ==========================================
-// MODULE B4: Incoming Orders Management
-// ==========================================
 
 // Accept Order
 router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
@@ -590,7 +650,7 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
     const now = new Date();
     const expiredOrders = orders.filter(o => 
       (o.status === 'pending_vendor' || o.status === 'Awaiting Vendor Acceptance') && 
-      (now - new Date(o.createdAt)) > 1 * 60 * 1000
+      (now - new Date(o.createdAt)) > 5 * 60 * 1000
     );
 
     if (expiredOrders.length > 0) {
@@ -751,16 +811,9 @@ router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
 });
 
 // ==========================================
-// MODULE B6 & B7: Product Management & Add-ons
+// MODULE B6 & B7: Product Management & Taxonomy
 // ==========================================
-router.get('/products/templates', firebaseAuth, async (req, res) => {
-  try {
-    const templates = await prisma.productTemplate.findMany();
-    res.json({ success: true, templates });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed fetching templates' });
-  }
-});
+
 
 router.get('/products', firebaseAuth, async (req, res) => {
   try {
@@ -769,7 +822,20 @@ router.get('/products', firebaseAuth, async (req, res) => {
 
     const products = await prisma.product.findMany({
       where: { vendorId: profile.vendor.id },
-      include: { addOns: true, images: true },
+      include: { 
+        addOns: true, 
+        images: true,
+        categories: true,
+        customizationGroups: {
+          include: { 
+            options: {
+              include: { 
+                // We'll potentially include linked product info if needed
+              }
+            }
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' }
     });
 
@@ -781,14 +847,29 @@ router.get('/products', firebaseAuth, async (req, res) => {
       image: p.images && p.images.length > 0 ? addCacheBuster(p.images[0].url) : null,
       price: p.basePrice ? Number(p.basePrice) : 0, 
       type: p.productType, 
+      category: p.categories.length > 0 ? p.categories[0].name : 'Uncategorized',
+      allCategories: p.categories.map(c => c.name),
       isAvailable: p.isActive, 
       addOns: (p.addOns || []).map(a => ({ 
         ...a, 
         price: a.price ? Number(a.price) : 0,
         freeLimit: a.freeLimit || 0
       })),
+      isCustomizable: p.isCustomizable,
+      customizationType: p.customizationType,
+      customizationGroups: (p.customizationGroups || []).map(g => ({
+        ...g,
+        options: (g.options || []).map(o => ({
+          ...o,
+          priceModifier: Number(o.priceModifier || 0),
+          allowQuantity: !!o.allowQuantity,
+          freeLimit: o.freeLimit || 0,
+          conflicts: o.conflicts || null,
+          isAvailable: o.isAvailable !== false,
+          displayOrder: o.displayOrder || 0
+        }))
+      }))
     }));
-
 
     res.json({ success: true, products: formattedProducts });
   } catch (error) {
@@ -799,23 +880,34 @@ router.get('/products', firebaseAuth, async (req, res) => {
 router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
   try {
     const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
-    const { name, description, category, type, price, isRestricted, isAvailable, addOns, image, images } = req.body;
+    const { 
+      name, description, category, type, price, isRestricted, isAvailable, 
+      addOns, image, images,
+      isCustomizable, customizationType, customizationGroups,
+      templateId 
+    } = req.body;
 
-    const createData = {
+    const productPayload = {
       vendorId: profile.vendor.id, 
       name, 
       description, 
-      category, 
       productType: type, 
       basePrice: parseFloat(price) || 0,
       isRestricted: isRestricted === 'true' || isRestricted === true,
       isActive: false, // NEW PRODUCTS ARE INACTIVE BY DEFAULT
-      reviewStatus: 'pending_review'
+      reviewStatus: 'pending_review',
+      isCustomizable: isCustomizable === 'true' || isCustomizable === true,
+      customizationType: customizationType || 'NORMAL',
+      templateId: templateId || null,
+      categories: {
+        connect: Array.isArray(category) 
+          ? category.map(id => ({ id })) 
+          : []
+      }
     };
 
-
     if (addOns && Array.isArray(addOns) && addOns.length > 0) {
-      createData.addOns = { 
+      productPayload.addOns = { 
         create: addOns.map(addon => ({ 
           name: addon.name, 
           price: parseFloat(addon.price) || 0,
@@ -827,7 +919,7 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
 
     if (image || (images && images.length > 0)) {
       const imageList = (images ? images : [image]).map(url => stripCacheBuster(url));
-      createData.images = {
+      productPayload.images = {
         create: imageList.filter(img => !!img).map((url, index) => ({
           url,
           sortOrder: index
@@ -835,8 +927,43 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       };
     }
 
-    console.log('[DEBUG] Product createData:', JSON.stringify(createData, null, 2));
-    const product = await prisma.product.create({ data: createData, include: { addOns: true, images: true } });
+    if (customizationGroups && Array.isArray(customizationGroups)) {
+      productPayload.customizationGroups = {
+        create: customizationGroups.map((group, gIdx) => ({
+          name: group.name,
+          isRequired: group.isRequired === 'true' || group.isRequired === true,
+          selectionType: group.selectionType || 'SINGLE',
+          maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
+          displayOrder: group.displayOrder ?? gIdx,
+          options: {
+            create: (Array.isArray(group.options) ? group.options : []).map((opt, oIdx) => ({
+              name: opt.name,
+              priceModifier: parseFloat(opt.priceModifier) || 0,
+              isAvailable: opt.isAvailable !== false,
+              displayOrder: opt.displayOrder ?? oIdx,
+              allowQuantity: !!opt.allowQuantity,
+              freeLimit: parseInt(opt.freeLimit) || 0,
+              conflicts: opt.conflicts || null,
+              linkedProductId: opt.linkedProductId || null
+            }))
+          }
+        }))
+      };
+    }
+
+    console.log('[DEBUG] Saving Product with Payload:', JSON.stringify(productPayload, null, 2));
+    const product = await prisma.product.create({ 
+      data: productPayload, 
+      include: { 
+        addOns: true, 
+        images: true,
+        categories: true,
+        customizationGroups: {
+          include: { options: true }
+        }
+      } 
+    });
+
     res.json({ success: true, product });
   } catch (error) {
     console.error('[VENDOR] Add Product error:', error);
@@ -849,7 +976,12 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
     try {
       const { id } = req.params;
       console.log(`[VENDOR-API] PUT /products/${id} attempt...`);
-      const { name, description, category, type, isRestricted, isAvailable, price, image, images, addOns } = req.body;
+      const { 
+        name, description, category, type, isRestricted, isAvailable, price, 
+        image, images, addOns,
+        isCustomizable, customizationType, customizationGroups,
+        templateId
+      } = req.body;
       const profile = await withRetry(() => prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } }));
       
       const product = await prisma.product.findFirst({ where: { id, vendorId: profile.vendor.id } });
@@ -861,9 +993,12 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
       if (description !== undefined) updateData.description = description;
       if (category !== undefined) updateData.category = category;
       if (type !== undefined) updateData.productType = type;
-      if (isRestricted !== undefined) updateData.isRestricted = isRestricted;
-      if (isAvailable !== undefined) updateData.isActive = isAvailable;
-      if (price !== undefined) updateData.basePrice = price;
+      if (isRestricted !== undefined) updateData.isRestricted = isRestricted === 'true' || isRestricted === true;
+      if (isAvailable !== undefined) updateData.isActive = isAvailable === 'true' || isAvailable === true;
+      if (price !== undefined) updateData.basePrice = parseFloat(price) || 0;
+      if (isCustomizable !== undefined) updateData.isCustomizable = isCustomizable === 'true' || isCustomizable === true;
+      if (customizationType !== undefined) updateData.customizationType = customizationType;
+      if (templateId !== undefined) updateData.templateId = templateId || null;
   
       // Check for Review-Triggering Changes
       // Only price, images, and addons are exempt
@@ -872,10 +1007,17 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
         description: description,
         category: category,
         productType: type,
-        isRestricted: isRestricted
+        isRestricted: isRestricted,
+        isCustomizable: isCustomizable,
+        customizationType: customizationType
       };
 
       let reviewTriggered = false;
+
+      // Customization changes also trigger review
+      if (customizationGroups !== undefined) {
+        reviewTriggered = true;
+      }
       for (const [key, value] of Object.entries(coreFields)) {
         // Compare with original product fields
         const productKey = key === 'productType' ? 'productType' : key; 
@@ -921,11 +1063,49 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
           }
         }
 
-        // 3. Final Update
+        // 3. Handle Customization Groups (if provided)
+        if (customizationGroups !== undefined) {
+          reviewTriggered = true; 
+          
+          await tx.customizationGroup.deleteMany({ where: { productId: id } });
+          if (Array.isArray(customizationGroups) && customizationGroups.length > 0) {
+            updateData.customizationGroups = {
+              create: customizationGroups.map((group, gIdx) => {
+                const groupOptions = Array.isArray(group.options) ? group.options : [];
+                return {
+                  name: group.name,
+                  isRequired: group.isRequired === 'true' || group.isRequired === true,
+                  selectionType: group.selectionType || 'SINGLE',
+                  maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
+                  displayOrder: group.displayOrder ?? gIdx,
+                  options: {
+                    create: groupOptions.map((opt, oIdx) => ({
+                      name: opt.name,
+                      priceModifier: parseFloat(opt.priceModifier) || 0,
+                      isAvailable: opt.isAvailable !== false,
+                      displayOrder: opt.displayOrder ?? oIdx,
+                      allowQuantity: !!opt.allowQuantity,
+                      freeLimit: parseInt(opt.freeLimit) || 0,
+                      conflicts: opt.conflicts || null
+                    }))
+                  }
+                };
+              })
+            };
+          }
+        }
+
+        // 4. Final Update
         return await tx.product.update({
           where: { id },
           data: updateData,
-          include: { addOns: true, images: true }
+          include: { 
+            addOns: true, 
+            images: true,
+            customizationGroups: {
+              include: { options: true }
+            }
+          }
         });
       });
 
@@ -942,6 +1122,20 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
             ...a, 
             price: Number(a.price || 0),
             freeLimit: a.freeLimit || 0
+          })),
+          isCustomizable: updatedProduct.isCustomizable,
+          customizationType: updatedProduct.customizationType,
+          customizationGroups: (updatedProduct.customizationGroups || []).map(g => ({
+            ...g,
+            options: (g.options || []).map(o => ({
+              ...o,
+              priceModifier: Number(o.priceModifier || 0),
+              allowQuantity: !!o.allowQuantity,
+              freeLimit: o.freeLimit || 0,
+              conflicts: o.conflicts || null,
+              isAvailable: o.isAvailable !== false,
+              displayOrder: o.displayOrder || 0
+            }))
           }))
         }
       });
@@ -978,16 +1172,45 @@ router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) 
     const { status } = req.body; // approved, rejected, suspended, etc.
     const { emitAccountStatusUpdate } = require('../lib/socket');
 
+    // Fetch vendor for SFX automation
+    const vendorData = await prisma.vendor.findUnique({ where: { id } });
+    if (!vendorData) return res.status(404).json({ error: 'Vendor not found' });
+
+    let sfxStoreCode = vendorData.sfxStoreCode;
+    if ((status === 'APPROVED' || !status) && !sfxStoreCode && vendorData.latitude && vendorData.longitude) {
+      try {
+        const shadowfaxService = require('../src/modules/delivery/shadowfax/shadowfax.service');
+        const sfxResult = await shadowfaxService.createStore({
+          name: vendorData.businessName,
+          contactName: vendorData.ownerName,
+          contactNumber: vendorData.phone,
+          address: vendorData.businessAddress,
+          pincode: vendorData.pincode || '110001',
+          city: vendorData.city || 'Default',
+          latitude: Number(vendorData.latitude),
+          longitude: Number(vendorData.longitude)
+        });
+        sfxStoreCode = sfxResult.store_code;
+      } catch (sfxErr) {
+        console.warn('[SIMULATE-APPROVE] SFX store creation failed:', sfxErr.message);
+      }
+    }
+
     const vendor = await prisma.vendor.update({
       where: { id },
-      data: { accountStatus: status || 'APPROVED' }
+      data: { 
+        accountStatus: status || 'APPROVED',
+        sfxStoreCode: sfxStoreCode
+      }
     });
 
     // Also update Profile status for consistency
-    await prisma.profile.update({
-      where: { id: vendor.profileId },
-      data: { profileStatus: (status || 'APPROVED').toUpperCase() }
-    });
+    if (vendor.profileId) {
+      await prisma.profile.update({
+        where: { id: vendor.profileId },
+        data: { profileStatus: (status || 'APPROVED').toUpperCase() }
+      });
+    }
 
     emitAccountStatusUpdate(vendor.id, status || 'APPROVED');
     res.json({ success: true, vendor });
@@ -1048,6 +1271,29 @@ router.post('/storage/upload-url', firebaseAuth, async (req, res) => {
     res.json({ success: true, ...data });
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
+
+// Update display order of customization groups
+router.put('/products/:id/customization/sort', firebaseAuth, requireKyc, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { groupOrders } = req.body; // Array of { id, displayOrder }
+    
+    if (!Array.isArray(groupOrders)) return res.status(400).json({ error: 'groupOrders must be an array' });
+
+    await prisma.$transaction(
+      groupOrders.map(item => 
+        prisma.customizationGroup.update({
+          where: { id: item.id, productId: id },
+          data: { displayOrder: item.displayOrder }
+        })
+      )
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update sort order' });
   }
 });
 

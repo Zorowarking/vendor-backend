@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVendorStore } from '../../../store/vendorStore';
 import { vendorApi } from '../../../services/vendorApi';
+import { socketService } from '../../../services/socketService';
 import Colors from '../../../constants/Colors';
 
 export default function OrderDetailScreen() {
@@ -31,17 +33,47 @@ export default function OrderDetailScreen() {
 
   const isFlagged = order.status === 'FLAGGED';
 
+  const [trackingData, setTrackingData] = React.useState(null);
+
+  React.useEffect(() => {
+    if (order && order.status !== 'DELIVERED' && order.status !== 'CANCELLED') {
+      const handleLocationUpdate = (data) => {
+        if (data.orderId === orderId) {
+          setTrackingData(prev => ({ ...prev, ...data }));
+        }
+      };
+
+      const handleStatusUpdate = (data) => {
+        if (data.orderId === orderId) {
+          useVendorStore.getState().updateOrder(orderId, { status: data.status });
+        }
+      };
+
+      socketService.onRiderLocationUpdate(handleLocationUpdate);
+      socketService.onOrderUpdate(handleStatusUpdate);
+
+      return () => {
+        socketService.offRiderLocationUpdate(handleLocationUpdate);
+        socketService.offOrderUpdate(handleStatusUpdate);
+      };
+    }
+  }, [orderId, order?.status]);
+
   const handleStatusUpdate = async (newStatus) => {
     try {
       await vendorApi.updateOrderStatus(order.id, newStatus);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       useVendorStore.getState().updateOrder(order.id, { status: newStatus });
-      router.back();
-
+      // If marking as ready, we stay on page to see rider assignment
+      if (newStatus !== 'READY_FOR_PICKUP') {
+        router.back();
+      }
     } catch (err) {
       Alert.alert('Error', 'Could not update status');
     }
   };
+
+  const sfxOrder = order.sfxOrder; // Assuming this comes from the API include
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -53,8 +85,8 @@ export default function OrderDetailScreen() {
 
       <View style={styles.headerCard}>
         <View style={styles.row}>
-          <Text style={styles.orderIdTitle}>Order #{order.id}</Text>
-          <Text style={styles.statusBadge}>{order.status}</Text>
+          <Text style={styles.orderIdTitle}>Order #{order.id.substring(0, 8)}</Text>
+          <Text style={[styles.statusBadge, { backgroundColor: Colors.primary + '15', color: Colors.primary }]}>{order.status}</Text>
         </View>
         <Text style={styles.customerName}>Customer: {order.customerName}</Text>
         <Text style={styles.timeText}>Created: {new Date(order.createdAt).toLocaleTimeString()}</Text>
@@ -62,14 +94,45 @@ export default function OrderDetailScreen() {
         {order.status !== 'PENDING' && order.acceptedAt && (
           <Text style={styles.timeTextDark}>Accepted: {new Date(order.acceptedAt).toLocaleTimeString()}</Text>
         )}
-        
-        {order.deliveryAddress && (
-          <View style={styles.addressBox}>
-            <Text style={styles.addressLabel}>Address (Self-Delivery / Driver Context):</Text>
-            <Text style={styles.addressText}>{order.deliveryAddress}</Text>
-          </View>
-        )}
       </View>
+
+      {/* Shadowfax Delivery Tracking Section */}
+      {(order.status === 'READY_FOR_PICKUP' || order.status === 'OUT_FOR_DELIVERY' || trackingData) && (
+        <View style={styles.trackingCard}>
+          <View style={styles.trackingHeader}>
+            <Ionicons name="bicycle" size={20} color={Colors.primary} />
+            <Text style={styles.trackingTitle}>Shadowfax Delivery</Text>
+          </View>
+          
+          {trackingData ? (
+            <View style={styles.trackingBody}>
+              <View style={styles.trackingRow}>
+                <View style={styles.trackingDotActive} />
+                <Text style={styles.trackingStatusText}>
+                  Rider is {trackingData.pickupEta ? `${trackingData.pickupEta} mins away` : 'on the way'}
+                </Text>
+              </View>
+              {trackingData.lat && (
+                <Text style={styles.trackingDetails}>
+                  Last seen at: {trackingData.lat.toFixed(4)}, {trackingData.lng.toFixed(4)}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.trackingWaitText}>Awaiting rider assignment...</Text>
+          )}
+
+          {order.trackUrl && (
+            <TouchableOpacity 
+              style={styles.trackLink} 
+              onPress={() => Linking.openURL(order.trackUrl)}
+            >
+              <Text style={styles.trackLinkText}>Track in Shadowfax Portal</Text>
+              <Ionicons name="open-outline" size={14} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       <View style={styles.itemsCard}>
         <Text style={styles.sectionTitle}>Items</Text>
@@ -79,9 +142,8 @@ export default function OrderDetailScreen() {
             <View style={styles.itemDetails}>
               <Text style={styles.itemName}>{item.name}</Text>
               
-              {/* Added support for Add-ons display */}
-              {order.addons && order.addons.length > 0 && (
-                <Text style={styles.addonsText}>Add-ons: + {order.addons.join(', ')}</Text>
+              {item.addons && item.addons.length > 0 && (
+                <Text style={styles.addonsText}>Add-ons: + {item.addons.join(', ')}</Text>
               )}
 
               {item.instructions && (
@@ -233,5 +295,68 @@ const styles = StyleSheet.create({
   },
   successButtonText: {
     color: Colors.white, fontSize: 18, fontWeight: 'bold'
+  },
+  trackingCard: {
+    backgroundColor: Colors.white,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
+  },
+  trackingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  trackingTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+    marginLeft: 8,
+  },
+  trackingBody: {
+    paddingLeft: 4,
+  },
+  trackingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  trackingDotActive: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.success,
+    marginRight: 8,
+  },
+  trackingStatusText: {
+    fontSize: 15,
+    color: Colors.black,
+    fontWeight: '500',
+  },
+  trackingDetails: {
+    fontSize: 12,
+    color: Colors.subText,
+    fontStyle: 'italic',
+  },
+  trackingWaitText: {
+    fontSize: 14,
+    color: Colors.warning,
+    fontStyle: 'italic',
+  },
+  trackLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.grey,
+  },
+  trackLinkText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
+    marginRight: 4,
   }
 });

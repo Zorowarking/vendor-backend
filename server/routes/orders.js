@@ -57,9 +57,12 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     });
 
     if (hasRestrictedProducts) {
-        // Check profile verification
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        if (!req.customer.ageVerifiedAt || req.customer.ageVerifiedAt < thirtyDaysAgo) {
+        // Check profile verification (Synchronized with 30-day window stored in DB)
+        const verification = req.customer.ageVerification;
+        const now = new Date();
+
+        if (!verification || new Date(verification.expiresAt) < now) {
+            console.log(`[CHECKOUT] Age verification failed for ${req.customer.id}. Record: ${!!verification}`);
             return res.status(403).json({ 
                 error: 'AGE_VERIFICATION_REQUIRED', 
                 message: 'Age verification expired or missing. Please verify to purchase restricted products.' 
@@ -81,21 +84,29 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     let deliveryCost = 0;
     try {
       const sfxResponse = await shadowfaxService.checkServiceability({
-        storeCode: env.SFX_STORE_CODE,
+        storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
         orderValue: cart.total,
         paid: true,
         dropLat: address.latitude ? Number(address.latitude) : undefined,
         dropLng: address.longitude ? Number(address.longitude) : undefined
       });
+      
       if (sfxResponse && sfxResponse.available_rider_count === 0) {
-        return res.status(422).json({ error: 'Delivery not available right now' });
+        return res.status(422).json({ 
+          error: 'DELIVERY_UNAVAILABLE', 
+          message: 'Shadowfax has no available riders in this area right now.' 
+        });
       }
+      
       if (sfxResponse && sfxResponse.delivery_cost) {
         deliveryCost = sfxResponse.delivery_cost;
       }
     } catch (error) {
       console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
-      // Fail gracefully, don't block checkout
+      // If store code is missing, it's a configuration error
+      if (!vendor.sfxStoreCode && !env.SFX_STORE_CODE) {
+        return res.status(500).json({ error: 'DELIVERY_CONFIG_ERROR', message: 'Vendor delivery not configured.' });
+      }
     }
 
     // 6. Initiate Payment (Mock)
@@ -109,6 +120,8 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
       success: true,
       paymentIntentId,
       amount: cart.total,
+      deliveryFee: deliveryCost,
+      totalToPay: cart.total + deliveryCost,
       currency: 'INR',
       clientSecret: 'mock_secret_123',
       message: 'Payment initiated. Awaiting confirmation.'
@@ -117,6 +130,49 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
   } catch (error) {
     console.error('[CHECKOUT] error:', error);
     res.status(500).json({ error: 'Checkout initiation failed' });
+  }
+});
+
+/**
+ * POST /orders/validate-delivery
+ * Pre-checkout serviceability check for Shadowfax
+ */
+router.post('/validate-delivery', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const { addressId } = req.body;
+    
+    const cart = await CartService.getCart({ customerId: req.customer.id });
+    if (!cart) return res.status(404).json({ error: 'Cart empty' });
+
+    const vendor = await prisma.vendor.findUnique({ where: { id: cart.vendorId } });
+    const address = await prisma.address.findUnique({ where: { id: addressId, customerId: req.customer.id } });
+
+    if (!vendor || !address) return res.status(400).json({ error: 'Invalid vendor or address' });
+
+    try {
+      const sfxResponse = await shadowfaxService.checkServiceability({
+        storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
+        orderValue: cart.total,
+        dropLat: Number(address.latitude),
+        dropLng: Number(address.longitude)
+      });
+
+      res.json({
+        success: true,
+        isServiceable: sfxResponse.available_rider_count > 0,
+        riderCount: sfxResponse.available_rider_count,
+        deliveryFee: sfxResponse.delivery_cost || 0,
+        eta: sfxResponse.eta || null
+      });
+    } catch (sfxErr) {
+      res.status(422).json({ 
+        success: false, 
+        error: 'SFX_CHECK_FAILED', 
+        message: sfxErr.message 
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Validation failed' });
   }
 });
 

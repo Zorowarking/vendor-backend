@@ -83,14 +83,32 @@ router.get('/vendors/:id/products', guestSession, async (req, res) => {
         isActive: true, 
         reviewStatus: { equals: 'APPROVED', mode: 'insensitive' }
       },
-      include: { addOns: true, images: true }
+      include: { 
+        addOns: true, 
+        images: true,
+        customizationGroups: {
+          include: { options: true }
+        }
+      }
     });
     const mappedProducts = products.map(p => ({
       ...p,
       image: p.images && p.images.length > 0 ? p.images[0].url : null,
       imageUrl: p.images && p.images.length > 0 ? p.images[0].url : null,
       price: Number(p.basePrice), // Alias for frontend
-      addons: p.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })) // Alias and numeric price
+      addons: p.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })), // Alias and numeric price
+      customizationGroups: (p.customizationGroups || []).map(g => ({
+        ...g,
+        options: (g.options || []).map(o => ({
+          ...o,
+          priceModifier: Number(o.priceModifier || 0),
+          allowQuantity: !!o.allowQuantity,
+          freeLimit: o.freeLimit || 0,
+          conflicts: o.conflicts || null,
+          isAvailable: o.isAvailable !== false,
+          displayOrder: o.displayOrder || 0
+        }))
+      }))
     }));
     res.json({ success: true, products: mappedProducts });
   } catch (error) {
@@ -104,7 +122,13 @@ router.get('/products/:id', guestSession, async (req, res) => {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
       where: { id },
-      include: { addOns: true, images: true }
+      include: { 
+        addOns: true, 
+        images: true,
+        customizationGroups: {
+          include: { options: true }
+        }
+      }
     });
 
     if (!product) return res.status(404).json({ error: 'Product not found' });
@@ -113,7 +137,19 @@ router.get('/products/:id', guestSession, async (req, res) => {
       ...product,
       image: product.images && product.images.length > 0 ? `${product.images[0].url}?t=${Date.now()}` : null,
       price: Number(product.basePrice),
-      addons: product.addOns?.map(a => ({ ...a, price: Number(a.price || 0) }))
+      addons: product.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })),
+      customizationGroups: (product.customizationGroups || []).map(g => ({
+        ...g,
+        options: (g.options || []).map(o => ({
+          ...o,
+          priceModifier: Number(o.priceModifier || 0),
+          allowQuantity: !!o.allowQuantity,
+          freeLimit: o.freeLimit || 0,
+          conflicts: o.conflicts || null,
+          isAvailable: o.isAvailable !== false,
+          displayOrder: o.displayOrder || 0
+        }))
+      }))
     };
     res.json({ success: true, product: mappedProduct });
   } catch (error) {

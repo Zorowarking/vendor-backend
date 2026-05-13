@@ -155,7 +155,12 @@ class CartService {
         const productIds = cart.items.map(item => item.productId);
         const products = await prisma.product.findMany({
           where: { id: { in: productIds } },
-          include: { addOns: true }
+          include: { 
+            addOns: true,
+            customizationGroups: {
+              include: { options: true }
+            }
+          }
         });
 
         const productMap = products.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
@@ -189,18 +194,40 @@ class CartService {
               itemAddonCharge += (chargeableQty * price);
             }
           });
+          
+          // 2. Calculate charges for NEW Customization Groups
+          const selectedCustomizations = item.options?.customizations || [];
+          selectedCustomizations.forEach(groupSelection => {
+            const groupDetails = product.customizationGroups.find(g => g.id === groupSelection.groupId);
+            if (groupDetails && groupSelection.selectedOptions) {
+              groupSelection.selectedOptions.forEach(selectedOpt => {
+                const optId = typeof selectedOpt === 'string' ? selectedOpt : selectedOpt.id;
+                const optDetails = groupDetails.options.find(o => o.id === optId);
+                if (optDetails) {
+                  const optQty = typeof selectedOpt === 'object' ? (selectedOpt.quantity || 1) : 1;
+                  const freeLimit = optDetails.freeLimit || 0;
+                  const chargeableQty = Math.max(0, optQty - freeLimit);
+                  itemAddonCharge += (Number(optDetails.priceModifier || 0) * chargeableQty);
+                }
+              });
+            }
+          });
+
+          // Multiply addon/customization charges by item quantity (pricing is per unit)
+          const totalLineAddonCharge = itemAddonCharge * item.quantity;
 
           subtotal += itemSubtotal;
-          totalAddonCharges += itemAddonCharge;
+          totalAddonCharges += totalLineAddonCharge;
 
           return {
             ...item,
             ageVerified: item.ageVerifiedCheckbox,
             name: product.name || 'Product',
+            isRestricted: product.isRestricted,
             price: basePrice,
-            unitPrice: basePrice + (itemAddonCharge / item.quantity),
-            addonCharge: itemAddonCharge,
-            total: itemSubtotal + itemAddonCharge
+            unitPrice: basePrice + itemAddonCharge,
+            addonCharge: totalLineAddonCharge,
+            total: itemSubtotal + totalLineAddonCharge
           };
         });
 
@@ -227,6 +254,23 @@ class CartService {
     if (cart) {
         await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     }
+  }
+
+  static async removeItem(identifier, itemId) {
+    const { customerId, guestId } = identifier;
+    
+    const cart = await prisma.cart.findFirst({
+        where: customerId ? { customerId } : { guestId }
+    });
+
+    if (!cart) return; // Cart doesn't exist, nothing to remove
+
+    await prisma.cartItem.deleteMany({
+      where: { 
+        id: itemId,
+        cartId: cart.id // Security: Ensure item belongs to THIS cart
+      }
+    });
   }
 }
 

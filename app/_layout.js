@@ -7,7 +7,7 @@ try {
     console.log('[DEBUG] Keep awake unavailable, skipping.');
   });
 } catch (e) {}
-import { View } from 'react-native';
+import { View, DeviceEventEmitter, Platform, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { notificationService } from '../services/notificationService';
@@ -17,6 +17,7 @@ import { socketService } from '../services/socketService';
 import { useNotificationStore } from '../store/notificationStore';
 import { systemBubbleService } from '../services/systemBubbleService';
 import { useVendorStore } from '../store/vendorStore';
+import { vendorApi } from '../services/vendorApi';
 
 
 export default function Layout() {
@@ -75,6 +76,41 @@ export default function Layout() {
       systemBubbleService.update(incoming + active);
     }
   }, [role, useVendorStore.getState().incomingOrders, useVendorStore.getState().activeOrders]);
+
+  // Bubble Removal Listener -> Offline Dialog
+  useEffect(() => {
+    if (Platform.OS === 'android' && role === 'VENDOR' && isAuthenticated) {
+      const subscription = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
+        Alert.alert(
+          "Bubble Hidden",
+          "You removed the floating bubble. Would you like to go offline as well to stop receiving new orders?",
+          [
+            { 
+              text: "Stay Online", 
+              style: "cancel",
+              onPress: () => {
+                // Optionally re-show the bubble if there are active orders
+                const count = useVendorStore.getState().incomingOrders.length + useVendorStore.getState().activeOrders.length;
+                if (count > 0) systemBubbleService.show();
+              }
+            },
+            { 
+              text: "Go Offline", 
+              onPress: async () => {
+                try {
+                  await vendorApi.toggleStatus(false, true);
+                  useVendorStore.getState().setOnlineStatus('offline');
+                } catch (err) {
+                  Alert.alert("Error", "Failed to update status. Please try again from the dashboard.");
+                }
+              }
+            }
+          ]
+        );
+      });
+      return () => subscription.remove();
+    }
+  }, [role, isAuthenticated]);
 
   useEffect(() => {
     if (!isMounted) return;

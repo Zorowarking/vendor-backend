@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import { useAuthStore } from '../store/authStore';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://192.168.0.107:3001';
+const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://192.168.0.105:3000';
 
 class SocketService {
   constructor() {
@@ -79,17 +79,27 @@ class SocketService {
 
   onOrderUpdate(callback) {
     if (!this.socket) return;
-    this.socket.on('order:update', callback);
+    this.socket.on('order_status_update', callback);
   }
 
   offOrderUpdate(callback) {
     if (!this.socket) return;
-    this.socket.off('order:update', callback);
+    this.socket.off('order_status_update', callback);
   }
 
   onOrderStatusUpdate(callback) {
     if (!this.socket) return;
-    this.socket.on('order:statusUpdate', callback);
+    this.socket.on('order_status_update', callback);
+  }
+
+  onRiderLocationUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.on('rider_location_update', callback);
+  }
+
+  offRiderLocationUpdate(callback) {
+    if (!this.socket) return;
+    this.socket.off('rider_location_update', callback);
   }
 
   onProductStatusUpdate(callback) {

@@ -9,6 +9,12 @@ const helmet = require('helmet');
 const app = express();
 const server = http.createServer(app);
 
+// GLOBAL TRAFFIC LOGGER (Highest Priority)
+app.use((req, res, next) => {
+  console.log(`🌐 [GLOBAL] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 const PORT = process.env.PORT || 3000;
 
 // ==========================================
@@ -17,7 +23,7 @@ const PORT = process.env.PORT || 3000;
 // We start listening IMMEDIATELY to pass Railway's health check.
 // Heavy routes and services will load in the background.
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 [BACKEND] Server is LIVE and listening on port ${PORT}`);
+  console.log(`🚀 [STAGE 1] Server running on http://0.0.0.0:${PORT}`);
   console.log(`🌐 [HEALTH] Health check available at /health`);
 });
 
@@ -27,6 +33,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // Structured Request Logging
 app.use((req, res, next) => {
   const start = Date.now();
+  console.log(`🔍 [DEBUG] Incoming: ${req.method} ${req.originalUrl}`);
   res.on('finish', () => {
     const duration = Date.now() - start;
     console.log(`[API] ${req.method} ${req.originalUrl} ${res.statusCode} - ${duration}ms`);
@@ -130,6 +137,7 @@ try {
     const paymentRoutes = require('./routes/payments');
     const storageRoutes = require('./routes/storage');
     const shadowfaxRoutes = require('./src/modules/delivery/shadowfax/shadowfax.routes');
+    const feedbackRoutes = require('./routes/feedback');
 
     app.use('/api/auth', authRoutes);
     app.use('/api/browsing', browsingRoutes);
@@ -140,6 +148,8 @@ try {
     app.use('/api/payments', paymentRoutes);
     app.use('/api/storage', storageRoutes);
     app.use('/api/delivery/shadowfax', shadowfaxRoutes);
+    app.use('/api/feedback', feedbackRoutes);
+    app.use('/api/admin', require('./routes/admin'));
 
     // Stage 3 Diagnostic health
     app.get('/api/health/status', (req, res) => {

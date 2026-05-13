@@ -137,7 +137,7 @@ async function getOrCreateCustomerProfile(user) {
     // A. Check by Firebase UID first (Most reliable for social login)
     let p = await prisma.profile.findUnique({
       where: { firebaseUid: uid },
-      include: { customer: true }
+      include: { customer: { include: { ageVerification: true } } }
     });
 
     if (p) return p;
@@ -147,7 +147,7 @@ async function getOrCreateCustomerProfile(user) {
     if (!isPlaceholder) {
       p = await prisma.profile.findFirst({
         where: { phoneNumber: normalizedPhone },
-        include: { customer: true }
+        include: { customer: { include: { ageVerification: true } } }
       });
 
       if (p) {
@@ -155,7 +155,7 @@ async function getOrCreateCustomerProfile(user) {
         return await prisma.profile.update({
           where: { id: p.id },
           data: { firebaseUid: uid, role: 'CUSTOMER' },
-          include: { customer: true }
+          include: { customer: { include: { ageVerification: true } } }
         });
       }
     }
@@ -170,14 +170,14 @@ async function getOrCreateCustomerProfile(user) {
           role: 'CUSTOMER',
           profileStatus: 'ACTIVE'
         },
-        include: { customer: true }
+        include: { customer: { include: { ageVerification: true } } }
       });
     } catch (createError) {
       if (createError.code === 'P2002') {
         console.log('[PRISMA] Profile creation race-condition, re-fetching...');
         return await prisma.profile.findFirst({
           where: { OR: [{ firebaseUid: uid }, { phoneNumber: normalizedPhone }] },
-          include: { customer: true }
+          include: { customer: { include: { ageVerification: true } } }
         });
       }
       throw createError;
@@ -195,25 +195,43 @@ async function getOrCreateCustomerProfile(user) {
     if (customer) {
         customer = await prisma.customer.update({
             where: { id: customer.id },
-            data: { profileId: profile.id }
+            data: { 
+              profileId: profile.id,
+              email: user.email || undefined,
+              fullName: user.name || undefined
+            },
+            include: { ageVerification: true }
         });
     } else {
         customer = await prisma.customer.create({
             data: {
                 profileId: profile.id,
                 phone: normalizedPhone,
-                fullName: name || 'Customer'
-            }
+                fullName: user.name || 'Customer',
+                email: user.email
+            },
+            include: { ageVerification: true }
         });
     }
     profile.customer = customer;
   } else {
-    // 3. Sync if needed
-    if (profile.phoneNumber !== normalizedPhone && !isPlaceholder) {
+    // 3. Sync if needed (e.g. email or name updated in Google/Firebase)
+    const needsSync = (profile.phoneNumber !== normalizedPhone && !isPlaceholder) || 
+                      (user.email && profile.customer.email !== user.email);
+    
+    if (needsSync) {
         profile = await prisma.profile.update({
             where: { id: profile.id },
-            data: { phoneNumber: normalizedPhone },
-            include: { customer: true }
+            data: { 
+              phoneNumber: normalizedPhone,
+              customer: {
+                update: {
+                  email: user.email || undefined,
+                  fullName: (profile.customer.fullName === 'Customer' && user.name) ? user.name : undefined
+                }
+              }
+            },
+            include: { customer: { include: { ageVerification: true } } }
         });
     }
   }
