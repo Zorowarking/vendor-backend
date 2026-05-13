@@ -1033,9 +1033,21 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
         updateData.isActive = false; // Force hide from customer view
       }
 
-      // Use a transaction to ensure add-on updates are atomic
+      // Use a transaction to ensure updates are atomic
       const updatedProduct = await prisma.$transaction(async (tx) => {
-        // 1. Handle Images (if provided)
+        // 1. Handle Categories (Relation)
+        if (category !== undefined) {
+          // If category is an array of IDs, connect them. If it's a single ID/Name string, handle it.
+          const categoryIds = Array.isArray(category) ? category : (typeof category === 'string' && category.length > 20 ? [category] : []);
+          
+          if (categoryIds.length > 0) {
+            updateData.categories = {
+              set: categoryIds.map(id => ({ id }))
+            };
+          }
+        }
+
+        // 2. Handle Images
         if (image !== undefined || images !== undefined) {
           const imageList = (images ? images : (image ? [image] : [])).map(url => stripCacheBuster(url));
           await tx.productImage.deleteMany({ where: { productId: id } });
@@ -1049,59 +1061,57 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
           }
         }
 
-        // 2. Handle Add-ons (if provided)
+        // 3. Handle Add-ons
         if (addOns !== undefined) {
           await tx.productAddon.deleteMany({ where: { productId: id } });
-          if (addOns.length > 0) {
+          if (Array.isArray(addOns) && addOns.length > 0) {
             updateData.addOns = {
               create: addOns.map(a => ({
                 name: a.name,
                 price: parseFloat(a.price) || 0,
-                freeLimit: parseInt(a.freeLimit) || 0
+                freeLimit: parseInt(a.freeLimit) || 0,
+                isActive: true
               }))
             };
           }
         }
 
-        // 3. Handle Customization Groups (if provided)
+        // 4. Handle Customization Groups
         if (customizationGroups !== undefined) {
-          reviewTriggered = true; 
-          
           await tx.customizationGroup.deleteMany({ where: { productId: id } });
           if (Array.isArray(customizationGroups) && customizationGroups.length > 0) {
             updateData.customizationGroups = {
-              create: customizationGroups.map((group, gIdx) => {
-                const groupOptions = Array.isArray(group.options) ? group.options : [];
-                return {
-                  name: group.name,
-                  isRequired: group.isRequired === 'true' || group.isRequired === true,
-                  selectionType: group.selectionType || 'SINGLE',
-                  maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
-                  displayOrder: group.displayOrder ?? gIdx,
-                  options: {
-                    create: groupOptions.map((opt, oIdx) => ({
-                      name: opt.name,
-                      priceModifier: parseFloat(opt.priceModifier) || 0,
-                      isAvailable: opt.isAvailable !== false,
-                      displayOrder: opt.displayOrder ?? oIdx,
-                      allowQuantity: !!opt.allowQuantity,
-                      freeLimit: parseInt(opt.freeLimit) || 0,
-                      conflicts: opt.conflicts || null
-                    }))
-                  }
-                };
-              })
+              create: customizationGroups.map((group, gIdx) => ({
+                name: group.name,
+                isRequired: group.isRequired === 'true' || group.isRequired === true,
+                selectionType: group.selectionType || 'SINGLE',
+                maxSelections: group.maxSelections ? parseInt(group.maxSelections) : null,
+                displayOrder: group.displayOrder ?? gIdx,
+                options: {
+                  create: (Array.isArray(group.options) ? group.options : []).map((opt, oIdx) => ({
+                    name: opt.name,
+                    priceModifier: parseFloat(opt.priceModifier) || 0,
+                    isAvailable: opt.isAvailable !== false,
+                    displayOrder: opt.displayOrder ?? oIdx,
+                    allowQuantity: !!opt.allowQuantity,
+                    freeLimit: parseInt(opt.freeLimit) || 0,
+                    conflicts: opt.conflicts || null,
+                    linkedProductId: opt.linkedProductId || null
+                  }))
+                }
+              }))
             };
           }
         }
 
-        // 4. Final Update
+        // 5. Final Update
         return await tx.product.update({
           where: { id },
           data: updateData,
           include: { 
             addOns: true, 
             images: true,
+            categories: true,
             customizationGroups: {
               include: { options: true }
             }

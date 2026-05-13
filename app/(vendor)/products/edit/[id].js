@@ -49,22 +49,25 @@ export default function EditProduct() {
   const [showAddOnForm, setShowAddOnForm] = useState(false);
 
   // Categories and Types fetched from API
-  const [categories, setCategories] = useState([]);
+  const [availableCategories, setAvailableCategories] = useState([]);
   const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
   const [allTemplates, setAllTemplates] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [products, templatesRes] = await Promise.all([
+        const [products, templatesRes, catsRes] = await Promise.all([
           vendorApi.getProducts(),
-          vendorApi.getTemplates()
+          vendorApi.getTemplates(),
+          vendorApi.getCategories()
         ]);
+
+        if (catsRes.success && catsRes.categories) {
+          setAvailableCategories(catsRes.categories);
+        }
 
         if (templatesRes.success && templatesRes.templates) {
           setAllTemplates(templatesRes.templates);
-          const cats = [...new Set(templatesRes.templates.map(t => t.category))];
-          setCategories(cats);
         }
 
         const product = products.find(p => p.id === id);
@@ -72,7 +75,14 @@ export default function EditProduct() {
           setName(product.name);
           setDescription(product.description || '');
           setPrice((product.price || 0).toString());
-          setCategory(product.category);
+          
+          // Set category (if array, pick first ID or handle multiple)
+          if (product.categories && product.categories.length > 0) {
+            setCategory(product.categories[0].id);
+          } else {
+            setCategory(product.category); // Fallback to old string field
+          }
+          
           setType(product.type);
           setIsAvailable(product.isAvailable);
           setImage(product.image);
@@ -92,8 +102,12 @@ export default function EditProduct() {
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);
-    setCategory(template.category);
     setTemplateId(template.id);
+    
+    // Auto-select category if template matches
+    const matchedCat = availableCategories.find(c => c.name.toLowerCase() === template.category?.toLowerCase());
+    if (matchedCat) setCategory(matchedCat.id);
+
     if (template.templateData) {
       setDescription(template.templateData.description || '');
       setPrice(template.templateData.price?.toString() || '');
@@ -188,7 +202,8 @@ export default function EditProduct() {
             name: '', 
             priceModifier: 0,
             allowQuantity: false,
-            freeLimit: 0
+            freeLimit: 0,
+            conflicts: []
           }]
         };
       }
@@ -231,13 +246,8 @@ export default function EditProduct() {
       return;
     }
 
-    if (!category || (category === 'New' && !newCategory)) {
-      Alert.alert('Error', 'Please select or enter a category');
-      return;
-    }
-
-    if (!type || (type === 'New' && !newType)) {
-      Alert.alert('Error', 'Please select or enter a product type');
+    if (!category) {
+      Alert.alert('Error', 'Please select a category');
       return;
     }
 
@@ -249,15 +259,12 @@ export default function EditProduct() {
         imageUrl = uploadResult.url;
       }
 
-      const finalCategory = category === 'New' ? newCategory : category;
-      const finalType = type === 'New' ? newType : type;
-
       const productData = {
         name,
         description,
         price: parseFloat(price),
-        category: finalCategory,
-        type: finalType,
+        category: [category], // Send as array of IDs for relation
+        type,
         isRestricted,
         isAvailable,
         image: imageUrl,
@@ -274,10 +281,9 @@ export default function EditProduct() {
 
       const res = await vendorApi.updateProduct(id, productData);
       
-      // Update local store for immediate UI feedback
       const { setProducts, products: currentProducts } = useVendorStore.getState();
       const updatedProducts = currentProducts.map(p => 
-        p.id === id ? { ...p, ...productData, reviewStatus: res.product?.reviewStatus || p.reviewStatus } : p
+        p.id === id ? { ...p, ...res.product } : p
       );
       setProducts(updatedProducts);
 
@@ -332,7 +338,7 @@ export default function EditProduct() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.section}>
           <Text style={styles.label}>Product Image</Text>
           <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
@@ -358,61 +364,61 @@ export default function EditProduct() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Categories & Templates</Text>
-          <Text style={styles.subLabel}>Select a category or a quick template to pre-fill details</Text>
-          <View style={styles.verticalPicker}>
-            {[...new Set([...categories, ...allTemplates.map(t => t.category)])].map(cat => (
-              <View key={cat} style={styles.categoryGroup}>
+          <Text style={styles.label}>Product Description</Text>
+          <TextInput 
+            style={[styles.input, styles.textArea]} 
+            placeholder="Describe your product..." 
+            value={description} 
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={4}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Select Category *</Text>
+          <View style={styles.chipContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+              {availableCategories.map(cat => (
                 <TouchableOpacity 
-                  style={[styles.categoryHeader, category === cat && styles.activeCategoryHeader]}
-                  onPress={() => setCategory(cat)}
+                  key={cat.id} 
+                  style={[styles.chip, category === cat.id && styles.activeChip]}
+                  onPress={() => setCategory(cat.id)}
                 >
-                  <Text style={[styles.categoryHeaderText, category === cat && styles.activeCategoryHeaderText]}>{cat}</Text>
-                  <Ionicons name={category === cat ? "chevron-down" : "chevron-forward"} size={16} color={category === cat ? Colors.white : Colors.subText} />
+                  <Text style={[styles.chipText, category === cat.id && styles.activeChipText]}>{cat.name}</Text>
                 </TouchableOpacity>
-                
-                {category === cat && (
-                  <View style={styles.templateList}>
-                    {allTemplates.filter(t => t.category === cat).map(t => (
-                      <TouchableOpacity 
-                        key={t.id} 
-                        style={styles.templateItem}
-                        onPress={() => handleTemplateSelect(t)}
-                      >
-                        <Ionicons name="flash-outline" size={14} color={Colors.primary} />
-                        <Text style={styles.templateItemText}>{t.templateName}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity 
-                      style={styles.templateItem}
-                      onPress={() => {}}
-                    >
-                      <Text style={[styles.templateItemText, { color: Colors.subText, fontStyle: 'italic' }]}>Custom {cat} item</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            ))}
-            <TouchableOpacity 
-              style={[styles.categoryHeader, category === 'New' && styles.activeCategoryHeader]}
-              onPress={() => setCategory('New')}
-            >
-              <Text style={[styles.categoryHeaderText, category === 'New' && styles.activeCategoryHeaderText]}>+ Add New Category</Text>
-            </TouchableOpacity>
-            {category === 'New' && (
-              <TextInput 
-                style={[styles.input, { marginTop: 8 }]} 
-                placeholder="New Category Name" 
-                value={newCategory} 
-                onChangeText={setNewCategory} 
-              />
-            )}
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Quick Templates</Text>
+          <Text style={styles.subLabel}>Auto-fill details from system templates</Text>
+          <View style={styles.chipContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+              {allTemplates.map(t => (
+                <TouchableOpacity 
+                  key={t.id} 
+                  style={[styles.chip, templateId === t.id && styles.activeChipTemplate]}
+                  onPress={() => handleTemplateSelect(t)}
+                >
+                  <Ionicons 
+                    name="flash" 
+                    size={14} 
+                    color={templateId === t.id ? Colors.white : Colors.primary} 
+                    style={{ marginRight: 4 }} 
+                  />
+                  <Text style={[styles.chipText, templateId === t.id && styles.activeChipText]}>{t.templateName}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
 
         <View style={styles.row}>
           <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>Price (₹) *</Text>
+            <Text style={styles.label}>Base Price (₹) *</Text>
             <TextInput 
               style={styles.input} 
               placeholder="0.00" 
@@ -421,37 +427,21 @@ export default function EditProduct() {
               onChangeText={setPrice}
             />
           </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>Type</Text>
-          <View style={styles.pickerContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {types.map(t => (
+          <View style={[styles.section, { flex: 1 }]}>
+            <Text style={styles.label}>Type</Text>
+            <View style={styles.typeContainer}>
+              {['Veg', 'Non-Veg'].map(t => (
                 <TouchableOpacity 
                   key={t} 
-                  style={[styles.chip, type === t && styles.activeChip]}
+                  style={[styles.typeButton, type === t && (t === 'Veg' ? styles.activeVeg : styles.activeNonVeg)]}
                   onPress={() => setType(t)}
                 >
-                  <Text style={[styles.chipText, type === t && styles.activeChipText]}>{t}</Text>
+                  <View style={[styles.dot, { backgroundColor: t === 'Veg' ? '#2e7d32' : '#c62828' }]} />
+                  <Text style={[styles.typeText, type === t && styles.activeTypeText]}>{t}</Text>
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity 
-                style={[styles.chip, type === 'New' && styles.activeChip]}
-                onPress={() => setType('New')}
-              >
-                <Text style={[styles.chipText, type === 'New' && styles.activeChipText]}>+ New</Text>
-              </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
-          {type === 'New' && (
-            <TextInput 
-              style={[styles.input, { marginTop: 8 }]} 
-              placeholder="New Type Name" 
-              value={newType} 
-              onChangeText={setNewType} 
-            />
-          )}
         </View>
 
         <View style={styles.toggleRow}>
@@ -484,7 +474,7 @@ export default function EditProduct() {
           <Text style={styles.sectionTitle}>Add-ons</Text>
           <TouchableOpacity onPress={() => setShowAddOnForm(true)} style={styles.addButton}>
             <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
-            <Text style={styles.addButtonText}>Add Add-on</Text>
+            <Text style={styles.addButtonText}>Add New</Text>
           </TouchableOpacity>
         </View>
 
@@ -499,7 +489,7 @@ export default function EditProduct() {
               />
               <View style={{ flexDirection: 'row' }}>
                 <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Price (₹)</Text>
+                  <Text style={styles.tinyLabel}>Price (₹)</Text>
                   <TextInput 
                     style={styles.input} 
                     placeholder="Price" 
@@ -509,7 +499,7 @@ export default function EditProduct() {
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Free Qty Limit</Text>
+                  <Text style={styles.tinyLabel}>Free Limit</Text>
                   <TextInput 
                     style={styles.input} 
                     placeholder="Limit" 
@@ -520,8 +510,8 @@ export default function EditProduct() {
                 </View>
               </View>
             </View>
-            <View style={{ marginLeft: 8 }}>
-              <TouchableOpacity onPress={addAddOn} style={[styles.saveAddOnButton, { marginBottom: 8 }]}>
+            <View style={styles.formActions}>
+              <TouchableOpacity onPress={addAddOn} style={styles.saveAddOnButton}>
                 <Ionicons name="checkmark" size={24} color={Colors.white} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
@@ -531,28 +521,28 @@ export default function EditProduct() {
           </View>
         )}
 
-        {addOns.map(item => (
-          <View key={item.id} style={styles.addOnListItem}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.addOnName}>{item.name}</Text>
-              {item.freeLimit > 0 && (
-                <Text style={{ fontSize: 11, color: Colors.success, fontWeight: '500' }}>
-                  First {item.freeLimit} units free
-                </Text>
-              )}
+        <View style={styles.listContainer}>
+          {addOns.map(item => (
+            <View key={item.id} style={styles.addOnListItem}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.addOnName}>{item.name}</Text>
+                {item.freeLimit > 0 && (
+                  <Text style={styles.freeLimitText}>First {item.freeLimit} units free</Text>
+                )}
+              </View>
+              <Text style={styles.addOnPrice}>+₹{Number(item.price || 0).toFixed(2)}</Text>
+              <TouchableOpacity onPress={() => removeAddOn(item.id)} style={styles.removeBtn}>
+                <Ionicons name="trash-outline" size={18} color={Colors.error} />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.addOnPrice}>+₹{Number(item.price || 0).toFixed(2)}</Text>
-            <TouchableOpacity onPress={() => removeAddOn(item.id)}>
-              <Ionicons name="trash-outline" size={20} color={Colors.error} />
-            </TouchableOpacity>
-          </View>
-        ))}
+          ))}
+        </View>
 
-        {/* Advanced Customization Section */}
-        <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
+        {/* Build Your Own Customization Section */}
+        <View style={styles.customHeader}>
           <View>
-            <Text style={styles.label}>Advanced Customization</Text>
-            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+            <Text style={styles.label}>Build Your Own</Text>
+            <Text style={styles.subLabel}>Enable advanced customization options</Text>
           </View>
           <Switch 
             value={isCustomizable} 
@@ -565,66 +555,65 @@ export default function EditProduct() {
         {isCustomizable && (
           <View style={styles.customizationSection}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Customization Groups</Text>
-              <TouchableOpacity onPress={addCustomizationGroup} style={styles.addButton}>
-                <Ionicons name="add-circle" size={24} color={Colors.primary} />
-                <Text style={styles.addButtonText}>Add Group</Text>
+              <Text style={styles.sectionTitle}>Options Groups</Text>
+              <TouchableOpacity onPress={addCustomizationGroup} style={styles.addGroupBtn}>
+                <Ionicons name="add" size={20} color={Colors.white} />
+                <Text style={styles.addGroupBtnText}>New Group</Text>
               </TouchableOpacity>
             </View>
 
             {customizationGroups.map((group, index) => (
               <View key={group.id} style={styles.groupCard}>
                 <View style={styles.groupHeader}>
-                  <Text style={styles.groupNumber}>Group #{index + 1}</Text>
+                  <View style={styles.groupBadge}>
+                    <Text style={styles.groupBadgeText}>Group #{index + 1}</Text>
+                  </View>
                   <TouchableOpacity onPress={() => removeCustomizationGroup(group.id)}>
-                    <Ionicons name="close-circle" size={24} color={Colors.error} />
+                    <Ionicons name="close-circle" size={22} color={Colors.error} />
                   </TouchableOpacity>
                 </View>
 
                 <TextInput 
-                  style={styles.input} 
-                  placeholder="Group Name (e.g. Choose Your Base)" 
+                  style={[styles.input, { marginBottom: 12, fontWeight: '500' }]} 
+                  placeholder="Group Title (e.g. Extra Toppings)" 
                   value={group.name} 
                   onChangeText={(text) => updateCustomizationGroup(group.id, { name: text })} 
                 />
 
-                <View style={styles.groupSettings}>
-                  <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Required?</Text>
-                    <Switch 
-                      value={group.isRequired} 
-                      onValueChange={(val) => updateCustomizationGroup(group.id, { isRequired: val })} 
-                    />
-                  </View>
-                  <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Multi-select?</Text>
-                    <Switch 
-                      value={group.selectionType === 'MULTIPLE'} 
-                      onValueChange={(val) => updateCustomizationGroup(group.id, { selectionType: val ? 'MULTIPLE' : 'SINGLE' })} 
-                    />
-                  </View>
+                <View style={styles.groupControls}>
+                  <TouchableOpacity 
+                    style={[styles.controlBtn, group.isRequired && styles.activeControl]}
+                    onPress={() => updateCustomizationGroup(group.id, { isRequired: !group.isRequired })}
+                  >
+                    <Ionicons name={group.isRequired ? "checkbox" : "square-outline"} size={18} color={group.isRequired ? Colors.primary : Colors.subText} />
+                    <Text style={[styles.controlText, group.isRequired && styles.activeControlText]}>Required</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.controlBtn, group.selectionType === 'MULTIPLE' && styles.activeControl]}
+                    onPress={() => updateCustomizationGroup(group.id, { selectionType: group.selectionType === 'MULTIPLE' ? 'SINGLE' : 'MULTIPLE' })}
+                  >
+                    <Ionicons name={group.selectionType === 'MULTIPLE' ? "layers" : "stop-outline"} size={18} color={group.selectionType === 'MULTIPLE' ? Colors.primary : Colors.subText} />
+                    <Text style={[styles.controlText, group.selectionType === 'MULTIPLE' && styles.activeControlText]}>Multi-select</Text>
+                  </TouchableOpacity>
                 </View>
 
                 {group.selectionType === 'MULTIPLE' && (
-                  <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Max Selections</Text>
+                  <View style={styles.maxSelectContainer}>
+                    <Text style={styles.tinyLabel}>Max Selections (0 for unlimited)</Text>
                     <TextInput 
-                      style={[styles.input, { width: 60, textAlign: 'center' }]} 
+                      style={[styles.input, { width: '30%', textAlign: 'center', marginTop: 4 }]} 
                       keyboardType="numeric"
-                      value={group.maxSelections === undefined || group.maxSelections === null ? '' : group.maxSelections.toString()}
-                      onChangeText={(text) => {
-                        const val = text === '' ? null : parseInt(text);
-                        updateCustomizationGroup(group.id, { maxSelections: isNaN(val) ? null : val });
-                      }}
+                      value={group.maxSelections?.toString()}
+                      onChangeText={(text) => updateCustomizationGroup(group.id, { maxSelections: parseInt(text) || 0 })}
                     />
                   </View>
                 )}
 
-                <View style={styles.optionsList}>
-                  <Text style={styles.optionsTitle}>Options</Text>
+                <View style={styles.optionsArea}>
                   {group.options.map((opt) => (
-                    <View key={opt.id} style={styles.optionCard}>
-                      <View style={styles.optionRow}>
+                    <View key={opt.id} style={styles.optionRowWrapper}>
+                      <View style={styles.optionMain}>
                         <TextInput 
                           style={[styles.input, { flex: 2, marginRight: 8 }]} 
                           placeholder="Option Name" 
@@ -633,54 +622,41 @@ export default function EditProduct() {
                         />
                         <TextInput 
                           style={[styles.input, { flex: 1, marginRight: 8 }]} 
-                          placeholder="+₹ Price" 
+                          placeholder="+₹ 0" 
                           keyboardType="numeric"
                           value={opt.priceModifier?.toString()} 
                           onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { priceModifier: parseFloat(text) || 0 })} 
                         />
                         <TouchableOpacity onPress={() => removeOptionFromGroup(group.id, opt.id)}>
-                          <Ionicons name="remove-circle-outline" size={24} color={Colors.error} />
+                          <Ionicons name="trash-outline" size={20} color={Colors.error} />
                         </TouchableOpacity>
                       </View>
                       
-                      <View style={styles.optionExtras}>
-                        <View style={styles.settingItem}>
-                          <Text style={styles.extraLabel}>Allow Qty?</Text>
-                          <Switch 
-                            value={opt.allowQuantity} 
-                            onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
-                          />
-                        </View>
-                        {opt.allowQuantity && (
-                          <View style={styles.settingItem}>
-                            <Text style={styles.extraLabel}>Free Limit</Text>
-                            <TextInput 
-                              style={[styles.input, { width: 50, padding: 4, textAlign: 'center' }]} 
-                              keyboardType="numeric"
-                              value={opt.freeLimit?.toString()}
-                              onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
-                            />
-                          </View>
-                        )}
-                      </View>
+                      <View style={styles.optionSubSettings}>
+                        <TouchableOpacity 
+                          style={styles.subSettingBtn}
+                          onPress={() => updateOptionInGroup(group.id, opt.id, { allowQuantity: !opt.allowQuantity })}
+                        >
+                          <Ionicons name={opt.allowQuantity ? "add-circle" : "ellipse-outline"} size={16} color={opt.allowQuantity ? Colors.success : Colors.subText} />
+                          <Text style={styles.subSettingText}>Qty?</Text>
+                        </TouchableOpacity>
 
-                      <View style={{ marginTop: 8, paddingHorizontal: 4 }}>
-                        <Text style={[styles.extraLabel, { marginBottom: 4 }]}>Conflicts with (names, comma separated):</Text>
-                        <TextInput 
-                          style={[styles.input, { height: 35, fontSize: 12, backgroundColor: Colors.white }]} 
-                          placeholder="e.g. Milk, Tea" 
-                          value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : ''} 
-                          onChangeText={(text) => {
-                            const list = text.split(',').map(s => s.trim()).filter(s => !!s);
-                            updateOptionInGroup(group.id, opt.id, { conflicts: list });
-                          }} 
-                        />
+                        {opt.allowQuantity && (
+                          <TextInput 
+                            style={styles.miniInput} 
+                            placeholder="Free" 
+                            keyboardType="numeric"
+                            value={opt.freeLimit?.toString()}
+                            onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
+                          />
+                        )}
                       </View>
                     </View>
                   ))}
-                  <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptionButton}>
-                    <Ionicons name="add" size={20} color={Colors.primary} />
-                    <Text style={styles.addOptionText}>Add Option</Text>
+                  
+                  <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptBtn}>
+                    <Ionicons name="add" size={18} color={Colors.primary} />
+                    <Text style={styles.addOptText}>Add Option</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -688,25 +664,23 @@ export default function EditProduct() {
           </View>
         )}
 
-        <TouchableOpacity 
-          style={[styles.saveButton, saving && styles.disabledButton]} 
-          onPress={handleSave}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator color={Colors.white} />
-          ) : (
-            <Text style={styles.saveButtonText}>Save Changes</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.footer}>
+          <TouchableOpacity 
+            style={[styles.saveBtn, saving && styles.disabledBtn]} 
+            onPress={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={styles.saveBtnText}>Update Product</Text>
+            )}
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.deleteButton} 
-          onPress={handleDelete}
-        >
-          <Ionicons name="trash-outline" size={20} color={Colors.error} />
-          <Text style={styles.deleteButtonText}>Delete Product</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.delBtn} onPress={handleDelete}>
+            <Text style={styles.delBtnText}>Delete Permanently</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -717,52 +691,63 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff'
   },
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#f8f9fa',
   },
   content: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 40,
   },
-
   section: {
     marginBottom: 20,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.black,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a1a1a',
     marginBottom: 8,
   },
   subLabel: {
     fontSize: 12,
-    color: Colors.subText,
+    color: '#666',
+    marginBottom: 12,
   },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
     padding: 12,
-    fontSize: 16,
-    backgroundColor: Colors.grey,
+    fontSize: 15,
+    color: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   textArea: {
-    height: 100,
+    height: 80,
     textAlignVertical: 'top',
   },
   row: {
     flexDirection: 'row',
+    marginBottom: 10,
   },
   imagePicker: {
+    width: '100%',
     aspectRatio: 16 / 9,
-    backgroundColor: Colors.grey,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderStyle: 'dashed',
+    borderRadius: 14,
     overflow: 'hidden',
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   imagePlaceholder: {
     flex: 1,
@@ -771,37 +756,351 @@ const styles = StyleSheet.create({
   },
   placeholderText: {
     marginTop: 8,
-    color: Colors.subText,
+    color: '#999',
     fontSize: 14,
   },
   selectedImage: {
     width: '100%',
     height: '100%',
   },
-  pickerContainer: {
-    flexDirection: 'row',
+  chipContainer: {
+    marginTop: 4,
+  },
+  chipScroll: {
+    paddingRight: 16,
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: Colors.grey,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#eee',
     marginRight: 8,
   },
   activeChip: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
+  activeChipTemplate: {
+    backgroundColor: '#311b92',
+    borderColor: '#311b92',
+  },
   chipText: {
-    fontSize: 14,
-    color: Colors.subText,
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
   },
   activeChipText: {
-    color: Colors.white,
+    color: '#fff',
+  },
+  typeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f8f9fa',
+    padding: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  typeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeVeg: {
+    backgroundColor: '#e8f5e9',
+  },
+  activeNonVeg: {
+    backgroundColor: '#ffebee',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  typeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  activeTypeText: {
+    color: '#1a1a1a',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    elevation: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1a1a1a',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+  },
+  addButtonText: {
+    marginLeft: 4,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  addOnForm: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+  },
+  formActions: {
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  saveAddOnButton: {
+    backgroundColor: Colors.success,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cancelAddOnButton: {
+    backgroundColor: '#666',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addOnListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  addOnName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1a1a1a',
+  },
+  addOnPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginRight: 12,
+  },
+  freeLimitText: {
+    fontSize: 11,
+    color: Colors.success,
+    marginTop: 2,
+  },
+  removeBtn: {
+    padding: 4,
+  },
+  customHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  addGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  addGroupBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  groupCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  groupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  groupBadge: {
+    backgroundColor: '#f0f0f0',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  groupBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#666',
+    textTransform: 'uppercase',
+  },
+  groupControls: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  controlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  activeControl: {
+    backgroundColor: Colors.primary + '10',
+    borderColor: Colors.primary + '30',
+  },
+  controlText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+    marginLeft: 6,
+  },
+  activeControlText: {
+    color: Colors.primary,
+  },
+  optionRowWrapper: {
+    backgroundColor: '#fcfcfc',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  optionMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  optionSubSettings: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  subSettingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  subSettingText: {
+    fontSize: 11,
+    color: '#666',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  miniInput: {
+    width: 60,
+    height: 28,
+    backgroundColor: '#fff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#eee',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  addOptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 10,
+    marginTop: 5,
+  },
+  addOptText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+    marginLeft: 4,
+  },
+  footer: {
+    marginTop: 20,
+  },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  delBtn: {
+    marginTop: 15,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  delBtnText: {
+    color: Colors.error,
+    fontSize: 14,
     fontWeight: '600',
   },
+  tinyLabel: {
+    fontSize: 10,
+    color: '#999',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  }
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
