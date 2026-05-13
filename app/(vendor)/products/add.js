@@ -55,21 +55,23 @@ export default function AddProduct() {
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const [templatesRes, categoriesRes] = await Promise.all([
-          vendorApi.getTemplates(),
-          vendorApi.getCategoryList() // NEW ENDPOINT
-        ]);
-        
-        if (templatesRes.success && templatesRes.templates) {
-          setAllTemplates(templatesRes.templates);
-        }
-        
-        if (categoriesRes.success && categoriesRes.categories) {
-          setCategories(categoriesRes.categories);
-        }
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
+      const [templatesResult, categoriesResult] = await Promise.allSettled([
+        vendorApi.getTemplates(),
+        vendorApi.getCategoryList()
+      ]);
+
+      if (templatesResult.status === 'fulfilled') {
+        const data = templatesResult.value;
+        if (data?.success && data.templates) setAllTemplates(data.templates);
+      } else {
+        console.warn('[AddProduct] Templates fetch failed:', templatesResult.reason?.message);
+      }
+
+      if (categoriesResult.status === 'fulfilled') {
+        const data = categoriesResult.value;
+        if (data?.success && data.categories) setCategories(data.categories);
+      } else {
+        console.warn('[AddProduct] Categories fetch failed:', categoriesResult.reason?.message);
       }
     };
     fetchData();

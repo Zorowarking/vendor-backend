@@ -55,47 +55,52 @@ export default function EditProduct() {
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const [products, templatesRes, catsRes] = await Promise.all([
-          vendorApi.getProducts(),
-          vendorApi.getTemplates(),
-          vendorApi.getCategoryList()
-        ]);
+      const [productsResult, templatesResult, catsResult] = await Promise.allSettled([
+        vendorApi.getProducts(),
+        vendorApi.getTemplates(),
+        vendorApi.getCategoryList()
+      ]);
 
-        if (catsRes.success && catsRes.categories) {
-          setAvailableCategories(catsRes.categories);
-        }
-
-        if (templatesRes.success && templatesRes.templates) {
-          setAllTemplates(templatesRes.templates);
-        }
-
-        const product = products.find(p => p.id === id);
-        if (product) {
-          setName(product.name);
-          setDescription(product.description || '');
-          setPrice((product.price || 0).toString());
-          
-          // Set category (if array, pick first ID or handle multiple)
-          if (product.categories && product.categories.length > 0) {
-            setCategory(product.categories[0].id);
-          } else {
-            setCategory(product.category); // Fallback to old string field
-          }
-          
-          setType(product.type);
-          setIsAvailable(product.isAvailable);
-          setImage(product.image);
-          setIsCustomizable(product.isCustomizable || false);
-          setCustomizationGroups(product.customizationGroups || []);
-          setAddOns(product.addOns || []);
-          setTemplateId(product.templateId || null);
-        }
-      } catch (error) {
-        Alert.alert('Error', 'Failed to fetch product data');
-      } finally {
-        setLoading(false);
+      if (catsResult.status === 'fulfilled') {
+        const data = catsResult.value;
+        if (data?.success && data.categories) setAvailableCategories(data.categories);
+      } else {
+        console.warn('[EditProduct] Categories fetch failed:', catsResult.reason?.message);
       }
+
+      if (templatesResult.status === 'fulfilled') {
+        const data = templatesResult.value;
+        if (data?.success && data.templates) setAllTemplates(data.templates);
+      } else {
+        console.warn('[EditProduct] Templates fetch failed:', templatesResult.reason?.message);
+      }
+
+      const products = productsResult.status === 'fulfilled' ? productsResult.value : [];
+      const product = products.find(p => p.id === id);
+
+      if (product) {
+        setName(product.name);
+        setDescription(product.description || '');
+        setPrice((product.price || 0).toString());
+        
+        if (product.categories && product.categories.length > 0) {
+          setCategory(product.categories[0].id);
+        } else {
+          setCategory(product.category);
+        }
+        
+        setType(product.type);
+        setIsAvailable(product.isAvailable);
+        setImage(product.image);
+        setIsCustomizable(product.isCustomizable || false);
+        setCustomizationGroups(product.customizationGroups || []);
+        setAddOns(product.addOns || []);
+        setTemplateId(product.templateId || null);
+      } else if (productsResult.status === 'rejected') {
+        Alert.alert('Error', 'Failed to fetch product data');
+      }
+
+      setLoading(false);
     };
     fetchData();
   }, [id]);
