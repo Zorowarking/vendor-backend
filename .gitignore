@@ -54,3 +54,7 @@ server/scratch_check.js
 server/scratch_reset_vendor.js
 server/seed_products.js
 server/tests/
+
+# Sensitive credentials
+firebase-admin.json
+firebase-admin-minified.txt
