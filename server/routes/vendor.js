@@ -1307,4 +1307,9 @@ router.put('/products/:id/customization/sort', firebaseAuth, requireKyc, async (
   }
 });
 
+function stripCacheBuster(url) {
+  if (!url || typeof url !== 'string') return url;
+  return url.split('?')[0];
+}
+
 module.exports = router;

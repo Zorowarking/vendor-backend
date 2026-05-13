@@ -703,6 +703,8 @@ model CustomizationOption {
   displayOrder  Int                @default(0) @map("display_order")
   allowQuantity Boolean            @default(false) @map("allow_quantity")
   freeLimit     Int                @default(0) @map("free_limit")
+  conflicts     Json?
+  linkedProductId String?          @map("linked_product_id") @db.Uuid
   image_url     String?
   group         CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
