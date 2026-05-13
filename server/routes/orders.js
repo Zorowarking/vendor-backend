@@ -83,7 +83,7 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     // SFX Serviceability Check
     let deliveryCost = 0;
     
-    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+    if (env.USE_SANDBOX_PAYMENTS) {
       console.log('[CHECKOUT] Sandbox mode: Skipping real SFX serviceability check.');
       deliveryCost = 40.00; // Mock delivery fee for sandbox
     } else {
@@ -125,7 +125,7 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
       clientSecret: 'mock_secret_123',
     };
 
-    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+    if (env.USE_SANDBOX_PAYMENTS) {
       const sandboxPaymentService = require('../services/sandboxPaymentService');
       const sandboxIntent = sandboxPaymentService.createPaymentIntent(
         cart.total + deliveryCost,

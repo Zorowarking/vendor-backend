@@ -9,7 +9,8 @@ const config = {
   SFX_WEBHOOK_SECRET: process.env.SFX_WEBHOOK_SECRET,
   SFX_REQUEST_TIMEOUT_MS: parseInt(process.env.SFX_REQUEST_TIMEOUT_MS || '10000', 10),
   SFX_RETRY_ATTEMPTS: parseInt(process.env.SFX_RETRY_ATTEMPTS || '3', 10),
-  NODE_ENV: process.env.NODE_ENV || 'development'
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  USE_SANDBOX_PAYMENTS: process.env.USE_SANDBOX_PAYMENTS === 'true'
 };
 
 const activeToken = config.NODE_ENV === 'production' ? config.SFX_PROD_TOKEN : config.SFX_STAGING_TOKEN;
