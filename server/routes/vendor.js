@@ -30,14 +30,12 @@ router.get('/categories', firebaseAuth, async (req, res) => {
 
     const vendorId = profile?.vendor?.id || null;
 
-    // Fetch system categories (vendorId is null) + vendor specific categories
+    // Build OR conditions without nulls (Prisma rejects null entries in OR)
+    const orConditions = [{ vendorId: null }]; // System categories always included
+    if (vendorId) orConditions.push({ vendorId });
+
     const categories = await prisma.category.findMany({
-      where: {
-        OR: [
-          vendorId ? { vendorId: vendorId } : null,
-          { vendorId: null } // System categories
-        ].filter(Boolean)
-      },
+      where: { OR: orConditions },
       orderBy: { displayOrder: 'asc' }
     });
 
@@ -45,7 +43,7 @@ router.get('/categories', firebaseAuth, async (req, res) => {
     res.json({ success: true, categories });
   } catch (error) {
     console.error('[VENDOR] Fetch Categories error:', error);
-    res.status(500).json({ error: 'Failed to fetch categories' });
+    res.status(500).json({ error: 'Failed to fetch categories', details: error.message });
   }
 });
 
