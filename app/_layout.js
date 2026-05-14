@@ -1,12 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import * as KeepAwake from 'expo-keep-awake';
-
-// Safely handle keep-awake to prevent crashes in Expo Go or Web
-try {
-  KeepAwake.activateKeepAwakeAsync().catch(() => {
-    console.log('[DEBUG] Keep awake unavailable, skipping.');
-  });
-} catch (e) {}
 import { View, DeviceEventEmitter, Platform, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
@@ -34,6 +26,21 @@ export default function Layout() {
       systemBubbleService.initialize();
     };
     init();
+
+    // Activate keep-awake safely inside component lifecycle
+    let keepAwakeTag;
+    import('expo-keep-awake').then((KeepAwake) => {
+      keepAwakeTag = 'vendor-app';
+      KeepAwake.activateKeepAwakeAsync(keepAwakeTag).catch(() => {
+        console.log('[DEBUG] Keep awake unavailable, skipping.');
+      });
+    }).catch(() => {});
+
+    return () => {
+      import('expo-keep-awake').then((KeepAwake) => {
+        if (keepAwakeTag) KeepAwake.deactivateKeepAwake(keepAwakeTag);
+      }).catch(() => {});
+    };
   }, []);
 
   // Notification Initialization
