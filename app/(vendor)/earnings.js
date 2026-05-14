@@ -172,14 +172,18 @@ export default function VendorEarnings() {
               <Text style={[styles.tableCol, { flex: 1.5 }]}>Date</Text>
               <Text style={styles.tableCol}>Orders</Text>
               <Text style={styles.tableCol}>Gross</Text>
-              <Text style={styles.tableCol}>Net</Text>
+              <Text style={[styles.tableCol, { flex: 1.2 }]}>Status</Text>
             </View>
             {data.breakdown.map((row, idx) => (
               <View key={idx} style={styles.tableRow}>
                 <Text style={[styles.tableCell, { flex: 1.5 }]}>{row.date}</Text>
                 <Text style={styles.tableCell}>{row.count}</Text>
                 <Text style={styles.tableCell}>₹{Number(row.gross || 0).toFixed(2)}</Text>
-                <Text style={[styles.tableCell, { fontWeight: 'bold', color: Colors.success }]}>₹{Number(row.net || 0).toFixed(2)}</Text>
+                <View style={[styles.tableCell, { flex: 1.2, alignItems: 'center' }]}>
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusText}>Paid</Text>
+                  </View>
+                </View>
               </View>
             ))}
           </View>
@@ -265,5 +269,17 @@ const styles = StyleSheet.create({
   },
   tableCell: {
     flex: 1, fontSize: 13, color: Colors.black, textAlign: 'center'
+  },
+  statusBadge: {
+    backgroundColor: Colors.success + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: Colors.success,
+    textTransform: 'uppercase'
   }
 });

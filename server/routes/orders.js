@@ -137,7 +137,7 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
       );
       paymentData.paymentIntentId = sandboxIntent.id;
       paymentData.isSandbox = true;
-      paymentData.message = 'Sandbox payment initiated.';
+      paymentData.message = 'PayPal Sandbox payment initiated.';
     } else {
       // In real app, call Stripe/Razorpay here
       paymentData.paymentIntentId = `pi_${Math.random().toString(36).substring(7)}`;

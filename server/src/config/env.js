@@ -10,7 +10,7 @@ const config = {
   SFX_REQUEST_TIMEOUT_MS: parseInt(process.env.SFX_REQUEST_TIMEOUT_MS || '10000', 10),
   SFX_RETRY_ATTEMPTS: parseInt(process.env.SFX_RETRY_ATTEMPTS || '3', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',
-  USE_SANDBOX_PAYMENTS: process.env.USE_SANDBOX_PAYMENTS === 'true'
+  USE_SANDBOX_PAYMENTS: process.env.USE_SANDBOX_PAYMENTS === 'true' || (process.env.NODE_ENV !== 'production')
 };
 
 const activeToken = config.NODE_ENV === 'production' ? config.SFX_PROD_TOKEN : config.SFX_STAGING_TOKEN;

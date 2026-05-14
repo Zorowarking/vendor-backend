@@ -1323,12 +1323,43 @@ router.get('/earnings', firebaseAuth, requireKyc, async (req, res) => {
     const { period } = req.query; // daily, weekly, monthly
     const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
     
-    // Use raw query or aggregate for sums (Simulated DB grouping here)
+    // 1. Overall Aggregates
     const earnings = await prisma.vendorEarning.aggregate({
       _sum: { orderTotal: true, commissionAmt: true, vendorPayout: true },
       _count: { orderId: true },
-      where: { vendorId: profile.vendor.id } // apply date filters based on period
+      where: { vendorId: profile.vendor.id }
     });
+
+    // 2. Trend Data (Grouped by Date)
+    // We'll fetch last 7 days or all depending on period
+    const earningsList = await prisma.vendorEarning.findMany({
+      where: { vendorId: profile.vendor.id },
+      orderBy: { earnedAt: 'asc' },
+      take: 30 // Get last 30 entries for breakdown
+    });
+
+    // Group by date for chart (simple implementation)
+    const groupedData = {};
+    earningsList.forEach(e => {
+      const date = e.earnedAt.toISOString().split('T')[0];
+      if (!groupedData[date]) {
+        groupedData[date] = { gross: 0, net: 0, count: 0 };
+      }
+      groupedData[date].gross += Number(e.orderTotal);
+      groupedData[date].net += Number(e.vendorPayout);
+      groupedData[date].count += 1;
+    });
+
+    const sortedDates = Object.keys(groupedData).sort();
+    const chartLabels = sortedDates.slice(-7).map(d => d.split('-').slice(1).join('/')); // MM/DD
+    const chartPoints = sortedDates.slice(-7).map(d => groupedData[d].gross);
+
+    const breakdown = sortedDates.reverse().map(date => ({
+      date,
+      count: groupedData[date].count,
+      gross: groupedData[date].gross,
+      net: groupedData[date].net
+    }));
 
     res.json({
       success: true,
@@ -1336,8 +1367,11 @@ router.get('/earnings', firebaseAuth, requireKyc, async (req, res) => {
       commission: parseFloat(earnings._sum.commissionAmt || 0),
       net: parseFloat(earnings._sum.vendorPayout || 0),
       orderCount: earnings._count.orderId || 0,
-      chartData: { labels: ['Mon','Tue','Wed'], datasets: [{ data: [10,20,30] }] }, // Mocked analytics shape for chart kit
-      breakdown: [] // Mocked List
+      chartData: { 
+        labels: chartLabels.length > 0 ? chartLabels : ['-'], 
+        datasets: [{ data: chartPoints.length > 0 ? chartPoints : [0] }] 
+      },
+      breakdown: breakdown
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch earnings' });
