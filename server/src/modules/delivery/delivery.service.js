@@ -16,8 +16,7 @@ class DeliveryService {
    */
   async initiateDelivery(orderId) {
     if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
-      logger.info(`[DeliveryService] Sandbox mode detected. Simulating delivery for order ${orderId}`);
-      this.startSandboxSimulation(orderId);
+      logger.info(`[DeliveryService] Sandbox mode detected. Skipping auto-simulation for ${orderId}. Waiting for Vendor.`);
       return;
     }
     logger.info(`[DeliveryService] initiateDelivery called for order ${orderId}`);
@@ -145,6 +144,11 @@ class DeliveryService {
       });
       logger.info(`[DeliveryService] successfully sent dispatch ready signal for order ${orderId}`);
     } catch (error) {
+      if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
+        logger.info(`[DeliveryService] Sandbox mode: Simulating rider pickup and delivery for ${orderId}`);
+        this.startSandboxRiderSimulation(orderId);
+        return;
+      }
       logger.warn(`[DeliveryService] Failed to send dispatch ready signal for order ${orderId}: ${error.message}`);
       this._emitAdminError(orderId, error);
     }
@@ -206,37 +210,28 @@ class DeliveryService {
   }
 
   /**
-   * Simulates delivery progress for sandbox testing.
+   * Simulates rider progress for sandbox testing.
+   * Only covers steps AFTER the vendor is ready.
    */
-  async startSandboxSimulation(orderId) {
+  async startSandboxRiderSimulation(orderId) {
     const transitions = [
-      { status: 'accepted', delay: 5000 },
-      { status: 'preparing', delay: 10000 },
-      { status: 'ready_for_pickup', delay: 15000 },
-      { status: 'picked_up', delay: 20000 },
-      { status: 'delivered', delay: 30000 },
+      { status: 'picked_up', delay: 10000 }, // Rider arrives and picks up in 10s
+      { status: 'delivered', delay: 25000 }, // Delivered 15s after pickup
     ];
 
     for (const t of transitions) {
       setTimeout(async () => {
         try {
-          // Check if order still exists and is not cancelled
           const currentOrder = await prisma.order.findUnique({ where: { id: orderId } });
-          if (!currentOrder) {
-             logger.info(`[SandboxDelivery] Order ${orderId} no longer exists. Stopping simulation.`);
-             return;
-          }
-          
-          if (['CANCELLED', 'ORDER_CANCELLED', 'CANCELLED_BY_VENDOR'].includes(currentOrder.status.toUpperCase())) {
-             logger.info(`[SandboxDelivery] Order ${orderId} is cancelled. Stopping simulation.`);
+          if (!currentOrder || ['CANCELLED', 'ORDER_CANCELLED', 'CANCELLED_BY_VENDOR'].includes(currentOrder.status.toUpperCase())) {
              return;
           }
 
-          logger.info(`[SandboxDelivery] Transitioning order ${orderId} to ${t.status}`);
+          logger.info(`[SandboxRider] Transitioning order ${orderId} to ${t.status}`);
           const OrderService = require('../../../services/orderService');
           await OrderService.updateOrderStatus(orderId, t.status, 'SYSTEM');
         } catch (err) {
-          logger.error(`[SandboxDelivery] Failed transition to ${t.status}: ${err.message}`);
+          logger.error(`[SandboxRider] Failed transition to ${t.status}: ${err.message}`);
         }
       }, t.delay);
     }

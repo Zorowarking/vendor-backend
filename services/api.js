@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
     return process.env.EXPO_PUBLIC_API_BASE_URL;
   }
   // Fallback for local development if env is missing
-  return 'https://vendor-backend-production-c171.up.railway.app/api';
+  return 'https://vendor-backend-production-c171.up.railway.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();

@@ -153,7 +153,7 @@ export default function KYCStatus() {
             <TouchableOpacity 
               style={[styles.primaryButton, { marginTop: 16 }]}
               onPress={() => {
-                router.push('/kyc');
+                router.push('/kyc/home');
               }}
             >
               <View style={[styles.gradientButton, { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.primary }]}>

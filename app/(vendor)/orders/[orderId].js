@@ -20,24 +20,13 @@ export default function OrderDetailScreen() {
     state.orderHistory.find((o) => o.id === orderId)
   );
 
-  if (!order) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Order not found or has been completed.</Text>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const isFlagged = order.status?.toUpperCase() === 'FLAGGED';
-
+  // ✅ ALL hooks must be declared before any early return
   const [trackingData, setTrackingData] = React.useState(null);
 
   React.useEffect(() => {
+    if (!order) return;
     const status = order?.status?.toLowerCase();
-    if (order && status !== 'delivered' && status !== 'cancelled') {
+    if (status !== 'delivered' && status !== 'cancelled') {
       const handleLocationUpdate = (data) => {
         if (data.orderId === orderId) {
           setTrackingData(prev => ({ ...prev, ...data }));
@@ -59,6 +48,20 @@ export default function OrderDetailScreen() {
       };
     }
   }, [orderId, order?.status]);
+
+  // Early return AFTER all hooks
+  if (!order) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Order not found or has been completed.</Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const isFlagged = order.status?.toUpperCase() === 'FLAGGED';
 
   const handleStatusUpdate = async (newStatus) => {
     try {
@@ -107,17 +110,12 @@ export default function OrderDetailScreen() {
       {/* Shadowfax Delivery Tracking Section */}
       {(order.status?.toLowerCase() === 'ready_for_pickup' || order.status?.toLowerCase() === 'out_for_delivery' || trackingData) && (
         <View style={styles.trackingCard}>
-          <View style={styles.trackingHeader}>
-            <Ionicons name="bicycle" size={20} color={Colors.primary} />
-            <Text style={styles.trackingTitle}>Shadowfax Delivery</Text>
-          </View>
-          
           {trackingData ? (
             <View style={styles.trackingBody}>
               <View style={styles.trackingRow}>
                 <View style={styles.trackingDotActive} />
                 <Text style={styles.trackingStatusText}>
-                  Rider is {trackingData.pickupEta ? `${trackingData.pickupEta} mins away` : 'on the way'}
+                  Delivery is {trackingData.pickupEta ? `${trackingData.pickupEta} mins away` : 'on the way'}
                 </Text>
               </View>
               {trackingData.lat && (
@@ -127,18 +125,10 @@ export default function OrderDetailScreen() {
               )}
             </View>
           ) : (
-            <Text style={styles.trackingWaitText}>Awaiting rider assignment...</Text>
+            <Text style={styles.trackingWaitText}>Awaiting for delivery...</Text>
           )}
 
-          {order.trackUrl && (
-            <TouchableOpacity 
-              style={styles.trackLink} 
-              onPress={() => Linking.openURL(order.trackUrl)}
-            >
-              <Text style={styles.trackLinkText}>Track in Shadowfax Portal</Text>
-              <Ionicons name="open-outline" size={14} color={Colors.primary} />
-            </TouchableOpacity>
-          )}
+
         </View>
       )}
 
@@ -151,11 +141,25 @@ export default function OrderDetailScreen() {
               <Text style={styles.itemName}>{item.name}</Text>
               
               {item.addons && item.addons.length > 0 && (
-                <Text style={styles.addonsText}>Add-ons: + {item.addons.join(', ')}</Text>
+                <View style={styles.addonsList}>
+                  <Text style={styles.addonsHeader}>Selections:</Text>
+                  {item.addons.map((addon, idx) => (
+                    <View key={idx} style={styles.addonItem}>
+                      <Ionicons name="add-circle-outline" size={12} color={Colors.primary} />
+                      <Text style={styles.addonText}>{addon}</Text>
+                    </View>
+                  ))}
+                </View>
               )}
-
+              
               {item.instructions && (
-                <Text style={styles.itemInstructions}>Note: {item.instructions}</Text>
+                <View style={styles.instructionsContainer}>
+                  <View style={styles.instructionsHeader}>
+                    <Ionicons name="information-circle" size={16} color={Colors.primary} />
+                    <Text style={styles.instructionsLabel}>Custom Requirement</Text>
+                  </View>
+                  <Text style={styles.itemInstructions}>{item.instructions}</Text>
+                </View>
               )}
             </View>
           </View>
@@ -389,6 +393,59 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 16,
     color: Colors.black,
-    fontWeight: '500'
+    fontWeight: '600'
+  },
+  addonsList: {
+    marginTop: 8,
+    backgroundColor: '#F9FAFB',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  addonsHeader: {
+    fontSize: 11,
+    color: Colors.subText,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  addonItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  addonText: {
+    fontSize: 13,
+    color: Colors.black,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  instructionsContainer: {
+    marginTop: 10,
+    backgroundColor: '#FFFBEB',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+  },
+  instructionsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  instructionsLabel: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '800',
+    marginLeft: 6,
+    textTransform: 'uppercase',
+  },
+  itemInstructions: {
+    fontSize: 14,
+    color: '#92400E',
+    lineHeight: 20,
+    fontWeight: '500',
   }
 });

@@ -77,6 +77,8 @@ setTimeout(async () => {
               where: { id: orderId }, 
               data: { 
                 status: 'CANCELLED',
+                refundStatus: order.paymentGatewayRef ? 'PENDING' : 'NONE',
+                refundAmount: order.paymentGatewayRef ? order.totalAmount : null,
                 isFlaggedAdmin: true, 
                 flagReason: 'Vendor SLA Timeout (No Acceptance)',
                 statusHistory: {
@@ -138,6 +140,23 @@ setTimeout(async () => {
                 reason: 'Vendor failed to mark order as ready within expected time'
               }
             });
+          } else if (type === 'auto_prepare' && order.status === 'accepted') {
+            console.log(`[BULLMQ] Order ${orderId} auto-transitioning to Preparing Order.`);
+            await prisma.order.update({
+              where: { id: orderId },
+              data: { 
+                status: 'preparing',
+                preparingAt: new Date(),
+                statusHistory: {
+                  create: {
+                    status: 'preparing',
+                    changedBy: 'SYSTEM',
+                    notes: 'Auto-transitioned to preparing after 15 seconds'
+                  }
+                }
+              }
+            });
+            emitOrderStatusUpdate(orderId, 'preparing', 'SYSTEM', order.vendorId);
           }
         }, { 
           connection,

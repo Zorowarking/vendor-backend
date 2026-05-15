@@ -419,7 +419,7 @@ function ActiveOrderCard({ order, router }) {
         )}
         {order.status === 'ready_for_pickup' && (
           <View style={styles.rowBetween}>
-            <Text style={styles.waitingText}>Awaiting Rider...</Text>
+            <Text style={styles.waitingText}>Awaiting for delivery...</Text>
           </View>
         )}
       </View>

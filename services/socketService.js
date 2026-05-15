@@ -22,6 +22,7 @@ class SocketService {
     const token = useAuthStore.getState().sessionToken;
     
     const namespaceUrl = role === 'VENDOR' ? `${SOCKET_URL}/vendor` : `${SOCKET_URL}/rider`;
+    console.log(`[SOCKET] Connecting to ${namespaceUrl}...`);
     
     this.socket = io(namespaceUrl, {
       transports: ['websocket'], // ONLY WebSocket to prevent 502 polling storms
@@ -59,9 +60,15 @@ class SocketService {
     this.socket.on('connect_error', (err) => {
       // Silence noisy errors during production or clean logs
       if (err.message.includes('timeout') || err.message.includes('xhr poll error')) {
-        console.warn('Socket: Offline Mode (No backend detected).');
+        console.warn(`[SOCKET] Offline Mode: Could not reach ${SOCKET_URL}. Ensure backend is running.`);
       } else {
-        console.error('Socket connection error:', err.message);
+        console.error('[SOCKET] Connection error details:', {
+          message: err.message,
+          type: err.type,
+          description: err.description,
+          context: err.context,
+          url: SOCKET_URL
+        });
       }
     });
 

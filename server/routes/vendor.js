@@ -573,8 +573,8 @@ router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
       create: { vendorId: profile.vendor.id, totalOrders: 1, acceptedWithinSla: 1 }
     });
 
-    // Schedule 1-minute SLA for preparation start
-    await orderSlaQueue.add('prepareTimeout', { orderId: id, type: 'vendor_prepare_start' }, { delay: 1 * 60 * 1000 });
+    // Schedule 15-second auto-transition to "Preparing Order"
+    await orderSlaQueue.add('autoPrepare', { orderId: id, type: 'auto_prepare' }, { delay: 15 * 1000 });
 
     emitOrderStatusUpdate(id, 'accepted', 'VENDOR');
     res.json({ success: true });
@@ -595,7 +595,23 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
 
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order || order.vendorId !== profile.vendor.id) return res.status(404).json({ error: 'Order not found' });
-    if (order.status !== 'pending_vendor') return res.status(400).json({ error: 'Order already processed' });
+    
+    // Allow cancellation if not yet picked up or delivered
+    const cancellableStatuses = [
+      'pending_vendor', 
+      'accepted', 
+      'preparing', 
+      'ready_for_pickup', 
+      'Awaiting Vendor Acceptance',
+      'payment_successful'
+    ];
+    
+    if (!cancellableStatuses.includes(order.status)) {
+      return res.status(400).json({ 
+        error: `Order cannot be cancelled. Current status: ${order.status}`,
+        code: 'ORDER_PROCESSED'
+      });
+    }
 
     // Check if the vendor is within operating hours (read from their stored schedule)
     const isWithinOperatingHours = checkVendorOperatingHours(profile.vendor.operatingHours);
@@ -608,27 +624,21 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
       });
     }
 
+    const OrderService = require('../services/orderService');
+    await OrderService.updateOrderStatus(id, 'cancelled_by_vendor', 'VENDOR');
+
+    // Update with specific reasons (since updateOrderStatus handles the generic status)
     await prisma.order.update({
       where: { id },
-      data: { 
-        status: 'cancelled_by_vendor', 
-        cancellationReason: reason, 
-        cancellationNote: otherNotes || null,
-        statusHistory: {
-          create: {
-            status: 'cancelled_by_vendor',
-            changedBy: 'VENDOR',
-            notes: `Rejected by vendor. Reason: ${reason}. ${otherNotes ? 'Notes: ' + otherNotes : ''}`
-          }
-        }
+      data: {
+        cancellationReason: reason,
+        cancellationNote: otherNotes || null
       }
     });
 
-    emitOrderStatusUpdate(id, 'cancelled_by_vendor', 'VENDOR');
-    
     // Check if vendor should automatically go offline
     await checkAndTransitionVendorOffline(profile.vendor.id);
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('[VENDOR] Reject order error:', error);
@@ -657,6 +667,90 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
     res.status(500).json({ error: 'Support request failed' });
   }
 });
+
+// Helper to format orders with item details for vendor (Async with fallback for UUIDs)
+const formatOrdersForVendorAsync = async (orders) => {
+  const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const allIds = new Set();
+  
+  // 1. Collect all IDs that need resolution
+  orders.forEach(o => {
+    o.items.forEach(i => {
+      if (i.addonsSummary) {
+        const summary = typeof i.addonsSummary === 'string' ? JSON.parse(i.addonsSummary) : i.addonsSummary;
+        if (summary.selectedAddons) {
+          summary.selectedAddons.forEach(a => {
+            const id = typeof a === 'object' ? a.id : a;
+            if (id && isUuid(id) && !(typeof a === 'object' && a.name)) allIds.add(id);
+          });
+        }
+        if (summary.customizations) {
+          summary.customizations.forEach(c => {
+            if (c.selectedOptions) {
+              c.selectedOptions.forEach(opt => {
+                const id = typeof opt === 'object' ? opt.id : opt;
+                if (id && isUuid(id) && !(typeof opt === 'object' && opt.name)) allIds.add(id);
+              });
+            }
+          });
+        }
+      }
+    });
+  });
+
+  // 2. Fetch names from DB
+  const nameMap = new Map();
+  if (allIds.size > 0) {
+    const [addons, options] = await Promise.all([
+      prisma.productAddon.findMany({ where: { id: { in: Array.from(allIds) } }, select: { id: true, name: true } }),
+      prisma.customizationOption.findMany({ where: { id: { in: Array.from(allIds) } }, select: { id: true, name: true } })
+    ]);
+    addons.forEach(a => nameMap.set(a.id, a.name));
+    options.forEach(o => nameMap.set(o.id, o.name));
+  }
+
+  // 3. Format orders
+  return orders.map(o => ({
+    ...o,
+    customerName: o.customer?.fullName || 'Customer',
+    total: parseFloat(o.totalAmount),
+    items: o.items.map(i => {
+      const details = [];
+      let instructions = null;
+      
+      if (i.addonsSummary) {
+        const summary = typeof i.addonsSummary === 'string' ? JSON.parse(i.addonsSummary) : i.addonsSummary;
+        instructions = summary.instructions || null;
+        
+        if (summary.selectedAddons && Array.isArray(summary.selectedAddons)) {
+          summary.selectedAddons.forEach(a => {
+            const name = (typeof a === 'object' && a.name) ? a.name : nameMap.get(typeof a === 'object' ? a.id : a);
+            if (name && !isUuid(name)) details.push(name);
+          });
+        }
+        
+        if (summary.customizations && Array.isArray(summary.customizations)) {
+          summary.customizations.forEach(group => {
+            if (group.selectedOptions && Array.isArray(group.selectedOptions)) {
+              group.selectedOptions.forEach(opt => {
+                const name = (typeof opt === 'object' && opt.name) ? opt.name : nameMap.get(typeof opt === 'object' ? opt.id : opt);
+                if (name && !isUuid(name)) details.push(name);
+              });
+            }
+          });
+        }
+      }
+
+      return { 
+        qty: i.quantity, 
+        name: i.productName,
+        addons: details, 
+        instructions: instructions,
+        isCustomized: details.length > 0
+      };
+    })
+  }));
+};
 
 // Get Vendor Orders (Active & History)
 router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
@@ -724,7 +818,6 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
         }
       }
 
-      // Re-fetch orders locally instead of redirecting
       const freshOrders = await prisma.order.findMany({
         where: { vendorId: profile.vendor.id },
         include: { 
@@ -734,12 +827,7 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
         orderBy: { createdAt: 'desc' }
       });
       
-      const formatted = freshOrders.map(o => ({
-        ...o,
-        customerName: o.customer?.fullName || 'Customer',
-        total: parseFloat(o.totalAmount),
-        items: o.items.map(i => ({ qty: i.quantity, name: i.productName }))
-      }));
+      const formatted = await formatOrdersForVendorAsync(freshOrders);
 
       const activeStatuses = ['pending_vendor', 'accepted', 'preparing', 'ready_for_pickup', 'pending_vendor_response'];
       return res.json({
@@ -749,12 +837,7 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
     }
 
     // Format for frontend
-    const formattedOrders = orders.map(o => ({
-      ...o,
-      customerName: o.customer?.fullName || 'Customer',
-      total: parseFloat(o.totalAmount),
-      items: o.items.map(i => ({ qty: i.quantity, name: i.productName }))
-    }));
+    const formattedOrders = await formatOrdersForVendorAsync(orders);
 
     // Split into active (pending, accepted, preparing, ready) and history
     const activeStatuses = ['pending_vendor', 'accepted', 'preparing', 'ready_for_pickup', 'pending_vendor_response'];

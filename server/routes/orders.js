@@ -113,7 +113,8 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
         console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
         // If store code is missing, it's a configuration error
         if (!vendor.sfxStoreCode && !env.SFX_STORE_CODE) {
-          return res.status(500).json({ error: 'DELIVERY_CONFIG_ERROR', message: 'Vendor delivery not configured.' });
+          console.warn('[CHECKOUT-DEMO] Bypassing delivery config error for demo. Assigning mock cost of 40.');
+          deliveryCost = 40.00;
         }
       }
     }
@@ -255,6 +256,53 @@ router.get('/:id', firebaseAuth, requireCustomer, async (req, res) => {
     res.json({ success: true, order });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch order details' });
+  }
+});
+
+// POST /orders/:id/cancel — customer order cancellation
+router.post('/:id/cancel', firebaseAuth, requireCustomer, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await prisma.order.findUnique({
+      where: { id, customerId: req.customer.id }
+    });
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    
+    const cancellableStatuses = ['pending_vendor', 'accepted'];
+    if (!cancellableStatuses.includes(order.status)) {
+        return res.status(400).json({ error: 'Order cannot be cancelled at this stage' });
+    }
+
+    let refundStatus = order.refundStatus;
+    if (Number(order.totalAmount) > 0) {
+        refundStatus = 'PENDING';
+    }
+
+    const updatedOrder = await prisma.order.update({
+        where: { id },
+        data: {
+            status: 'cancelled',
+            refundStatus,
+        }
+    });
+
+    await prisma.orderStatusHistory.create({
+        data: {
+            orderId: id,
+            status: 'cancelled',
+            changedBy: 'CUSTOMER'
+        }
+    });
+
+    // Notify vendor
+    const { getIo } = require('../lib/socket');
+    getIo().to(`vendor_${order.vendorId}`).emit('order_cancelled', { orderId: id, reason: 'Cancelled by customer' });
+
+    res.json({ success: true, order: updatedOrder });
+  } catch (error) {
+    console.error('[ORDER CANCEL] Error:', error);
+    res.status(500).json({ error: 'Failed to cancel order' });
   }
 });
 

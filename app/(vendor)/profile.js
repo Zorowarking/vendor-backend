@@ -15,7 +15,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Dimensions
+  Dimensions,
+  Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -510,7 +511,7 @@ export default function VendorProfile() {
             <View style={[styles.badge, styles.badgeApproved]}>
               <Text style={styles.badgeText}>{profile.kycStatus}</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/kyc/status')}>
+            <TouchableOpacity onPress={() => router.push('/kyc/home')}>
               <Text style={styles.linkText}>Update Docs</Text>
             </TouchableOpacity>
           </View>
@@ -545,16 +546,25 @@ export default function VendorProfile() {
           onPress={async () => {
             const message = `Hello Foodie Support, I am Vendor: ${profile.businessName}. I need assistance.`;
             const whatsappUrl = `whatsapp://send?phone=919063851105&text=${encodeURIComponent(message)}`;
-            const fallbackUrl = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+            const browserUrl = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+            
             try {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              // Try the native app first
               const supported = await Linking.canOpenURL(whatsappUrl);
               if (supported) {
                 await Linking.openURL(whatsappUrl);
               } else {
-                await Linking.openURL(fallbackUrl);
+                // Fallback to browser link which handles everything
+                await Linking.openURL(browserUrl);
               }
             } catch (err) {
-              Alert.alert('Error', 'Could not open WhatsApp.');
+              // Final fallback to browser link if everything else fails
+              try {
+                await Linking.openURL(browserUrl);
+              } catch (finalErr) {
+                Alert.alert('Error', 'Could not open WhatsApp or Browser.');
+              }
             }
           }}
         >

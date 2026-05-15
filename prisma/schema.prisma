@@ -623,6 +623,8 @@ model Order {
   deliveredAt              DateTime?              @map("delivered_at") @db.Timestamptz(6)
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  refundStatus             String?                @default("NONE") @map("refund_status") @db.VarChar(20)
+  refundAmount             Decimal?               @map("refund_amount") @db.Decimal(10, 2)
   deliveryFailureReason    String?                @map("delivery_failure_reason") @db.VarChar(255)
   preparingAt              DateTime?              @map("preparing_at") @db.Timestamptz(6)
   readyAt                  DateTime?              @map("ready_at") @db.Timestamptz(6)

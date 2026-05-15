@@ -1,3 +1,13 @@
+// PRODUCTION HARDENING: Disable all console logs in release builds
+if (!__DEV__) {
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  console.error = (msg) => {
+    // Optional: send to error tracking service like Sentry
+  };
+}
+
 import React, { useState, useEffect } from 'react';
 import { View, DeviceEventEmitter, Platform, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -10,7 +20,7 @@ import { useNotificationStore } from '../store/notificationStore';
 import { systemBubbleService } from '../services/systemBubbleService';
 import { useVendorStore } from '../store/vendorStore';
 import { vendorApi } from '../services/vendorApi';
-
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export default function Layout() {
   const { isAuthenticated, role, profileStatus, user } = useAuthStore();
@@ -178,6 +188,7 @@ export default function Layout() {
   if (!isMounted) return null;
 
   return (
+    <ErrorBoundary>
     <View style={{ flex: 1 }}>
       <NetworkBanner />
       <NotificationBanner 
@@ -191,5 +202,6 @@ export default function Layout() {
         <Stack.Screen name="auth/role-select" options={{ title: 'Role Selection' }} />
       </Stack>
     </View>
+    </ErrorBoundary>
   );
 }

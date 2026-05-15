@@ -15,6 +15,7 @@
     "android": {
       "package": "com.vantyrn.vendor",
       "googleServicesFile": "./google-services.json",
+      "versionCode": 2,
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDEUqPA15poXPNybxUcDYiM3XdfoiJ_suk"

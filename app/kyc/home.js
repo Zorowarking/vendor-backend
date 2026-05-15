@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
@@ -125,10 +126,20 @@ export default function KYCIndex() {
             <Text style={styles.submitButtonText}>
               {profileStatus === 'UNDER_REVIEW' ? 'Update & Resubmit KYC' : 
                profileStatus === 'REJECTED' ? 'Fix & Resubmit KYC' : 
+               (profileStatus === 'APPROVED' || profileStatus === 'READY' || profileStatus === 'ACTIVE') ? 'Update & Wait for Approval' :
                'Submit KYC for Review'}
             </Text>
           )}
         </TouchableOpacity>
+        
+        {(profileStatus === 'APPROVED' || profileStatus === 'READY' || profileStatus === 'ACTIVE') && (
+          <View style={styles.warningBox}>
+            <Ionicons name="warning" size={16} color={Colors.warning} />
+            <Text style={styles.warningText}>
+              Note: Updating your documents will temporarily put your account back into "Under Review" status until an admin approves the new documents.
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -230,5 +241,23 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: Colors.border,
+  },
+  warningBox: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFBEB',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+    marginBottom: 40,
+    alignItems: 'flex-start',
+  },
+  warningText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    marginLeft: 8,
+    lineHeight: 18,
+    fontWeight: '500',
   }
 });

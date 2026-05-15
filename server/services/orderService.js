@@ -65,7 +65,8 @@ class OrderService {
             lineTotal: Number(item.total || 0),
             addonsSummary: {
               selectedAddons: item.options?.selectedAddons || [],
-              customizations: item.options?.customizations || []
+              customizations: item.options?.customizations || [],
+              instructions: item.options?.instructions || null
             }
           }))
         }
@@ -125,15 +126,74 @@ class OrderService {
     await prisma.cart.delete({ where: { id: cart.id } });
 
     // 3. Fire Notifications
-    emitOrderStatusUpdate(order.id, 'pending_vendor', 'CUSTOMER');
+    // 3. Enrich items with names for the socket event
+    const allIds = new Set();
+    const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     
+    order.items.forEach(i => {
+      const summary = typeof i.addonsSummary === 'string' ? JSON.parse(i.addonsSummary) : i.addonsSummary;
+      if (summary.selectedAddons) {
+        summary.selectedAddons.forEach(a => {
+          const id = typeof a === 'object' ? a.id : a;
+          if (id && isUuid(id) && !(typeof a === 'object' && a.name)) allIds.add(id);
+        });
+      }
+      if (summary.customizations) {
+        summary.customizations.forEach(c => {
+          if (c.selectedOptions) {
+            c.selectedOptions.forEach(opt => {
+              const id = typeof opt === 'object' ? opt.id : opt;
+              if (id && isUuid(id) && !(typeof opt === 'object' && opt.name)) allIds.add(id);
+            });
+          }
+        });
+      }
+    });
+
+    const nameMap = new Map();
+    if (allIds.size > 0) {
+      const [addons, options] = await Promise.all([
+        prisma.productAddon.findMany({ where: { id: { in: Array.from(allIds) } }, select: { id: true, name: true } }),
+        prisma.customizationOption.findMany({ where: { id: { in: Array.from(allIds) } }, select: { id: true, name: true } })
+      ]);
+      addons.forEach(a => nameMap.set(a.id, a.name));
+      options.forEach(o => nameMap.set(o.id, o.name));
+    }
+
     const formattedOrder = {
       ...order,
       customerName: customerName,
       total: Number(order.totalAmount),
-      items: order.items.map(i => ({ qty: i.quantity, name: i.productName }))
+      items: order.items.map(i => {
+        const details = [];
+        const summary = typeof i.addonsSummary === 'string' ? JSON.parse(i.addonsSummary) : i.addonsSummary;
+        if (summary.selectedAddons) {
+          summary.selectedAddons.forEach(a => {
+            const name = (typeof a === 'object' && a.name) ? a.name : nameMap.get(typeof a === 'object' ? a.id : a);
+            if (name && !isUuid(name)) details.push(name);
+          });
+        }
+        if (summary.customizations) {
+          summary.customizations.forEach(c => {
+            if (c.selectedOptions) {
+              c.selectedOptions.forEach(opt => {
+                const name = (typeof opt === 'object' && opt.name) ? opt.name : nameMap.get(typeof opt === 'object' ? opt.id : opt);
+                if (name && !isUuid(name)) details.push(name);
+              });
+            }
+          });
+        }
+        return { 
+          qty: i.quantity, 
+          name: i.productName,
+          addons: details,
+          instructions: summary.instructions || null
+        };
+      })
     };
     emitIncomingOrder(cart.vendorId, formattedOrder);
+    
+    emitOrderStatusUpdate(order.id, 'pending_vendor', 'CUSTOMER');
     
     // Update Floating Bubble
     const activeOrdersCount = await prisma.order.count({
@@ -160,6 +220,9 @@ class OrderService {
    * Update order status and notify all parties
    */
   static async updateOrderStatus(orderId, newStatus, actorRole) {
+    const orderToUpdate = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!orderToUpdate) throw new Error('Order not found');
+
     const terminalStatuses = ['CANCELLED', 'CANCELLED_BY_VENDOR', 'ORDER_CANCELLED'];
     if (terminalStatuses.includes(newStatus.toUpperCase())) {
       try {
@@ -179,7 +242,12 @@ class OrderService {
             status: newStatus,
             changedBy: actorRole
           }
-        }
+        },
+        // Refund Logic: Trigger if cancelled and payment exists (Payment Agnostic)
+        ...(terminalStatuses.includes(newStatus.toUpperCase()) && orderToUpdate.paymentGatewayRef ? {
+          refundStatus: 'PENDING',
+          refundAmount: orderToUpdate.totalAmount
+        } : {})
       },
       include: { 
         customer: {

@@ -24,7 +24,11 @@ export const useAuthStore = create((set) => ({
       kycDocs: {},
     });
     // Persist session
-    AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+    try {
+      AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+    } catch (e) {
+      console.warn('Failed to persist session', e);
+    }
   },
 
   initialize: async () => {
@@ -49,7 +53,11 @@ export const useAuthStore = create((set) => ({
   },
 
   logout: async () => {
-    await AsyncStorage.removeItem('auth_session');
+    try {
+      await AsyncStorage.removeItem('auth_session');
+    } catch (e) {
+      console.warn('Failed to remove session', e);
+    }
     set({
       user: null,
       role: null,
