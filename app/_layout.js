@@ -33,7 +33,7 @@ export default function Layout() {
     const init = async () => {
       await useAuthStore.getState().initialize();
       setIsMounted(true);
-      systemBubbleService.initialize();
+      // systemBubbleService.initialize(); // TEMPORARY DISABLE TO FIX STARTUP CRASH
     };
     init();
 

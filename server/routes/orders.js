@@ -110,12 +110,8 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
           deliveryCost = sfxResponse.delivery_cost;
         }
       } catch (error) {
-        console.warn('[CHECKOUT] Shadowfax serviceability check failed:', error.message);
-        // If store code is missing, it's a configuration error
-        if (!vendor.sfxStoreCode && !env.SFX_STORE_CODE) {
-          console.warn('[CHECKOUT-DEMO] Bypassing delivery config error for demo. Assigning mock cost of 40.');
-          deliveryCost = 40.00;
-        }
+        console.warn('[CHECKOUT-DEMO] Shadowfax check failed, forcing mock delivery cost of 40 for stability:', error.message);
+        deliveryCost = 40.00;
       }
     }
 

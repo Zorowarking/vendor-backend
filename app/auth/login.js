@@ -123,7 +123,7 @@ export default function LoginScreen() {
             source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1160/1160358.png' }} 
             style={styles.logo}
           />
-          <Text style={styles.title}>Vendor & Partner App</Text>
+          <Text style={styles.title}>Vendors App</Text>
           <Text style={styles.subtitle}>Enter your phone number to continue</Text>
           <View style={styles.devHint}>
             <Text style={styles.devHintText}>Dev Tip: Use 99999 99999 / 123456 for bypass</Text>
