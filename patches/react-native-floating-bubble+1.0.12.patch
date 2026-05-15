@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-native-floating-bubble/android/build.gradle b/node_modules/react-native-floating-bubble/android/build.gradle
+index 2173e8d..633b7ec 100644
+--- a/node_modules/react-native-floating-bubble/android/build.gradle
++++ b/node_modules/react-native-floating-bubble/android/build.gradle
+@@ -41,6 +41,6 @@ allprojects {
+ dependencies {
+     implementation 'com.facebook.react:react-native:+'
+     //compile 'com.txusballesteros:bubbles:1.2.1',
+-    implementation 'com.github.txusballesteros:bubbles-for-android:develop-SNAPSHOT'
++    implementation 'com.github.txusballesteros:bubbles-for-android:0df5db16798f5fdcbc35372a12ac8f3312e709cb'
+ }
+   
+\ No newline at end of file
