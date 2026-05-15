@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -17,8 +17,31 @@ export default function OrderDetailScreen() {
   const order = useVendorStore((state) => 
     state.activeOrders.find((o) => o.id === orderId) || 
     state.incomingOrders.find((o) => o.id === orderId) ||
-    state.orderHistory.find((o) => o.id === orderId)
+    state.orderHistory.find((o) => o.id === orderId) ||
+    state.completedOrders?.find((o) => o.id === orderId)
   );
+
+  const callPhone = (number) => {
+    if (!number) return;
+    Linking.openURL(`tel:${number}`);
+  };
+
+  const openInMaps = () => {
+    const addr = order?.addressSnapshot;
+    if (!addr) return;
+    const query = encodeURIComponent(`${addr.addressLine1 || ''}, ${addr.city || ''}, ${addr.state || ''}`);
+    const url = Platform.select({
+      ios: `maps:0,0?q=${query}`,
+      android: `geo:0,0?q=${query}`
+    });
+    Linking.openURL(url);
+  };
+
+  const contactSupport = () => {
+    const message = `Support Request for Order #${orderId.substring(0,8)}. Vendor: ${order?.vendorName || 'Vantyrn Vendor'}`;
+    const url = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url);
+  };
 
   // ✅ ALL hooks must be declared before any early return
   const [trackingData, setTrackingData] = React.useState(null);
@@ -99,8 +122,37 @@ export default function OrderDetailScreen() {
           </View>
           <Text style={[styles.statusBadge, { backgroundColor: Colors.primary + '15', color: Colors.primary }]}>{order.status}</Text>
         </View>
-        <Text style={styles.customerName}>Customer: {order.customerName}</Text>
-        <Text style={styles.timeText}>Created: {new Date(order.createdAt).toLocaleTimeString()}</Text>
+        <View style={styles.customerCard}>
+          <View style={styles.row}>
+            <View>
+              <Text style={styles.customerName}>Customer: {order.customer?.fullName || order.customerName || 'Valued Customer'}</Text>
+              <Text style={styles.customerPhone}>{order.customer?.phone || 'Phone not provided'}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.callButton}
+              onPress={() => callPhone(order.customer?.phone)}
+            >
+              <Ionicons name="call" size={20} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.addressSection}>
+            <View style={styles.addressInfo}>
+              <Ionicons name="location" size={16} color={Colors.subText} />
+              <Text style={styles.addressText} numberOfLines={2}>
+                {order.addressSnapshot ? 
+                  `${order.addressSnapshot.addressLine1}, ${order.addressSnapshot.city}` : 
+                  'Address not available'}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.mapBtn} onPress={openInMaps}>
+              <Text style={styles.mapBtnText}>Open Maps</Text>
+              <Ionicons name="map-outline" size={14} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.timeText}>Created: {order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : 'N/A'}</Text>
         
         {order.status?.toLowerCase() !== 'pending' && order.acceptedAt && (
           <Text style={styles.timeTextDark}>Accepted: {new Date(order.acceptedAt).toLocaleTimeString()}</Text>
@@ -108,27 +160,40 @@ export default function OrderDetailScreen() {
       </View>
 
       {/* Shadowfax Delivery Tracking Section */}
-      {(order.status?.toLowerCase() === 'ready_for_pickup' || order.status?.toLowerCase() === 'out_for_delivery' || trackingData) && (
+      {(order.status?.toLowerCase() === 'ready_for_pickup' || order.status?.toLowerCase() === 'out_for_delivery' || order.rider || trackingData) && (
         <View style={styles.trackingCard}>
-          {trackingData ? (
+          <View style={styles.trackingHeader}>
+             <Ionicons name="bicycle" size={20} color={Colors.primary} />
+             <Text style={styles.trackingTitle}>Rider Assigned</Text>
+          </View>
+
+          {order.rider ? (
+            <View style={styles.riderRow}>
+              <View style={styles.riderInfo}>
+                <Text style={styles.riderName}>{order.rider.fullName || 'Assigned Rider'}</Text>
+                <Text style={styles.riderPhone}>{order.rider.phone || 'Contacting...'}</Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.callButtonSmall}
+                onPress={() => callPhone(order.rider.phone)}
+              >
+                <Ionicons name="call" size={16} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={styles.trackingWaitText}>Assigning nearest rider...</Text>
+          )}
+
+          {trackingData && (
             <View style={styles.trackingBody}>
               <View style={styles.trackingRow}>
                 <View style={styles.trackingDotActive} />
                 <Text style={styles.trackingStatusText}>
-                  Delivery is {trackingData.pickupEta ? `${trackingData.pickupEta} mins away` : 'on the way'}
+                  {trackingData.pickupEta ? `Arriving in ${trackingData.pickupEta} mins` : 'Rider is on the way'}
                 </Text>
               </View>
-              {trackingData.lat && (
-                <Text style={styles.trackingDetails}>
-                  Last seen at: {trackingData.lat.toFixed(4)}, {trackingData.lng.toFixed(4)}
-                </Text>
-              )}
             </View>
-          ) : (
-            <Text style={styles.trackingWaitText}>Awaiting for delivery...</Text>
           )}
-
-
         </View>
       )}
 
@@ -192,6 +257,11 @@ export default function OrderDetailScreen() {
             <Text style={styles.successButtonText}>Mark as Ready</Text>
           </TouchableOpacity>
         )}
+
+        <TouchableOpacity style={styles.supportButton} onPress={contactSupport}>
+          <Ionicons name="logo-whatsapp" size={20} color={Colors.primary} />
+          <Text style={styles.supportButtonText}>Contact Support</Text>
+        </TouchableOpacity>
       </View>
 
     </ScrollView>
@@ -447,5 +517,93 @@ const styles = StyleSheet.create({
     color: '#92400E',
     lineHeight: 20,
     fontWeight: '500',
+  },
+  customerCard: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.grey,
+  },
+  customerPhone: {
+    fontSize: 14,
+    color: Colors.subText,
+    marginTop: 2
+  },
+  callButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.success,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  callButtonSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.success,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  addressSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    backgroundColor: Colors.grey,
+    padding: 10,
+    borderRadius: 8
+  },
+  addressInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10
+  },
+  mapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.border,
+    paddingLeft: 10
+  },
+  mapBtnText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: 'bold',
+    marginRight: 4
+  },
+  riderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8
+  },
+  riderInfo: {
+    flex: 1
+  },
+  riderName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: Colors.black
+  },
+  riderPhone: {
+    fontSize: 13,
+    color: Colors.subText
+  },
+  supportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderRadius: 8
+  },
+  supportButtonText: {
+    color: Colors.primary,
+    fontWeight: '700',
+    marginLeft: 8
   }
 });

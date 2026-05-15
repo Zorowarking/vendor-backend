@@ -762,7 +762,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
       where: { vendorId: profile.vendor.id },
       include: { 
         items: true,
-        customer: { select: { fullName: true, phone: true } }
+        customer: { select: { fullName: true, phone: true } },
+        rider: { select: { fullName: true, phone: true } }
       },
       orderBy: { createdAt: 'desc' }
     });

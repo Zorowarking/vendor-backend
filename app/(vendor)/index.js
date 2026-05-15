@@ -157,9 +157,9 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
             </View>
           </View>
           
-          <Text style={styles.customerName}>{order.customerName}</Text>
+          <Text style={styles.customerName}>{order.customer?.fullName || order.customerName || 'Valued Customer'}</Text>
           <Text style={styles.itemsSummary}>
-            {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}
+            {order.items?.map(i => `${i.qty}x ${i.name || 'Unknown Item'}`).join(', ') || 'No items listed'}
           </Text>
           <Text style={styles.totalAmount}>
             ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
@@ -399,8 +399,8 @@ function ActiveOrderCard({ order, router }) {
         </View>
         <Text style={styles.statusBadge}>{order.status}</Text>
       </View>
-      <Text style={styles.itemsSummary}>
-        {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}
+      <Text style={styles.itemsSummary} numberOfLines={2}>
+        {order.items?.map(i => `${i.qty}x ${i.name || 'Item'}`).join(', ') || 'No items'}
       </Text>
       
       {order.acceptedAt && <ActiveTimer acceptedAt={order.acceptedAt} />}
