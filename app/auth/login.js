@@ -126,7 +126,7 @@ export default function LoginScreen() {
           <Text style={styles.title}>Vendors App</Text>
           <Text style={styles.subtitle}>Enter your phone number to continue</Text>
           <View style={styles.devHint}>
-            <Text style={styles.devHintText}>Dev Tip: Use 99999 99999 / 123456 for bypass</Text>
+            <Text style={styles.devHintText}>Dev Tip: 1234567890 / 123456 or 1111111111 / 222222</Text>
           </View>
         </View>
 

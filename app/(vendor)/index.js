@@ -179,17 +179,20 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
             <View style={styles.actionRowModal}>
               {!isOutsideHours ? (
                 <TouchableOpacity 
-                  style={[styles.rejectButtonModal, { backgroundColor: Colors.warning }]} 
+                  style={[styles.rejectButtonModal, { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2', borderWidth: 1 }]} 
                   onPress={() => onContactSupport(order.id)}
                 >
-                  <Text style={styles.rejectText}>Contact Support</Text>
+                  <Ionicons name="chatbubble-ellipses" size={18} color="#E65100" style={{ marginBottom: 4 }} />
+                  <Text style={[styles.rejectText, { color: '#E65100', fontSize: 13 }]}>Support</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
-                  <Text style={styles.rejectText}>Reject</Text>
+                  <Ionicons name="close-circle" size={18} color={Colors.error} style={{ marginBottom: 4 }} />
+                  <Text style={[styles.rejectText, { fontSize: 13 }]}>Reject</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.acceptButtonModal} onPress={() => onAccept(order.id)}>
+                <Ionicons name="checkmark-circle" size={24} color={Colors.white} style={{ marginBottom: 2 }} />
                 <Text style={styles.acceptText}>Accept Order</Text>
               </TouchableOpacity>
             </View>
@@ -796,10 +799,10 @@ const styles = StyleSheet.create({
   minimizeModalBtn: { position: 'absolute', left: 16, top: 16, zIndex: 10, padding: 4 },
   totalAmount: { fontSize: 22, fontWeight: 'bold', color: Colors.success, marginBottom: 16 },
   actionRowModal: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  rejectButtonModal: { flex: 1, paddingVertical: 14, borderRadius: 8, borderWidth: 1, borderColor: Colors.error, marginRight: 8, alignItems: 'center' },
-  rejectText: { color: Colors.error, fontWeight: 'bold', fontSize: 16 },
-  acceptButtonModal: { flex: 1, paddingVertical: 14, borderRadius: 8, backgroundColor: Colors.success, marginLeft: 8, alignItems: 'center' },
-  acceptText: { color: Colors.white, fontWeight: 'bold', fontSize: 16 },
+  rejectButtonModal: { flex: 0.45, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.grey, alignItems: 'center', justifyContent: 'center' },
+  rejectText: { color: Colors.error, fontWeight: 'bold', fontSize: 15 },
+  acceptButtonModal: { flex: 0.55, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.success, marginLeft: 12, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: Colors.success, shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
+  acceptText: { color: Colors.white, fontWeight: '800', fontSize: 18 },
   breachedWarning: { color: Colors.error, fontSize: 13, textAlign: 'center', marginTop: 10, fontWeight: 'bold' },
   
   outsideHoursBadge: {

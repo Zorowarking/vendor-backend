@@ -50,18 +50,9 @@
       "expo-document-picker",
       "expo-location",
       "expo-image-picker",
-      [
-        "@react-native-firebase/app",
-        {}
-      ],
-      [
-        "@react-native-firebase/auth",
-        {}
-      ],
-      [
-        "@react-native-firebase/messaging",
-        {}
-      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-firebase/messaging",
       [
         "@react-native-google-signin/google-signin",
         {
@@ -79,7 +70,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "7947780d-e319-41ed-8db8-0ffd70af17f0"
+        "projectId": "3cd53ead-d630-49a4-a60b-468e4bab9c94"
       }
     }
   }
