@@ -58,6 +58,14 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-firebase/messaging",
+      "expo-splash-screen",
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Allow Vantyrn Vendor to access your location to track order deliveries.",
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
       [
         "@react-native-google-signin/google-signin",
         {

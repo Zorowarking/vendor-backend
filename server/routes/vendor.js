@@ -1735,7 +1735,7 @@ router.get('/reviews', firebaseAuth, async (req, res) => {
           select: { id: true, createdAt: true }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { submittedAt: 'desc' }
     }));
 
     res.json({ success: true, reviews });

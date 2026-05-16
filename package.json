@@ -10,9 +10,6 @@
     "postinstall": "node -e \"const fs = require('fs'); const path = './node_modules/@unimodules/core'; if (!fs.existsSync(path)) fs.mkdirSync(path, {recursive: true}); fs.writeFileSync(path + '/package.json', JSON.stringify({ name: '@unimodules/core', version: '1.0.0', main: 'index.js' })); fs.writeFileSync(path + '/index.js', 'module.exports = require(\\'expo-modules-core\\');');\" && patch-package"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
-    "@prisma/config": "^7.7.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "^11.4.1",
@@ -41,7 +38,6 @@
     "expo-task-manager": "~14.0.9",
     "expo-web-browser": "~15.0.11",
     "firebase": "^12.11.0",
-    "pg": "^8.20.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",

@@ -5,18 +5,27 @@ import { MaterialTopTabs } from '../../components/MaterialTopTabs';
 import FloatingTabBar from '../../components/FloatingTabBar';
 import VendorHeaderToggle from '../../components/VendorHeaderToggle';
 import { useVendorStore } from '../../store/vendorStore';
+import { useSegments } from 'expo-router';
 
 export default function VendorLayout() {
+  const segments = useSegments();
   const incomingOrders = useVendorStore((state) => state.incomingOrders);
   const hasUnreadActivity = useVendorStore((state) => state.hasUnreadActivity);
   const pendingCount = incomingOrders.length;
 
+  // Stricter check: Only show the main header on the 4 primary tabs.
+  // The last segment of a main tab will be 'index', 'products', 'earnings', or 'profile'.
+  const currentPath = segments[segments.length - 1];
+  const isTabScreen = !currentPath || ['(vendor)', 'index', 'products', 'earnings', 'profile'].includes(currentPath);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Vendor Panel</Text>
-        <VendorHeaderToggle />
-      </View>
+    <View style={styles.container}>
+      {isTabScreen && (
+        <SafeAreaView edges={['top']} style={styles.header}>
+          <Text style={styles.headerTitle}>Vendor Panel</Text>
+          <VendorHeaderToggle />
+        </SafeAreaView>
+      )}
       
       <MaterialTopTabs
         tabBar={(props) => <FloatingTabBar {...props} />}
@@ -52,8 +61,7 @@ export default function VendorLayout() {
           }}
         />
       </MaterialTopTabs>
-
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -61,7 +69,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.white,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',

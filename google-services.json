@@ -7,50 +7,6 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:889299912788:android:e6a50ef9a2df3c207445c1",
-        "android_client_info": {
-          "package_name": "com.vantyrn.com"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "889299912788-995h9ndrj57jl01t95pdd9ul462g5f0s.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.vantyrn.com",
-            "certificate_hash": "42f4637eb20da72cfbb0d2b6ffb2211e2dc63c42"
-          }
-        },
-        {
-          "client_id": "889299912788-9e8anedmtd1ng83b7cs4k3uadh5lh6tb.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBlmojDbiVMO-LXQgBBjfM3YjMXcoaLfuw"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "889299912788-9e8anedmtd1ng83b7cs4k3uadh5lh6tb.apps.googleusercontent.com",
-              "client_type": 3
-            },
-            {
-              "client_id": "889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.vantyrn.vendor"
-              }
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
         "mobilesdk_app_id": "1:889299912788:android:b33817fbea8a04157445c1",
         "android_client_info": {
           "package_name": "com.vantyrn.vendor"
@@ -63,6 +19,14 @@
           "android_info": {
             "package_name": "com.vantyrn.vendor",
             "certificate_hash": "905a9e78e5ec6edb509e7d24b0207b8eb8c95716"
+          }
+        },
+        {
+          "client_id": "889299912788-t46g4d3kit7l86d6m1atlf0cpet1gj20.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vantyrn.vendor",
+            "certificate_hash": "80390ccb76261760e51e35f448ed4275fc518994"
           }
         },
         {

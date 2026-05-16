@@ -196,7 +196,7 @@ router.get('/vendors/:id/reviews', guestSession, async (req, res) => {
       include: {
         customer: { select: { name: true } }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { submittedAt: 'desc' }
     });
 
     res.json({ success: true, reviews });

@@ -26,6 +26,8 @@ import * as SplashScreen from 'expo-splash-screen';
 // Prevent auto-hiding to avoid flickering during auth initialization
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function Layout() {
   const { isAuthenticated, role, profileStatus, user } = useAuthStore();
   const { activeNotification, setActiveNotification, clearNotification } = useNotificationStore();
@@ -239,6 +241,7 @@ export default function Layout() {
 
   return (
     <ErrorBoundary>
+    <SafeAreaProvider>
     <View style={{ flex: 1 }}>
       <NetworkBanner />
       <NotificationBanner 
@@ -252,6 +255,7 @@ export default function Layout() {
 
       </Stack>
     </View>
+    </SafeAreaProvider>
     </ErrorBoundary>
   );
 }
