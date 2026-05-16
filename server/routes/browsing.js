@@ -28,18 +28,20 @@ router.get('/vendors', guestSession, async (req, res) => {
         businessName: true,
         businessCategory: true,
         logoUrl: true,
-        bannerUrl: true, // Added for banner display
+        bannerUrl: true,
         businessAddress: true,
         latitude: true,
         longitude: true,
         storeDescription: true,
-        onlineStatus: true
+        onlineStatus: true,
+        ratingsSummary: true
       }
     });
     const mappedVendors = vendors.map(v => ({
       ...v,
       name: v.businessName,      // Alias for frontend compatibility 
       description: v.storeDescription, // Alias for frontend compatibility
+      rating: v.ratingsSummary?.avgRating ? Number(v.ratingsSummary.avgRating).toFixed(1) : '4.5',
       logoUrl: v.logoUrl,
       bannerUrl: v.bannerUrl
     }));
@@ -63,11 +65,18 @@ router.get('/vendors/:id', guestSession, async (req, res) => {
   try {
     const { id } = req.params;
     const vendor = await prisma.vendor.findUnique({
-      where: { id }
+      where: { id },
+      include: { ratingsSummary: true }
     });
 
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
-    res.json({ success: true, vendor });
+    
+    const mappedVendor = {
+      ...vendor,
+      rating: vendor.ratingsSummary?.avgRating ? Number(vendor.ratingsSummary.avgRating).toFixed(1) : '4.5'
+    };
+
+    res.json({ success: true, vendor: mappedVendor });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch vendor details' });
   }
