@@ -587,7 +587,9 @@ router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order || order.vendorId !== profile.vendor.id) return res.status(404).json({ error: 'Order not found' });
 
-    if (order.status !== 'pending_vendor') return res.status(400).json({ error: 'Order already processed' });
+    if (!['pending_vendor', 'pending_vendor_response'].includes(order.status)) {
+      return res.status(400).json({ error: 'Order already processed' });
+    }
 
     await prisma.order.update({
       where: { id },
@@ -685,10 +687,20 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
 
 // Contact Support
 router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { reason } = req.body;
-    
+    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    // 1. Create Support Request Record (User explicitly asked where it was stored)
+    await prisma.vendorSupportRequest.create({
+      data: {
+        vendorId: profile.vendor.id,
+        orderId: id,
+        issueType: reason || 'General Support',
+        message: `Support requested by vendor for order ${id}`
+      }
+    });
+
+    // 2. Flag Order
     await prisma.order.update({
       where: { id },
       data: { 
@@ -698,13 +710,18 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
       }
     });
 
-    // Start 1 minute BullMQ timeout (increased to 5 for support)
-    await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 5 * 60 * 1000 });
+    // Start SLA timeout (increased to 5 for support)
+    try {
+      await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 5 * 60 * 1000 });
+    } catch (qErr) {
+      console.warn('[VENDOR] Failed to add supportTimeout to queue:', qErr.message);
+    }
     
     // Broadcast to admin socket
     const io = require('../lib/socket').getIo();
     if (io) io.of('/admin').to('admin_global').emit('vendor_support_request', { 
       orderId: id,
+      vendorName: profile.vendor.businessName,
       reason: reason || 'No specific reason'
     });
 
@@ -934,8 +951,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
 router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // preparing, ready_for_pickup
-    if (!['preparing', 'ready_for_pickup'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const { status } = req.body; // accepted, preparing, ready_for_pickup
+    if (!['accepted', 'preparing', 'ready_for_pickup'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
     const updateData = { status };
     if (status === 'preparing') {
