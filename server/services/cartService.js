@@ -252,7 +252,7 @@ class CartService {
           unitPrice: basePrice + itemAddonCharge,
           total: itemSubtotal + totalLineAddonCharge
         };
-      });
+      }).filter(Boolean);
 
       return {
         id: items[0].cartId, // Link back to original cart record
