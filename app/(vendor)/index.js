@@ -185,11 +185,6 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
           <View style={styles.cardHeader}>
             <View>
               <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
-              {order.paymentMethod?.startsWith('Sandbox') && (
-                <View style={styles.sandboxBadge}>
-                  <Text style={styles.sandboxText}>SANDBOX TEST</Text>
-                </View>
-              )}
             </View>
             <View style={[styles.timerBadge, isDanger && styles.timerBadgeDanger]}>
               <Text style={[styles.timerText, isDanger && styles.timerTextDanger]}>
@@ -442,11 +437,6 @@ const ActiveOrderCard = React.memo(({ order, router }) => {
         <View style={styles.headerLeft}>
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
           <View style={styles.badgeContainer}>
-            {order.paymentMethod?.startsWith('Sandbox') && (
-              <View style={styles.sandboxBadge}>
-                <Text style={styles.sandboxText}>SANDBOX</Text>
-              </View>
-            )}
             {(order.isFlagged || order.isFlaggedAdmin) && (
               <View style={styles.flaggedBadge}>
                 <Ionicons name="flag" size={10} color={Colors.white} />
@@ -735,11 +725,7 @@ export default function VendorOrdersDashboard() {
 
   return (
     <View style={styles.container}>
-      {onlineStatus !== 'online' && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineText}>You are offline — no new orders will be received.</Text>
-        </View>
-      )}
+
 
       <View style={styles.tabsRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'ACTIVE' && styles.activeTab]} onPress={() => setActiveTab('ACTIVE')}>

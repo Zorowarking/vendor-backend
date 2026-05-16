@@ -318,7 +318,7 @@ export default function AddProduct() {
         res.product?.reviewStatus === 'APPROVED' ? 'Success' : 'Submitted', 
         res.product?.reviewStatus === 'APPROVED' 
           ? 'Product added and activated successfully.' 
-          : `Product submitted for review. It will be activated once approved by the admin.\n\nReason: ${res.reviewReason || 'Structural changes detected'}\nDebug: ${JSON.stringify(res.debug || {})}`, 
+          : `Product submitted for review. It will be activated once approved by the admin.\n\nReason: ${res.reviewReason || 'Structural changes detected'}`, 
         [
           { 
             text: 'OK', 
