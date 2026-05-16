@@ -687,6 +687,9 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
 
 // Contact Support
 router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
     const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
     if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
 
@@ -728,7 +731,7 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
     res.json({ success: true });
   } catch (error) {
     console.error('[VENDOR] Support request error:', error);
-    res.status(500).json({ error: 'Support request failed' });
+    res.status(500).json({ error: 'Error processing support request' });
   }
 });
 
