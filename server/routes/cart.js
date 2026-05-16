@@ -35,9 +35,9 @@ router.post('/', firebaseAuthOptional, guestSession, async (req, res) => {
     res.json({ success: true, item: updatedItem });
   } catch (error) {
     console.error('[CART-ROUTE] Update error:', error);
-    if (error.status) return res.status(error.status).json({ error: error.message });
+    if (error.status) return res.status(error.status).json({ message: error.message });
     res.status(500).json({ 
-      error: 'Failed to update cart',
+      message: 'Failed to update cart',
       details: error.message || error,
       code: error.code
     });

@@ -34,20 +34,26 @@ class CartService {
         let queryWhere = customerId ? { customerId, vendorId } : { guestId, vendorId };
 
         // 1. Enforce Vendor Limits
-        const activeCarts = await prisma.cart.findMany({
+        const allCarts = await prisma.cart.findMany({
           where: customerId ? { customerId } : { guestId },
-          include: { items: { take: 1 } }
+          include: { items: true }
         });
         
-        const nonEmptyCarts = activeCarts.filter(c => c.items.length > 0);
-        const alreadyHasThisVendor = nonEmptyCarts.some(c => c.vendorId === vendorId);
+        const allProductIds = allCarts.flatMap(c => c.items.map(i => i.productId));
+        const allProducts = await prisma.product.findMany({
+          where: { id: { in: allProductIds } },
+          select: { vendorId: true }
+        });
         
+        const uniqueVendorsInCart = new Set(allProducts.map(p => p.vendorId));
+        const alreadyHasThisVendor = uniqueVendorsInCart.has(vendorId);
+
         if (!alreadyHasThisVendor) {
-          if (!customerId && nonEmptyCarts.length >= 1) {
+          if (!customerId && uniqueVendorsInCart.size >= 1) {
             // Guest User: 1-vendor limit
-            throw { status: 409, message: 'Guests can only order from one vendor at a time. Please login to shop from multiple restaurants!' };
+            throw { status: 409, message: 'As a guest, you have 1 free cart per vendor. To shop from multiple restaurants at once, please log in!' };
           }
-          if (customerId && nonEmptyCarts.length >= 3) {
+          if (customerId && uniqueVendorsInCart.size >= 3) {
             // Logged-in User: 3-vendor limit
             throw { status: 403, message: 'You can only have items from up to 3 different vendors in your cart.' };
           }
@@ -56,11 +62,9 @@ class CartService {
         const start = Date.now();
         let cart = await prisma.cart.findFirst({
           where: customerId ? { 
-            customerId, 
-            vendorId 
+            customerId
           } : { 
-            guestId, 
-            vendorId 
+            guestId
           },
           include: { items: true }
         });
@@ -164,10 +168,7 @@ class CartService {
    * Internal helper to enrich cart items with product and vendor details
    */
   static async _enrichCarts(allCarts, singleMode = false) {
-    const vendorIds = [...new Set(allCarts.map(c => c.vendorId))];
-    const vendors = await prisma.vendor.findMany({ where: { id: { in: vendorIds } } });
-    const vendorMap = vendors.reduce((acc, v) => ({ ...acc, [v.id]: v }), {});
-
+    // 1. Fetch all unique products across all carts
     const allProductIds = [...new Set(allCarts.flatMap(c => c.items.map(i => i.productId)))];
     const products = await prisma.product.findMany({
       where: { id: { in: allProductIds } },
@@ -178,13 +179,28 @@ class CartService {
     });
     const productMap = products.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
 
-    const enrichedCarts = allCarts.map(cart => {
+    // 2. Fetch all unique vendors based on products in cart
+    const vendorIds = [...new Set(products.map(p => p.vendorId))];
+    const vendors = await prisma.vendor.findMany({ where: { id: { in: vendorIds } } });
+    const vendorMap = vendors.reduce((acc, v) => ({ ...acc, [v.id]: v }), {});
+
+    // 3. Flatten and regroup items by their PRODUCT'S vendor
+    const allItems = allCarts.flatMap(c => c.items.map(item => ({ ...item, cartId: c.id })));
+    const itemsByVendor = allItems.reduce((acc, item) => {
+      const p = productMap[item.productId];
+      const vid = p?.vendorId || 'unknown';
+      if (!acc[vid]) acc[vid] = [];
+      acc[vid].push(item);
+      return acc;
+    }, {});
+
+    const enrichedCarts = Object.entries(itemsByVendor).map(([vid, items]) => {
       let subtotal = 0;
       let totalAddonCharges = 0;
-      
-      const items = cart.items.map(item => {
+
+      const enrichedItems = items.map(item => {
         const product = productMap[item.productId];
-        if (!product) return { ...item, name: 'Unknown Product', basePrice: 0, total: 0 };
+        if (!product) return { ...item, name: 'Unknown Product', price: 0, unitPrice: 0, total: 0 };
 
         const basePrice = Number(product.basePrice || 0);
         const itemSubtotal = basePrice * item.quantity;
@@ -227,13 +243,13 @@ class CartService {
           unitPrice: basePrice + itemAddonCharge,
           total: itemSubtotal + totalLineAddonCharge
         };
-      }).filter(i => i.name !== 'Unknown Product');
+      });
 
       return {
-        id: cart.id,
-        vendorId: cart.vendorId,
-        vendorName: vendorMap[cart.vendorId]?.businessName || 'Unknown Vendor',
-        items,
+        id: items[0].cartId, // Link back to original cart record
+        vendorId: vid,
+        vendorName: vendorMap[vid]?.businessName || 'Unknown Vendor',
+        items: enrichedItems,
         subtotal,
         totalAddonCharges,
         total: subtotal + totalAddonCharges
