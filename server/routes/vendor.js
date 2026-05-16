@@ -16,6 +16,15 @@ const { emitOrderStatusUpdate, emitVendorStatusUpdate } = require('../lib/socket
 const { getPresignedUploadUrl } = require('../lib/storage');
 const { checkAndTransitionVendorOffline } = require('../lib/vendorStatusHelper');
 
+// DIAGNOSTIC: Check if this file is actually loaded
+router.get('/health-check', (req, res) => {
+  res.json({ 
+    status: 'active', 
+    timestamp: '2026-05-16T08:00:00Z',
+    file: 'routes/vendor.js' 
+  });
+});
+
 // ==========================================
 // HIGH PRIORITY: Taxonomy & Static Routes
 // ==========================================
@@ -62,9 +71,24 @@ router.post('/categories', firebaseAuth, async (req, res) => {
 
 router.get('/products/templates', firebaseAuth, async (req, res) => {
   try {
+    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    const vendorId = profile?.vendor?.id;
+
     const templates = await prisma.productTemplate.findMany({
       orderBy: { createdAt: 'desc' }
     });
+
+    if (vendorId) {
+      // Get all template IDs already used by this vendor
+      const usedTemplateIds = await prisma.product.findMany({
+        where: { vendorId, templateId: { not: null } },
+        select: { templateId: true }
+      }).then(products => products.map(p => p.templateId));
+
+      const filteredTemplates = templates.filter(t => !usedTemplateIds.includes(t.id));
+      return res.json({ success: true, templates: filteredTemplates });
+    }
+
     res.json({ success: true, templates });
   } catch (error) {
     console.error('[VENDOR-API] Templates fetch error:', error);
@@ -92,6 +116,19 @@ router.get('/products/byo-assigned', firebaseAuth, async (req, res) => {
     });
 
     if (!assignment) return res.json({ success: true, template: null });
+
+    // Check if vendor already has a product created with this template
+    const usedProduct = await prisma.product.findFirst({
+      where: { 
+        vendorId: profile.vendor.id,
+        templateId: assignment.template_id
+      }
+    });
+
+    if (usedProduct) {
+      console.log(`[BYO] Template ${assignment.template_id} already used for product ${usedProduct.id}. Hiding from selection.`);
+      return res.json({ success: true, template: null });
+    }
 
     res.json({ success: true, template: assignment.byo_templates });
   } catch (error) {
@@ -1035,6 +1072,59 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
     const primaryCat = await prisma.category.findUnique({ where: { id: resolvedCategoryIds[0] } });
     const categoryName = primaryCat?.name || 'Uncategorized';
 
+    // Structural changes (Add-ons, Customizations, Restricted, or NEW Type) require REVIEW.
+    const STANDARD_TYPES = ['veg', 'non-veg', 'vegan', 'egg'];
+    const typeClean = (type || '').toLowerCase().trim();
+    const isNewType = typeClean && !STANDARD_TYPES.includes(typeClean);
+    
+    // Explicitly filter for non-empty addons/customizations
+    const validAddons = (Array.isArray(addOns) ? addOns : []).filter(a => a && a.name && a.name.trim());
+    const hasAddons = validAddons.length > 0;
+    
+    const validGroups = (Array.isArray(customizationGroups) ? customizationGroups : []).filter(g => g && g.name && g.name.trim() && Array.isArray(g.options) && g.options.length > 0);
+    const hasCustomization = validGroups.length > 0;
+    
+    const isRestrictedActive = isRestricted === 'true' || isRestricted === true;
+    
+    console.log('[DEBUG-REVIEW] Evaluating POST /products:', {
+      name,
+      receivedType: type,
+      typeClean,
+      isNewType,
+      hasAddons,
+      hasCustomization,
+      isRestrictedActive,
+      receivedRestricted: isRestricted,
+      receivedAddons: addOns,
+      receivedGroups: customizationGroups
+    });
+
+    // --- START SMART REVIEW EVALUATION ---
+    let finalStatus = 'APPROVED';
+    let finalReason = null;
+
+    if (hasAddons) { 
+      finalStatus = 'pending_review'; 
+      finalReason = 'Add-ons detected'; 
+    } else if (hasCustomization) { 
+      finalStatus = 'pending_review'; 
+      finalReason = 'Customization groups/options detected'; 
+    } else if (isRestrictedActive) { 
+      finalStatus = 'pending_review'; 
+      finalReason = 'Age restriction enabled'; 
+    } else if (isNewType) { 
+      finalStatus = 'pending_review'; 
+      finalReason = `Custom product type: ${type}`; 
+    }
+
+    console.log(`[VENDOR-API] Review Evaluation for "${name}":`, { 
+      status: finalStatus, 
+      reason: finalReason,
+      isNewType,
+      typeClean
+    });
+    // --- END SMART REVIEW EVALUATION ---
+
     const productPayload = {
       vendorId: profile.vendor.id, 
       name, 
@@ -1042,9 +1132,9 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       productType: type, 
       basePrice: parseFloat(price) || 0,
       category: categoryName,
-      isRestricted: isRestricted === 'true' || isRestricted === true,
-      isActive: false, 
-      reviewStatus: 'pending_review',
+      isRestricted: isRestrictedActive,
+      isActive: finalStatus === 'APPROVED' && (isAvailable === true || isAvailable === 'true'),
+      reviewStatus: finalStatus,
       isCustomizable: isCustomizable === 'true' || isCustomizable === true,
       customizationType: customizationType || 'NORMAL',
       templateId: templateId || null,
@@ -1111,7 +1201,20 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       } 
     });
 
-    res.json({ success: true, product });
+    res.json({ 
+      success: true, 
+      product, 
+      reviewReason: finalReason,
+      debug: {
+        hasAddons,
+        hasCustomization,
+        isRestrictedActive,
+        isNewType,
+        finalStatus,
+        receivedType: type,
+        typeClean
+      }
+    });
   } catch (error) {
     console.error('[VENDOR] Add Product error:', error);
     res.status(500).json({ error: 'Failed to add product', details: error.message });
@@ -1177,36 +1280,76 @@ router.put('/products/:id', firebaseAuth, requireKyc, async (req, res) => {
       if (templateId !== undefined) updateData.templateId = templateId || null;
   
       // Check for Review-Triggering Changes
-      // Only price, images, and addons are exempt
-      const coreFields = {
-        name: name,
-        description: description,
-        category: category,
-        productType: type,
-        isRestricted: isRestricted,
-        isCustomizable: isCustomizable,
-        customizationType: customizationType
-      };
-
+      // User allows updates to: Name, Price, Existing Categories, Description
+      // Review is triggered by: NEW addons, NEW customization options/groups, NEW product type
       let reviewTriggered = false;
 
-      // Customization changes also trigger review
-      if (customizationGroups !== undefined) {
-        reviewTriggered = true;
+      // 1. Fetch original product with relations for comparison
+      const originalProduct = await prisma.product.findUnique({
+        where: { id },
+        include: { addOns: true, customizationGroups: { include: { options: true } } }
+      });
+
+      // 2. Check for new add-ons
+      if (addOns !== undefined) {
+        const existingAddonNames = new Set(originalProduct.addOns.map(a => a.name.toLowerCase()));
+        const hasNewAddon = (Array.isArray(addOns) ? addOns : []).some(a => !existingAddonNames.has(a.name.toLowerCase()));
+        if (hasNewAddon) reviewTriggered = true;
       }
-      for (const [key, value] of Object.entries(coreFields)) {
-        // Compare with original product fields
-        const productKey = key === 'productType' ? 'productType' : key; 
-        if (value !== undefined && value !== product[productKey]) {
+
+      // 3. Check for structural customization changes
+      if (customizationGroups !== undefined && !reviewTriggered) {
+        const existingGroupNames = new Set(originalProduct.customizationGroups.map(g => g.name.toLowerCase()));
+        const incomingGroups = Array.isArray(customizationGroups) ? customizationGroups : [];
+        
+        if (incomingGroups.length > originalProduct.customizationGroups.length) {
           reviewTriggered = true;
-          break;
+        } else {
+          for (const group of incomingGroups) {
+            if (!existingGroupNames.has(group.name.toLowerCase())) {
+              reviewTriggered = true;
+              break;
+            }
+            // Check for new options within existing group
+            const oldGroup = originalProduct.customizationGroups.find(g => g.name.toLowerCase() === group.name.toLowerCase());
+            if (oldGroup) {
+              const existingOptionNames = new Set(oldGroup.options.map(o => o.name.toLowerCase()));
+              const hasNewOption = (Array.isArray(group.options) ? group.options : []).some(o => !existingOptionNames.has(o.name.toLowerCase()));
+              if (hasNewOption) {
+                reviewTriggered = true;
+                break;
+              }
+            }
+          }
         }
       }
 
+      // 4. Check for type change (Case-insensitive)
+      // Standard types are instant. ONLY NEW/CUSTOM types trigger review.
+      const STANDARD_TYPES = ['veg', 'non-veg', 'vegan', 'egg'];
+      const isCurrentlyStandard = STANDARD_TYPES.includes((originalProduct.productType || '').toLowerCase());
+      const isNewTypeSelected = type && !STANDARD_TYPES.includes(type.toLowerCase());
+      const isTypeChanged = type && (type || '').toLowerCase() !== (originalProduct.productType || '').toLowerCase();
+
+      if (isTypeChanged && isNewTypeSelected) {
+        console.log(`[VENDOR-API] NEW Type change detected: ${originalProduct.productType} -> ${type}. Triggering review.`);
+        reviewTriggered = true;
+      } else if (isTypeChanged) {
+        console.log(`[VENDOR-API] Basic Type change (Standard): ${originalProduct.productType} -> ${type}. Instant approval.`);
+      }
+
+      // 5. Check for Restricted toggle
+      if (isRestricted === true && originalProduct.isRestricted !== true) {
+        console.log(`[VENDOR-API] Age Restricted enabled. Triggering review.`);
+        reviewTriggered = true;
+      }
+
       if (reviewTriggered) {
-        console.log(`[VENDOR-API] Core change detected for product ${id}. Triggering re-review.`);
+        console.log(`[VENDOR-API] Product update for "${originalProduct.name}" (${id}) requires review. Status: pending_review`);
         updateData.reviewStatus = 'pending_review';
         updateData.isActive = false; // Force hide from customer view
+      } else {
+        console.log(`[VENDOR-API] Product update for "${originalProduct.name}" (${id}) approved instantly (basic info/standard type change).`);
       }
 
       // Use a transaction to ensure updates are atomic

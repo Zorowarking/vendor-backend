@@ -54,7 +54,7 @@ export default function AddProduct() {
 
   // Categories and Types fetched from API
   const [categories, setCategories] = useState([]);
-  const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
+  const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan', 'Egg']);
   const [allTemplates, setAllTemplates] = useState([]);
   const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
@@ -301,9 +301,31 @@ export default function AddProduct() {
         addProductToStore({ ...productData, id: res.id || Date.now().toString() });
       }
 
-      Alert.alert('Submitted', 'Product submitted for review. It will be activated once approved by the admin.', [
-        { text: 'OK', onPress: () => setTimeout(() => router.back(), 100) }
-      ]);
+      Alert.alert(
+        res.product?.reviewStatus === 'APPROVED' ? 'Success' : 'Submitted', 
+        res.product?.reviewStatus === 'APPROVED' 
+          ? 'Product added and activated successfully.' 
+          : `Product submitted for review. It will be activated once approved by the admin.\n\nReason: ${res.reviewReason || 'Structural changes detected'}\nDebug: ${JSON.stringify(res.debug || {})}`, 
+        [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              // Clear form
+              setName('');
+              setDescription('');
+              setPrice('');
+              setSelectedCategories([]);
+              setType('Veg');
+              setAddOns([]);
+              setIsCustomizable(false);
+              setCustomizationGroups([]);
+              setImage(null);
+              setTemplateId(null);
+              router.back();
+            } 
+          }
+        ]
+      );
 
     } catch (error) {
       console.error('Add Product Error:', error);
@@ -321,6 +343,13 @@ export default function AddProduct() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.reviewHintBox}>
+          <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
+          <Text style={styles.reviewHintText}>
+            Basic items (Name, Price, Category) go live instantly. Structural additions like add-ons or customizations will require Admin review.
+          </Text>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.label}>Product Image</Text>
           <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
@@ -1554,5 +1583,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
     alignSelf: 'flex-start',
+  },
+  reviewHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '10',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  reviewHintText: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 16,
   },
 });

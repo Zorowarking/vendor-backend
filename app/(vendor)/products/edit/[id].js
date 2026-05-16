@@ -11,7 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -26,11 +27,18 @@ export default function EditProduct() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
+  const REVIEW_TRIGGER_FIELDS = [
+    'New Add-ons',
+    'New Customization Groups',
+    'New Options/Modifiers',
+    'Product Type Change'
+  ];
+
+  
   // Form State
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
-  const [category, setCategory] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [type, setType] = useState('Veg');
   const [newType, setNewType] = useState('');
@@ -41,6 +49,10 @@ export default function EditProduct() {
   const [isCustomizable, setIsCustomizable] = useState(false);
   const [customizationGroups, setCustomizationGroups] = useState([]);
   const [templateId, setTemplateId] = useState(null);
+  const [showByoTemplates, setShowByoTemplates] = useState(false);
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
+  const [savingCategory, setSavingCategory] = useState(false);
   
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
@@ -50,32 +62,38 @@ export default function EditProduct() {
 
   // Categories and Types fetched from API
   const [availableCategories, setAvailableCategories] = useState([]);
-  const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan']);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [types, setTypes] = useState(['Veg', 'Non-Veg', 'Vegan', 'Egg']);
   const [allTemplates, setAllTemplates] = useState([]);
+  const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      const [productsResult, templatesResult, catsResult] = await Promise.allSettled([
+      const [productsResult, templatesResult, catsResult, assignedByoResult] = await Promise.allSettled([
         vendorApi.getProducts(),
         vendorApi.getTemplates(),
-        vendorApi.getCategoryList()
+        vendorApi.getCategoryList(),
+        vendorApi.getByoAssigned()
       ]);
 
       if (catsResult.status === 'fulfilled') {
         const data = catsResult.value;
         if (data?.success && data.categories) setAvailableCategories(data.categories);
-      } else {
-        console.warn('[EditProduct] Categories fetch failed:', catsResult.reason?.message);
       }
 
       if (templatesResult.status === 'fulfilled') {
         const data = templatesResult.value;
         if (data?.success && data.templates) setAllTemplates(data.templates);
-      } else {
-        console.warn('[EditProduct] Templates fetch failed:', templatesResult.reason?.message);
       }
 
-      const products = productsResult.status === 'fulfilled' ? productsResult.value : [];
+      if (assignedByoResult.status === 'fulfilled') {
+        const data = assignedByoResult.value;
+        if (data?.success && data.template) {
+          setAssignedByoTemplate(data.template);
+        }
+      }
+
+      const products = productsResult.status === 'fulfilled' ? (Array.isArray(productsResult.value) ? productsResult.value : productsResult.value?.products || []) : [];
       const product = products.find(p => p.id === id);
 
       if (product) {
@@ -84,9 +102,11 @@ export default function EditProduct() {
         setPrice((product.price || 0).toString());
         
         if (product.categories && product.categories.length > 0) {
-          setCategory(product.categories[0].id);
-        } else {
-          setCategory(product.category);
+          setSelectedCategories(product.categories.map(c => c.id));
+        } else if (product.category) {
+          // Fallback if backend returned a string for some reason, try to find the ID
+          const catObj = availableCategories.find(c => c.name === product.category);
+          if (catObj) setSelectedCategories([catObj.id]);
         }
         
         setType(product.type);
@@ -96,6 +116,7 @@ export default function EditProduct() {
         setCustomizationGroups(product.customizationGroups || []);
         setAddOns(product.addOns || []);
         setTemplateId(product.templateId || null);
+        if (product.templateId) setShowByoTemplates(true);
       } else if (productsResult.status === 'rejected') {
         Alert.alert('Error', 'Failed to fetch product data');
       }
@@ -103,7 +124,7 @@ export default function EditProduct() {
       setLoading(false);
     };
     fetchData();
-  }, [id]);
+  }, [id, availableCategories.length]);
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);
@@ -111,7 +132,7 @@ export default function EditProduct() {
     
     // Auto-select category if template matches
     const matchedCat = availableCategories.find(c => c.name.toLowerCase() === template.category?.toLowerCase());
-    if (matchedCat) setCategory(matchedCat.id);
+    if (matchedCat) setSelectedCategories([matchedCat.id]);
 
     if (template.templateData) {
       setDescription(template.templateData.description || '');
@@ -251,7 +272,7 @@ export default function EditProduct() {
       return;
     }
 
-    if (!category) {
+    if (selectedCategories.length === 0) {
       Alert.alert('Error', 'Please select a category');
       return;
     }
@@ -268,7 +289,7 @@ export default function EditProduct() {
         name,
         description,
         price: parseFloat(price),
-        category: [category],
+        category: selectedCategories,
         type,
         isRestricted,
         isAvailable,
@@ -344,6 +365,13 @@ export default function EditProduct() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.reviewHintBox}>
+          <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
+          <Text style={styles.reviewHintText}>
+            Basic edits (Name, Price, Description) are instant. Adding new options or changing types will require Admin review.
+          </Text>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.label}>Product Image</Text>
           <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
@@ -369,32 +397,188 @@ export default function EditProduct() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.label}>Product Description</Text>
+          <Text style={styles.label}>Description</Text>
           <TextInput 
             style={[styles.input, styles.textArea]} 
-            placeholder="Describe your product..." 
-            value={description} 
-            onChangeText={setDescription}
-            multiline
+            placeholder="Enter description" 
+            multiline 
             numberOfLines={4}
+            value={description}
+            onChangeText={setDescription}
           />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.label}>Select Category *</Text>
-          <View style={styles.chipContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
-              {availableCategories.map(cat => (
-                <TouchableOpacity 
-                  key={cat.id} 
-                  style={[styles.chip, category === cat.id && styles.activeChip]}
-                  onPress={() => setCategory(cat.id)}
+        {/* ── New Category Modal ── */}
+        <Modal visible={showNewCategoryModal} transparent animationType="fade" onRequestClose={() => setShowNewCategoryModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>New Category</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="e.g. Beverages, Snacks…"
+                value={newCategoryInput}
+                onChangeText={setNewCategoryInput}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancel} onPress={() => { setShowNewCategoryModal(false); setNewCategoryInput(''); }}>
+                  <Text style={{ color: Colors.subText, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalConfirm, savingCategory && { opacity: 0.6 }]}
+                  disabled={savingCategory}
+                  onPress={async () => {
+                    if (!newCategoryInput.trim()) return;
+                    setSavingCategory(true);
+                    try {
+                      const res = await vendorApi.createCategory(newCategoryInput.trim());
+                      if (res.success) {
+                        setAvailableCategories(prev => [...prev, res.category]);
+                        setSelectedCategories(prev => [...prev, res.category.id]);
+                        setNewCategoryInput('');
+                        setShowNewCategoryModal(false);
+                      }
+                    } catch (e) {
+                      Alert.alert('Error', 'Could not create category');
+                    } finally {
+                      setSavingCategory(false);
+                    }
+                  }}
                 >
-                  <Text style={[styles.chipText, category === cat.id && styles.activeChipText]}>{cat.name}</Text>
+                  {savingCategory ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={{ color: Colors.white, fontWeight: '700' }}>Create</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>{showByoTemplates ? 'Admin BYO Template' : 'Category'}</Text>
+          <Text style={styles.subLabel}>
+            {showByoTemplates
+              ? 'Template & category are set by admin — not editable'
+              : 'Select which category this product belongs to'}
+          </Text>
+
+          {/* Tab switcher */}
+          <View style={styles.byoToggleContainer}>
+            <TouchableOpacity
+              style={[styles.byoToggleButton, !showByoTemplates && styles.activeByoToggleButton]}
+              onPress={() => { 
+                setShowByoTemplates(false); 
+                setTemplateId(null); 
+                setSelectedCategories([]); 
+                setCustomizationGroups([]);
+                setIsCustomizable(false);
+              }}
+            >
+              <Text style={[styles.byoToggleText, !showByoTemplates && styles.activeByoToggleText]}>Regular Item</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.byoToggleButton, showByoTemplates && styles.activeByoToggleButton]}
+              onPress={() => { 
+                setShowByoTemplates(true); 
+                setTemplateId(null); 
+                setSelectedCategories([]); 
+                setCustomizationGroups([]);
+                setIsCustomizable(false);
+              }}
+            >
+              <Ionicons name="construct-outline" size={14} color={showByoTemplates ? Colors.white : Colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.byoToggleText, showByoTemplates && styles.activeByoToggleText]}>Admin BYO</Text>
+            </TouchableOpacity>
+          </View>
+
+          {showByoTemplates ? (
+            /* ── ADMIN BYO: Single Assigned Template ── */
+            <View>
+              {!assignedByoTemplate ? (
+                <View style={styles.byoInfoBox}>
+                  <Ionicons name="information-circle-outline" size={20} color={Colors.subText} />
+                  <Text style={[styles.byoInfoText, { color: Colors.subText }]}>No BYO template assigned by admin yet.</Text>
+                </View>
+              ) : (
+                <View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[
+                      styles.byoTemplateCard,
+                      templateId === assignedByoTemplate.id && styles.byoTemplateCardActive
+                    ]}
+                    onPress={() => {
+                      setTemplateId(assignedByoTemplate.id);
+                      setName(assignedByoTemplate.name);
+                      setSelectedCategories([assignedByoTemplate.category]); 
+                      setIsCustomizable(true);
+                      
+                      if (assignedByoTemplate.byo_template_groups) {
+                        setCustomizationGroups(assignedByoTemplate.byo_template_groups.map(g => ({
+                          id: Math.random().toString(),
+                          name: g.name,
+                          isRequired: g.is_required,
+                          selectionType: g.selection_type,
+                          maxSelections: g.max_limit || 1,
+                          options: [] 
+                        })));
+                      }
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                      <Ionicons
+                        name="construct-outline"
+                        size={18}
+                        color={templateId === assignedByoTemplate.id ? Colors.primary : Colors.subText}
+                        style={{ marginRight: 10 }}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.byoTemplateName, templateId === assignedByoTemplate.id && { color: Colors.primary }]}>
+                          {assignedByoTemplate.name}
+                        </Text>
+                        <View style={styles.byoCategoryBadge}>
+                          <Ionicons name="lock-closed-outline" size={10} color={Colors.subText} style={{ marginRight: 3 }} />
+                          <Text style={styles.byoCategoryBadgeText}>{assignedByoTemplate.category}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    {templateId === assignedByoTemplate.id && (
+                      <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Locked Category Display */}
+                  <View style={[styles.byoInfoBox, { marginTop: 12 }]}>
+                    <Ionicons name="pricetag-outline" size={16} color={Colors.primary} />
+                    <Text style={styles.byoInfoText}>
+                      Assigned Category: <Text style={{ fontWeight: 'bold' }}>{assignedByoTemplate.category}</Text>
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          ) : (
+            /* ── REGULAR: Selectable category chips + + New button ── */
+            <View style={styles.chipGrid}>
+              {availableCategories.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[styles.categoryChip, selectedCategories.includes(cat.id) && styles.activeCategoryChip]}
+                  onPress={() => {
+                    setSelectedCategories(prev =>
+                      prev.includes(cat.id) ? prev.filter(id => id !== cat.id) : [...prev, cat.id]
+                    );
+                  }}
+                >
+                  <Text style={[styles.categoryChipText, selectedCategories.includes(cat.id) && styles.activeCategoryChipText]}>
+                    {cat.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-          </View>
+              <TouchableOpacity style={styles.addChipButton} onPress={() => setShowNewCategoryModal(true)}>
+                <Ionicons name="add" size={16} color={Colors.primary} />
+                <Text style={styles.addChipText}>New</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -433,21 +617,37 @@ export default function EditProduct() {
               onChangeText={setPrice}
             />
           </View>
-          <View style={[styles.section, { flex: 1 }]}>
-            <Text style={styles.label}>Type</Text>
-            <View style={styles.typeContainer}>
-              {['Veg', 'Non-Veg'].map(t => (
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.label}>Type</Text>
+          <View style={styles.pickerContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {types.map(t => (
                 <TouchableOpacity 
                   key={t} 
-                  style={[styles.typeButton, type === t && (t === 'Veg' ? styles.activeVeg : styles.activeNonVeg)]}
+                  style={[styles.chip, type === t && styles.activeChip]}
                   onPress={() => setType(t)}
                 >
-                  <View style={[styles.dot, { backgroundColor: t === 'Veg' ? '#2e7d32' : '#c62828' }]} />
-                  <Text style={[styles.typeText, type === t && styles.activeTypeText]}>{t}</Text>
+                  <Text style={[styles.chipText, type === t && styles.activeChipText]}>{t}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+              <TouchableOpacity 
+                style={[styles.chip, type === 'New' && styles.activeChip]}
+                onPress={() => setType('New')}
+              >
+                <Text style={[styles.chipText, type === 'New' && styles.activeChipText]}>+ New</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
+          {type === 'New' && (
+            <TextInput 
+              style={[styles.input, { marginTop: 8 }]} 
+              placeholder="New Type Name" 
+              value={newType} 
+              onChangeText={setNewType} 
+            />
+          )}
         </View>
 
         <View style={styles.toggleRow}>
@@ -480,7 +680,7 @@ export default function EditProduct() {
           <Text style={styles.sectionTitle}>Add-ons</Text>
           <TouchableOpacity onPress={() => setShowAddOnForm(true)} style={styles.addButton}>
             <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
-            <Text style={styles.addButtonText}>Add New</Text>
+            <Text style={styles.addButtonText}>Add Add-on</Text>
           </TouchableOpacity>
         </View>
 
@@ -769,9 +969,27 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
+  reviewHintBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary + '10',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.primary + '20',
+  },
+  reviewHintText: {
+    fontSize: 12,
+    color: Colors.primary,
+    marginLeft: 8,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
   section: {
     marginBottom: 20,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.white,
     padding: 16,
     borderRadius: 16,
     shadowColor: '#000',
@@ -783,12 +1001,12 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: Colors.text,
     marginBottom: 8,
   },
   subLabel: {
     fontSize: 12,
-    color: '#666',
+    color: Colors.subText,
     marginBottom: 12,
   },
   input: {
@@ -796,7 +1014,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
-    color: '#1a1a1a',
+    color: Colors.text,
     borderWidth: 1,
     borderColor: '#eee',
   },
@@ -1250,20 +1468,161 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border + '30',
     opacity: 0.7,
   },
-  byoInfoBox: {
-    flexDirection: 'row',
+  // ── New Category Modal ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.primary + '08',
-    padding: 12,
-    borderRadius: 8,
+    paddingHorizontal: 24,
+  },
+  modalBox: {
+    width: '100%',
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 20,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 14,
+  },
+  modalInput: {
     borderWidth: 1,
-    borderColor: Colors.primary + '20',
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.text,
     marginBottom: 16,
   },
-  byoInfoText: {
-    fontSize: 12,
-    color: Colors.primary,
-    marginLeft: 8,
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalCancel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.border,
+  },
+  modalConfirm: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  // ── BYO Toggle ──
+  byoToggleContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f1f1',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 15,
+  },
+  byoToggleButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeByoToggleButton: {
+    backgroundColor: Colors.white,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  byoToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.subText,
+  },
+  activeByoToggleText: {
+    color: Colors.primary,
+  },
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  activeCategoryChip: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: Colors.text,
+  },
+  activeCategoryChipText: {
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  addChipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: Colors.primary,
+  },
+  addChipText: {
+    fontSize: 13,
+    color: Colors.primary,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  byoTemplateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 13,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    marginTop: 8,
+  },
+  byoTemplateCardActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary + '08',
+  },
+  byoTemplateName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  byoCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+  },
+  byoCategoryBadgeText: {
+    fontSize: 11,
+    color: Colors.subText,
+  },
+  pickerContainer: {
+    marginTop: 4,
   },
 });
