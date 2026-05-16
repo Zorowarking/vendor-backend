@@ -59,16 +59,50 @@ const updateFloatingBubble = async (vendorId, isActive, activeOrderCount = 0) =>
  * Convenience helper to send to a Vendor
  */
 const sendToVendor = async (vendorId, payload) => {
-  console.log(`[FCM] Mock notification to Vendor ${vendorId}:`, payload.title);
-  // Real implementation: lookup vendor FCM token and call sendPushNotification
+  if (!admin.apps.length) return;
+
+  try {
+    const vendor = await require('./prisma').prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { fcmToken: true }
+    });
+    
+    if (vendor?.fcmToken) {
+      await sendPushNotification(
+        vendor.fcmToken, 
+        payload.title, 
+        payload.body, 
+        { ...payload, type: payload.type || 'new_order' }
+      );
+    }
+  } catch (error) {
+    console.error(`[FCM] Error sending to vendor ${vendorId}:`, error.message);
+  }
 };
 
 /**
  * Convenience helper to send to a Customer
  */
 const sendToCustomer = async (firebaseUid, payload) => {
-  console.log(`[FCM] Mock notification to Customer UID ${firebaseUid.substring(0,8)}...:`, payload.title);
-  // Real implementation: lookup customer FCM token and call sendPushNotification
+  if (!admin.apps.length) return;
+
+  try {
+    const profile = await require('./prisma').prisma.profile.findUnique({
+      where: { firebaseUid },
+      select: { fcmToken: true }
+    });
+    
+    if (profile?.fcmToken) {
+      await sendPushNotification(
+        profile.fcmToken, 
+        payload.title, 
+        payload.body, 
+        { ...payload, type: payload.type || 'order_update' }
+      );
+    }
+  } catch (error) {
+    console.error(`[FCM] Error sending to customer ${firebaseUid}:`, error.message);
+  }
 };
 
 module.exports = {

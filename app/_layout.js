@@ -33,7 +33,11 @@ export default function Layout() {
     const init = async () => {
       await useAuthStore.getState().initialize();
       setIsMounted(true);
-      // systemBubbleService.initialize(); // TEMPORARY DISABLE TO FIX STARTUP CRASH
+      
+      // Initialize bubble service for Android vendors
+      if (Platform.OS === 'android') {
+        systemBubbleService.initialize();
+      }
     };
     init();
 
@@ -64,6 +68,10 @@ export default function Layout() {
         // (we assume they're looking at the app now)
         if (nextAppState === 'active') {
           vendorStore.setHasUnreadActivity(false);
+          systemBubbleService.hide();
+        } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+          // Show floating bubble when app is backgrounded
+          systemBubbleService.show();
         }
       }
     });
