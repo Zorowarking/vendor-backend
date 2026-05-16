@@ -71,28 +71,26 @@ setTimeout(async () => {
           if (!order) return;
 
           if (type === 'vendor_accept' && (order.status === 'pending_vendor' || order.status === 'Awaiting Vendor Acceptance')) {
-            console.log(`[BULLMQ] Order ${orderId} SLA breached by Vendor. Cancelling and moving to history.`);
+            console.log(`[BULLMQ] Order ${orderId} SLA breached by Vendor (No Acceptance). Flagging for Admin.`);
             
             await prisma.order.update({ 
               where: { id: orderId }, 
               data: { 
-                status: 'CANCELLED',
-                refundStatus: order.paymentGatewayRef ? 'PENDING' : 'NONE',
-                refundAmount: order.paymentGatewayRef ? order.totalAmount : null,
                 isFlaggedAdmin: true, 
-                flagReason: 'Vendor SLA Timeout (No Acceptance)',
+                flagReason: 'SLA Timeout (Acceptance Delayed)',
                 statusHistory: {
                   create: {
-                    status: 'CANCELLED',
+                    status: order.status,
                     changedBy: 'SYSTEM',
-                    notes: 'Auto-cancelled due to vendor SLA timeout (No Acceptance)'
+                    notes: 'Order flagged: Vendor failed to accept within 5 minute SLA'
                   }
                 }
               } 
             });
 
-            // Emit status update to both parties
-            emitOrderStatusUpdate(orderId, 'CANCELLED', 'SYSTEM');
+            // Emit breach notification to admin
+            const io = require('./socket').getIo();
+            if (io) io.of('/admin').to('admin_global').emit('vendor_sla_breach', { orderId: id, type: 'NO_ACCEPTANCE' });
 
             // Log breach in SlaMetric table (Aggregate)
             await prisma.vendorSlaMetric.upsert({

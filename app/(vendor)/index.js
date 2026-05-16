@@ -165,38 +165,33 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
             ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
           </Text>
 
-          {isBreached ? (
-            <View>
-              <Text style={styles.breachedWarning}>This order has been flagged. Admin notified.</Text>
-              <TouchableOpacity 
-                style={[styles.primaryButton, { marginTop: 20, alignSelf: 'center', width: '100%' }]} 
-                onPress={() => onDismiss(order.id)}
-              >
-                <Text style={styles.primaryButtonText}>Dismiss</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.actionRowModal}>
-              {!isOutsideHours ? (
-                <TouchableOpacity 
-                  style={[styles.rejectButtonModal, { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2', borderWidth: 1 }]} 
-                  onPress={() => onContactSupport(order.id)}
-                >
-                  <Ionicons name="chatbubble-ellipses" size={18} color="#E65100" style={{ marginBottom: 4 }} />
-                  <Text style={[styles.rejectText, { color: '#E65100', fontSize: 13 }]}>Support</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
-                  <Ionicons name="close-circle" size={18} color={Colors.error} style={{ marginBottom: 4 }} />
-                  <Text style={[styles.rejectText, { fontSize: 13 }]}>Reject</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.acceptButtonModal} onPress={() => onAccept(order.id)}>
-                <Ionicons name="checkmark-circle" size={24} color={Colors.white} style={{ marginBottom: 2 }} />
-                <Text style={styles.acceptText}>Accept Order</Text>
-              </TouchableOpacity>
+          {isBreached && (
+            <View style={styles.breachedWarningContainer}>
+              <Ionicons name="warning" size={16} color="#856404" />
+              <Text style={styles.breachedWarning}>SLA Breached. This order is now flagged for Admin review.</Text>
             </View>
           )}
+
+          <View style={styles.actionRowModal}>
+            {!isOutsideHours ? (
+              <TouchableOpacity 
+                style={[styles.rejectButtonModal, { backgroundColor: '#FFF3E0', borderColor: '#FFE0B2', borderWidth: 1 }]} 
+                onPress={() => onContactSupport(order.id)}
+              >
+                <Ionicons name="chatbubble-ellipses" size={18} color="#E65100" style={{ marginBottom: 4 }} />
+                <Text style={[styles.rejectText, { color: '#E65100', fontSize: 13 }]}>Support</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.rejectButtonModal} onPress={() => onReject(order.id)}>
+                <Ionicons name="close-circle" size={18} color={Colors.error} style={{ marginBottom: 4 }} />
+                <Text style={[styles.rejectText, { fontSize: 13 }]}>Reject</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.acceptButtonModal} onPress={() => onAccept(order.id)}>
+              <Ionicons name="checkmark-circle" size={24} color={Colors.white} style={{ marginBottom: 2 }} />
+              <Text style={styles.acceptText}>Accept Order</Text>
+            </TouchableOpacity>
+          </View>
 
           {orders.length > 1 && (
             <Text style={styles.queueText}>+ {orders.length - 1} more in queue</Text>
@@ -823,7 +818,23 @@ const styles = StyleSheet.create({
   rejectText: { color: Colors.error, fontWeight: 'bold', fontSize: 15 },
   acceptButtonModal: { flex: 0.55, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.success, marginLeft: 12, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: Colors.success, shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } },
   acceptText: { color: Colors.white, fontWeight: '800', fontSize: 18 },
-  breachedWarning: { color: Colors.error, fontSize: 13, textAlign: 'center', marginTop: 10, fontWeight: 'bold' },
+  breachedWarningContainer: {
+    backgroundColor: '#FFF3CD',
+    borderColor: '#FFEEBA',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  breachedWarning: { 
+    color: '#856404', 
+    fontSize: 12, 
+    fontWeight: '600',
+    marginLeft: 8,
+    flex: 1
+  },
   
   outsideHoursBadge: {
     flexDirection: 'row',
