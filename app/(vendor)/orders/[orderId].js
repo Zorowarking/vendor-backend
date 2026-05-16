@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Dimensions } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -45,6 +46,11 @@ export default function OrderDetailScreen() {
 
   // ✅ ALL hooks must be declared before any early return
   const [trackingData, setTrackingData] = React.useState(null);
+  const [vendorProfile, setVendorProfile] = React.useState(null);
+
+  React.useEffect(() => {
+    vendorApi.getProfile().then(setVendorProfile).catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     if (!order) return;
@@ -181,7 +187,64 @@ export default function OrderDetailScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <Text style={styles.trackingWaitText}>Assigning nearest rider...</Text>
+            <Text style={styles.trackingWaitText}>Rider is heading to the restaurant</Text>
+          )}
+
+          {/* Map Tracking Section */}
+          {(trackingData || (vendorProfile?.location && order.rider)) && (
+            <View style={styles.mapContainer}>
+              <MapView
+                provider={PROVIDER_GOOGLE}
+                style={styles.miniMap}
+                initialRegion={{
+                  latitude: trackingData?.latitude || 28.6139,
+                  longitude: trackingData?.longitude || 77.2090,
+                  latitudeDelta: 0.02,
+                  longitudeDelta: 0.02,
+                }}
+                region={trackingData ? {
+                  latitude: trackingData.latitude,
+                  longitude: trackingData.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                } : undefined}
+              >
+                {/* Vendor Marker */}
+                {vendorProfile?.location && (
+                  <Marker
+                    coordinate={{
+                      latitude: JSON.parse(vendorProfile.location).lat,
+                      longitude: JSON.parse(vendorProfile.location).lng,
+                    }}
+                    title="Restaurant"
+                  >
+                    <View style={styles.restaurantMarker}>
+                      <Ionicons name="restaurant" size={18} color={Colors.white} />
+                    </View>
+                  </Marker>
+                )}
+
+                {/* Rider Marker */}
+                {trackingData && (
+                  <Marker
+                    coordinate={{
+                      latitude: trackingData.latitude,
+                      longitude: trackingData.longitude,
+                    }}
+                    title="Rider"
+                  >
+                    <View style={styles.riderMarker}>
+                      <Ionicons name="bicycle" size={18} color={Colors.white} />
+                    </View>
+                  </Marker>
+                )}
+              </MapView>
+              <View style={styles.mapOverlay}>
+                <Text style={styles.mapOverlayText}>
+                  {trackingData ? 'Live Tracking' : 'Waiting for rider signal...'}
+                </Text>
+              </View>
+            </View>
           )}
 
           {trackingData && (
@@ -664,5 +727,46 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: 'bold',
     fontSize: 12
+  },
+  mapContainer: {
+    height: 200,
+    width: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 12,
+    backgroundColor: '#E5E7EB',
+  },
+  miniMap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  mapOverlayText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: Colors.primary,
+  },
+  restaurantMarker: {
+    padding: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: Colors.white,
+  },
+  riderMarker: {
+    padding: 6,
+    backgroundColor: Colors.success,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: Colors.white,
   }
 });
