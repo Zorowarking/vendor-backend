@@ -162,6 +162,11 @@ export const vendorApi = {
     const response = await apiClient.put(`/api/vendor/orders/${orderId}/status`, { status });
     return response.data;
   },
+
+  notifyCustomer: async (orderId, title, message) => {
+    const response = await apiClient.post(`/api/vendor/orders/${orderId}/notify-customer`, { title, message });
+    return response.data;
+  },
   
   getOrders: async () => {
     const response = await apiClient.get('/api/vendor/orders');

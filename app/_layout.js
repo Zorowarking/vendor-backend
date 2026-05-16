@@ -92,9 +92,12 @@ export default function Layout() {
         setActiveNotification(remoteMessage);
       });
 
-      // Request token and sync to backend
-      if (isAuthenticated && role === 'VENDOR') {
-        await notificationService.requestPermissionAndToken();
+      // 1. Always request permission on startup (for new installs)
+      const token = await notificationService.requestPermissionAndToken();
+      
+      // 2. If already logged in, ensure token is synced (double-check)
+      if (isAuthenticated && role === 'VENDOR' && token) {
+        await notificationService.syncTokenWithBackend(token);
       }
     };
 

@@ -715,6 +715,35 @@ router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, 
   }
 });
 
+router.post('/orders/:id/notify-customer', firebaseAuth, requireKyc, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, message } = req.body;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: { customer: { include: { profile: true } } }
+    });
+
+    if (!order || !order.customer?.profile?.firebaseUid) {
+      return res.status(404).json({ error: 'Customer not found or not registered for notifications' });
+    }
+
+    const fcm = require('../lib/fcm');
+    await fcm.sendToCustomer(order.customer.profile.firebaseUid, {
+      title: title || 'Message from Restaurant',
+      body: message,
+      type: 'manual_update',
+      orderId: id
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[VENDOR] Manual notification error:', error);
+    res.status(500).json({ error: 'Failed to send notification' });
+  }
+});
+
 // Helper to format orders with item details for vendor (Async with fallback for UUIDs)
 const formatOrdersForVendorAsync = async (orders) => {
   const isUuid = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);

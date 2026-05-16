@@ -36,44 +36,58 @@ class OrderService {
 
     const addressSnapshot = activeAddress || { addressLine1: 'Default Address' };
 
-    const order = await prisma.order.create({
-      data: {
-        vendorId: cart.vendorId,
-        customerId: customerId,
-        addressSnapshot: addressSnapshot,
-        subtotal: Number(cart.subtotal || 0),
-        addonCharges: Number(cart.totalAddonCharges || 0),
-        deliveryFee: 0,
-        totalAmount: Number(cart.total || 0),
-        status: 'pending_vendor',
-        deliveryPreference: deliveryPreference || 'standard',
-        paymentMethod: paymentMethod,
-        paymentGatewayRef: paymentGatewayRef,
-        ageVerifiedCheckbox: cart.items.some(i => i.ageVerified),
-        statusHistory: {
-          create: {
-            status: 'pending_vendor',
-            changedBy: 'CUSTOMER'
+    const order = await prisma.$transaction(async (tx) => {
+      const newOrder = await tx.order.create({
+        data: {
+          vendorId: cart.vendorId,
+          customerId: customerId,
+          addressSnapshot: addressSnapshot,
+          subtotal: Number(cart.subtotal || 0),
+          addonCharges: Number(cart.totalAddonCharges || 0),
+          deliveryFee: 0,
+          totalAmount: Number(cart.total || 0),
+          status: 'pending_vendor',
+          deliveryPreference: deliveryPreference || 'standard',
+          paymentMethod: paymentMethod,
+          paymentGatewayRef: paymentGatewayRef,
+          ageVerifiedCheckbox: cart.items.some(i => i.ageVerified),
+          statusHistory: {
+            create: {
+              status: 'pending_vendor',
+              changedBy: 'CUSTOMER'
+            }
+          },
+          items: {
+            create: cart.items.map(item => ({
+              productId: item.productId,
+              productName: item.name || 'Unknown Product',
+              quantity: item.quantity,
+              unitPrice: Number(item.unitPrice || item.price || 0),
+              lineTotal: Number(item.total || 0),
+              addonsSummary: {
+                selectedAddons: item.options?.selectedAddons || [],
+                customizations: item.options?.customizations || [],
+                instructions: item.options?.instructions || null
+              }
+            }))
           }
         },
-        items: {
-          create: cart.items.map(item => ({
-            productId: item.productId,
-            productName: item.name || 'Unknown Product',
-            quantity: item.quantity,
-            unitPrice: Number(item.unitPrice || item.price || 0),
-            lineTotal: Number(item.total || 0),
-            addonsSummary: {
-              selectedAddons: item.options?.selectedAddons || [],
-              customizations: item.options?.customizations || [],
-              instructions: item.options?.instructions || null
-            }
-          }))
+        include: {
+          items: true
         }
-      },
-      include: {
-        items: true
-      }
+      });
+
+      // Log in SlaMetric table
+      await tx.vendorSlaMetric.upsert({
+        where: { vendorId: cart.vendorId },
+        update: { totalOrders: { increment: 1 } },
+        create: { vendorId: cart.vendorId, totalOrders: 1 }
+      });
+
+      // 2. Clear the cart
+      await tx.cart.delete({ where: { id: cart.id } });
+
+      return newOrder;
     });
 
     console.log('[ORDER-SERVICE] Order created:', { id: order.id, total: order.totalAmount });
@@ -101,7 +115,7 @@ class OrderService {
 
       console.log(`[ORDER-SERVICE] Creating breach record for high-value order ${order.id}`);
       try {
-        const breach = await prisma.vendorBreach.create({
+        await prisma.vendorBreach.create({
           data: {
             vendorId: cart.vendorId,
             orderId: order.id,
@@ -109,21 +123,10 @@ class OrderService {
             reason: `High value order detected (₹${orderTotal}). Automatic cancellation and flagging applied.`
           }
         });
-        console.log(`[ORDER-SERVICE] Breach record created successfully: ${breach.id}`);
       } catch (err) {
         console.error(`[ORDER-SERVICE] FAILED to create breach record: ${err.message}`);
       }
     }
-    
-    // Log in SlaMetric table
-    await prisma.vendorSlaMetric.upsert({
-      where: { vendorId: cart.vendorId },
-      update: { totalOrders: { increment: 1 } },
-      create: { vendorId: cart.vendorId, totalOrders: 1 }
-    });
-
-    // 2. Clear the cart
-    await prisma.cart.delete({ where: { id: cart.id } });
 
     // 3. Fire Notifications
     // 3. Enrich items with names for the socket event

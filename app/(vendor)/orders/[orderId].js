@@ -262,6 +262,33 @@ export default function OrderDetailScreen() {
           <Ionicons name="logo-whatsapp" size={20} color={Colors.primary} />
           <Text style={styles.supportButtonText}>Contact Support</Text>
         </TouchableOpacity>
+
+        <View style={styles.notifyContainer}>
+          <Text style={styles.notifyTitle}>Notify Customer</Text>
+          <View style={styles.notifyButtons}>
+            <TouchableOpacity 
+              style={styles.notifyBtn} 
+              onPress={() => {
+                vendorApi.notifyCustomer(order.id, "Call from Restaurant", "Restaurant is trying to call you. Please check your phone.");
+                Alert.alert("Success", "Notification sent: 'Calling you'");
+              }}
+            >
+              <Ionicons name="call-outline" size={16} color={Colors.white} />
+              <Text style={styles.notifyBtnText}>Calling You</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.notifyBtn} 
+              onPress={() => {
+                vendorApi.notifyCustomer(order.id, "Food is Ready!", "Your food is ready and waiting for pickup/rider.");
+                Alert.alert("Success", "Notification sent: 'Food is ready'");
+              }}
+            >
+              <Ionicons name="restaurant-outline" size={16} color={Colors.white} />
+              <Text style={styles.notifyBtnText}>Food Ready</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
 
     </ScrollView>
@@ -605,5 +632,37 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '700',
     marginLeft: 8
+  },
+  notifyContainer: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  notifyTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.subText,
+    marginBottom: 12,
+    textTransform: 'uppercase'
+  },
+  notifyButtons: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  notifyBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6
+  },
+  notifyBtnText: {
+    color: Colors.white,
+    fontWeight: 'bold',
+    fontSize: 12
   }
 });

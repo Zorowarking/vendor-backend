@@ -105,9 +105,73 @@ const sendToCustomer = async (firebaseUid, payload) => {
   }
 };
 
+/**
+ * Broadcast notification to a group of users
+ * @param {string} targetAudience - 'VENDORS', 'CUSTOMERS', or 'ALL'
+ * @param {object} payload - { title, body, data }
+ */
+const broadcastToUsers = async (targetAudience, payload) => {
+  if (!admin.apps.length) return;
+
+  try {
+    let tokens = [];
+    const prisma = require('./prisma').prisma;
+
+    if (targetAudience === 'VENDORS' || targetAudience === 'ALL') {
+      const vendors = await prisma.vendor.findMany({
+        where: { fcmToken: { not: null } },
+        select: { fcmToken: true }
+      });
+      tokens = tokens.concat(vendors.map(v => v.fcmToken));
+    }
+
+    if (targetAudience === 'CUSTOMERS' || targetAudience === 'ALL') {
+      const customers = await prisma.profile.findMany({
+        where: { fcmToken: { not: null }, role: 'CUSTOMER' },
+        select: { fcmToken: true }
+      });
+      tokens = tokens.concat(customers.map(c => c.fcmToken));
+    }
+
+    // Filter out mock tokens or nulls
+    tokens = [...new Set(tokens.filter(t => t && t.length > 20 && !t.startsWith('mock_')))];
+
+    if (tokens.length === 0) {
+      console.log(`[FCM] No valid tokens found for broadcast to ${targetAudience}`);
+      return { success: 0, failure: 0 };
+    }
+
+    // Firebase multicast allows up to 500 tokens per batch
+    const BATCH_SIZE = 500;
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
+      const batchTokens = tokens.slice(i, i + BATCH_SIZE);
+      const message = {
+        tokens: batchTokens,
+        notification: { title: payload.title, body: payload.body },
+        data: { ...payload.data, type: payload.type || 'admin_broadcast' },
+        android: { priority: 'high' }
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(message);
+      successCount += response.successCount;
+      failureCount += response.failureCount;
+    }
+
+    console.log(`[FCM] Broadcast to ${targetAudience}: ${successCount} successes, ${failureCount} failures.`);
+    return { success: successCount, failure: failureCount };
+  } catch (error) {
+    console.error(`[FCM] Broadcast error:`, error.message);
+    throw error;
+  }
+};
+
 module.exports = {
   sendPushNotification,
   updateFloatingBubble,
   sendToVendor,
-  sendToCustomer
+  sendToCustomer,
+  broadcastToUsers
 };

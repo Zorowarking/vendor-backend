@@ -62,9 +62,11 @@ class CartService {
         const start = Date.now();
         let cart = await prisma.cart.findFirst({
           where: customerId ? { 
-            customerId
+            customerId,
+            vendorId
           } : { 
-            guestId
+            guestId,
+            vendorId
           },
           include: { items: true }
         });

@@ -203,4 +203,33 @@ router.put('/products/:id/customization', requireAdmin, async (req, res) => {
   }
 });
 
+// Admin broadcast notification to users
+router.post('/broadcast-notification', requireAdmin, async (req, res) => {
+  try {
+    const { audience, title, message, dataPayload } = req.body;
+    
+    // Validate audience
+    if (!['VENDORS', 'CUSTOMERS', 'ALL'].includes(audience)) {
+      return res.status(400).json({ error: 'Invalid audience. Must be VENDORS, CUSTOMERS, or ALL' });
+    }
+
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message are required' });
+    }
+
+    const fcm = require('../lib/fcm');
+    const result = await fcm.broadcastToUsers(audience, {
+      title,
+      body: message,
+      type: 'admin_broadcast',
+      data: dataPayload || {}
+    });
+
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('[ADMIN] Broadcast error:', error);
+    res.status(500).json({ error: 'Failed to send broadcast notification' });
+  }
+});
+
 module.exports = router;

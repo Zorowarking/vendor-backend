@@ -26,12 +26,25 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
       return res.status(200).json({ success: false, message: 'Payment failed. Cart preserved.' });
     }
 
-    // 1. Get the cart
-    console.log('[PAYMENT] Fetching cart for customer:', customerId);
-    const cart = await CartService.getCart({ customerId, guestId });
+    // 1. Get the intent details to find the vendorId
+    let vendorId = req.body.vendorId; // Fallback if provided by client
+    
+    if (paymentIntentId.startsWith('pi_sandbox_')) {
+      const sandboxPaymentService = require('../services/sandboxPaymentService');
+      const intent = sandboxPaymentService.getPaymentIntent(paymentIntentId);
+      if (intent) {
+        vendorId = intent.vendorId;
+        console.log('[PAYMENT] Found vendorId from sandbox intent:', vendorId);
+      }
+    }
+
+    // 2. Get the specific cart for this vendor
+    console.log('[PAYMENT] Fetching cart for customer:', customerId, 'Vendor:', vendorId);
+    const cart = await CartService.getCart({ customerId, guestId }, vendorId);
+    
     if (!cart) {
-      console.warn('[PAYMENT] Cart not found');
-      return res.status(404).json({ error: 'Cart not found for customer' });
+      console.warn('[PAYMENT] Cart not found or already cleared');
+      return res.status(404).json({ error: 'Cart not found for this transaction' });
     }
 
     // 2. Fetch address details for the order
