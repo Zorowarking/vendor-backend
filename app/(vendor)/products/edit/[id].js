@@ -888,69 +888,31 @@ export default function EditProduct() {
                         </TouchableOpacity>
                       </View>
                       
-                      <View style={styles.optionTabHeader}>
-                        <TouchableOpacity 
-                          style={[styles.optionTab, (opt.activeTab === 'settings' || !opt.activeTab) && styles.activeOptionTab]}
-                          onPress={() => updateOptionInGroup(group.id, opt.id, { activeTab: 'settings' })}
-                        >
-                          <Text style={[styles.optionTabText, (opt.activeTab === 'settings' || !opt.activeTab) && styles.activeOptionTabText]}>Settings</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.optionTab, opt.activeTab === 'conflicts' && styles.activeOptionTab]}
-                          onPress={() => updateOptionInGroup(group.id, opt.id, { activeTab: 'conflicts' })}
-                        >
-                          <Text style={[styles.optionTabText, opt.activeTab === 'conflicts' && styles.activeOptionTabText]}>Conflicts</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {(opt.activeTab === 'settings' || !opt.activeTab) && (
-                        <View style={styles.optionTabContent}>
-                          <View style={styles.optionSubSettings}>
-                            <TouchableOpacity 
-                              style={[styles.subSettingBtn, opt.allowQuantity && styles.activeSubSetting]}
-                              onPress={() => updateOptionInGroup(group.id, opt.id, { allowQuantity: !opt.allowQuantity })}
-                            >
-                              <Ionicons name={opt.allowQuantity ? "add-circle" : "add-circle-outline"} size={18} color={opt.allowQuantity ? Colors.success : Colors.subText} />
-                              <Text style={[styles.subSettingText, opt.allowQuantity && styles.activeSubSettingText]}>Allow Qty?</Text>
-                            </TouchableOpacity>
-
-                            {opt.allowQuantity && (
-                              <View style={styles.miniInputContainer}>
-                                <Text style={styles.miniLabel}>Free Limit:</Text>
-                                <TextInput 
-                                  style={styles.miniInput} 
-                                  placeholder="0" 
-                                  keyboardType="numeric"
-                                  value={opt.freeLimit?.toString()}
-                                  onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
-                                />
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                      )}
-
-                      {opt.activeTab === 'conflicts' && (
-                        <View style={styles.optionTabContent}>
-                          <View style={styles.conflictArea}>
-                            <Text style={styles.tinyLabel}>Conflicts with (names, comma separated):</Text>
-                            <TextInput 
-                              style={styles.conflictInput} 
-                              placeholder="e.g. Milk, Tea" 
-                              value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : (opt.conflicts || '')} 
-                              onChangeText={(text) => {
-                                updateOptionInGroup(group.id, opt.id, { conflicts: text });
-                              }}
-                              onBlur={() => {
-                                if (typeof opt.conflicts === 'string') {
-                                  const list = opt.conflicts.split(',').map(s => s.trim()).filter(s => !!s);
-                                  updateOptionInGroup(group.id, opt.id, { conflicts: list });
-                                }
-                              }}
+                      <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15 }}>
+                            <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Allow Qty?</Text>
+                            <Switch 
+                              scaleX={0.8} scaleY={0.8}
+                              value={opt.allowQuantity} 
+                              onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
                             />
                           </View>
+                          {opt.allowQuantity && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Free</Text>
+                              <TextInput 
+                                style={[styles.input, { width: 40, padding: 4, textAlign: 'center', fontSize: 12 }]} 
+                                keyboardType="numeric"
+                                value={opt.freeLimit?.toString()}
+                                onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
+                              />
+                            </View>
+                          )}
                         </View>
-                      )}
+                      </View>
+                    </View>
+                  ))}
                     </View>
                   ))}
                   

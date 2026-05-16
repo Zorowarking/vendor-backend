@@ -868,77 +868,39 @@ export default function AddProduct() {
                         </TouchableOpacity>
                       </View>
 
-                      <View style={styles.optionTabHeader}>
+                      <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                         <TouchableOpacity 
-                          style={[styles.optionTab, (opt.activeTab === 'settings' || !opt.activeTab) && styles.activeOptionTab]}
-                          onPress={() => updateOptionInGroup(group.id, opt.id, { activeTab: 'settings' })}
+                          style={styles.linkProductButton}
+                          onPress={() => {
+                            Alert.alert('Link Product', 'This will allow you to pick from your existing products.');
+                          }}
                         >
-                          <Text style={[styles.optionTabText, (opt.activeTab === 'settings' || !opt.activeTab) && styles.activeOptionTabText]}>Settings</Text>
+                          <Ionicons name="link-outline" size={14} color={Colors.primary} />
+                          <Text style={styles.linkProductText}>Link Menu Item</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={[styles.optionTab, opt.activeTab === 'conflicts' && styles.activeOptionTab]}
-                          onPress={() => updateOptionInGroup(group.id, opt.id, { activeTab: 'conflicts' })}
-                        >
-                          <Text style={[styles.optionTabText, opt.activeTab === 'conflicts' && styles.activeOptionTabText]}>Conflicts</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {(opt.activeTab === 'settings' || !opt.activeTab) && (
-                        <View style={styles.optionTabContent}>
-                          <TouchableOpacity 
-                            style={styles.linkProductButton}
-                            onPress={() => {
-                              Alert.alert('Link Product', 'This will allow you to pick from your existing products.');
-                            }}
-                          >
-                            <Ionicons name="link-outline" size={14} color={Colors.primary} />
-                            <Text style={styles.linkProductText}>Link Menu Item</Text>
-                          </TouchableOpacity>
-                          
-                          <View style={styles.optionExtras}>
-                            <View style={styles.settingItem}>
-                              <Text style={styles.extraLabel}>Allow Qty?</Text>
-                              <Switch 
-                                value={opt.allowQuantity} 
-                                onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                        
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15 }}>
+                            <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Allow Qty?</Text>
+                            <Switch 
+                              scaleX={0.8} scaleY={0.8}
+                              value={opt.allowQuantity} 
+                              onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                            />
+                          </View>
+                          {opt.allowQuantity && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Free</Text>
+                              <TextInput 
+                                style={[styles.input, { width: 40, padding: 4, textAlign: 'center', fontSize: 12 }]} 
+                                keyboardType="numeric"
+                                value={opt.freeLimit?.toString()}
+                                onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
                               />
                             </View>
-                            {opt.allowQuantity && (
-                              <View style={styles.settingItem}>
-                                <Text style={styles.extraLabel}>Free Limit</Text>
-                                <TextInput 
-                                  style={[styles.input, { width: 60, padding: 8, textAlign: 'center' }]} 
-                                  keyboardType="numeric"
-                                  value={opt.freeLimit?.toString()}
-                                  onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
-                                />
-                              </View>
-                            )}
-                          </View>
+                          )}
                         </View>
-                      )}
-
-                      {opt.activeTab === 'conflicts' && (
-                        <View style={styles.optionTabContent}>
-                        <View style={styles.conflictContainer}>
-                          <Text style={styles.conflictLabel}>Conflicts with (names, comma separated):</Text>
-                          <TextInput 
-                            style={styles.conflictInput} 
-                            placeholder="e.g. Milk, Tea" 
-                            value={Array.isArray(opt.conflicts) ? opt.conflicts.join(', ') : (opt.conflicts || '')} 
-                            onChangeText={(text) => {
-                              updateOptionInGroup(group.id, opt.id, { conflicts: text });
-                            }}
-                            onBlur={() => {
-                              if (typeof opt.conflicts === 'string') {
-                                const list = opt.conflicts.split(',').map(s => s.trim()).filter(s => !!s);
-                                updateOptionInGroup(group.id, opt.id, { conflicts: list });
-                              }
-                            }}
-                          />
-                        </View>
-                        </View>
-                      )}
+                      </View>
                     </View>
                   ))}
                   <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptionButton}>
