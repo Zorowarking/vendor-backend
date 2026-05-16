@@ -761,20 +761,18 @@ export default function AddProduct() {
         ))}
 
         {/* Advanced Customization Section */}
-        {!templateId && (
-          <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
-            <View>
-              <Text style={styles.label}>Advanced Customization</Text>
-              <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
-            </View>
-            <Switch 
-              value={isCustomizable} 
-              onValueChange={setIsCustomizable}
-              trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
-              thumbColor={isCustomizable ? Colors.primary : Colors.subText}
-            />
+        <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
+          <View>
+            <Text style={styles.label}>Advanced Customization</Text>
+            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
           </View>
-        )}
+          <Switch 
+            value={isCustomizable} 
+            onValueChange={setIsCustomizable}
+            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+          />
+        </View>
 
         {isCustomizable && (
           <View style={styles.customizationSection}>
@@ -911,15 +909,13 @@ export default function AddProduct() {
               </View>
             ))}
 
-            {!templateId && (
-              <TouchableOpacity 
-                onPress={addCustomizationGroup} 
-                style={[styles.addButton, { marginTop: 10, alignSelf: 'center', width: '100%', justifyContent: 'center' }]}
-              >
-                <Ionicons name="add-circle" size={24} color={Colors.primary} />
-                <Text style={styles.addButtonText}>Add Group</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              onPress={addCustomizationGroup} 
+              style={[styles.addButton, { marginTop: 10, alignSelf: 'center', width: '100%', justifyContent: 'center' }]}
+            >
+              <Ionicons name="add-circle" size={24} color={Colors.primary} />
+              <Text style={styles.addButtonText}>Add Group</Text>
+            </TouchableOpacity>
           </View>
         )}
 

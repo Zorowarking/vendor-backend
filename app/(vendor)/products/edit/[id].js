@@ -783,20 +783,18 @@ export default function EditProduct() {
         </View>
 
         {/* Build Your Own Customization Section */}
-        {!templateId && (
-          <View style={styles.customHeader}>
-            <View>
-              <Text style={styles.label}>Build Your Own</Text>
-              <Text style={styles.subLabel}>Enable advanced customization options</Text>
-            </View>
-            <Switch 
-              value={isCustomizable} 
-              onValueChange={setIsCustomizable}
-              trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
-              thumbColor={isCustomizable ? Colors.primary : Colors.subText}
-            />
+        <View style={styles.customHeader}>
+          <View>
+            <Text style={styles.label}>Build Your Own</Text>
+            <Text style={styles.subLabel}>Enable advanced customization options</Text>
           </View>
-        )}
+          <Switch 
+            value={isCustomizable} 
+            onValueChange={setIsCustomizable}
+            trackColor={{ false: Colors.border, true: Colors.primary + '40' }}
+            thumbColor={isCustomizable ? Colors.primary : Colors.subText}
+          />
+        </View>
 
         {isCustomizable && (
           <View style={styles.customizationSection}>
@@ -922,15 +920,13 @@ export default function EditProduct() {
               </View>
             ))}
 
-            {!templateId && (
-              <TouchableOpacity 
-                onPress={addCustomizationGroup} 
-                style={[styles.addGroupBtn, { marginTop: 15, width: '100%', justifyContent: 'center' }]}
-              >
-                <Ionicons name="add" size={20} color={Colors.white} />
-                <Text style={styles.addGroupBtnText}>New Group</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              onPress={addCustomizationGroup} 
+              style={[styles.addGroupBtn, { marginTop: 15, width: '100%', justifyContent: 'center' }]}
+            >
+              <Ionicons name="add" size={20} color={Colors.white} />
+              <Text style={styles.addGroupBtnText}>New Group</Text>
+            </TouchableOpacity>
           </View>
         )}
 
