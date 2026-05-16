@@ -11,7 +11,7 @@ class OrderService {
   /**
    * Create order after payment verification
    */
-  static async createOrderFromCart(cart, customerId, customerName, deliveryPreference, paymentMethod = null, paymentGatewayRef = null) {
+  static async createOrderFromCart(cart, customerId, customerName, deliveryPreference, paymentMethod = null, paymentGatewayRef = null, deliveryFee = 0) {
     if (!cart.vendorId) {
       console.error('[ORDER-SERVICE] CRITICAL: Attempted to create order with NO vendorId');
       throw new Error('CART_INVALID: Missing vendor identification');
@@ -44,8 +44,8 @@ class OrderService {
           addressSnapshot: addressSnapshot,
           subtotal: Number(cart.subtotal || 0),
           addonCharges: Number(cart.totalAddonCharges || 0),
-          deliveryFee: 0,
-          totalAmount: Number(cart.total || 0),
+          deliveryFee: Number(deliveryFee),
+          totalAmount: Number(cart.total || 0) + Number(deliveryFee),
           status: 'pending_vendor',
           deliveryPreference: deliveryPreference || 'standard',
           paymentMethod: paymentMethod,

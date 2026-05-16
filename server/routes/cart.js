@@ -108,8 +108,11 @@ router.delete('/', firebaseAuthOptional, guestSession, async (req, res) => {
         identifier.customerId = profile.customer.id;
     }
 
+    const { vendorId } = req.query;
+    const baseWhere = identifier.customerId ? { customerId: identifier.customerId } : { guestId: identifier.guestId };
+    
     await prisma.cart.deleteMany({
-      where: identifier.customerId ? { customerId: identifier.customerId } : { guestId: identifier.guestId }
+      where: vendorId ? { ...baseWhere, vendorId } : baseWhere
     });
     res.json({ success: true });
   } catch (error) {

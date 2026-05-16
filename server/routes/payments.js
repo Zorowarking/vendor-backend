@@ -72,7 +72,8 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
       req.customer?.fullName || req.body.customerName || 'Customer', 
       deliveryPreference,
       req.body.paymentMethod || 'Online',
-      paymentIntentId
+      paymentIntentId,
+      req.body.deliveryFee || 0
     ).catch(err => {
         console.error('[PAYMENT] OrderService.createOrderFromCart CRASH:', err.message);
         throw err; // rethrow to hit main catch
@@ -88,7 +89,7 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
         txnId: paymentIntentId,
         status: 'SUCCESS',
         amount: order.totalAmount,
-        webhookPayload: { paymentIntentId, deliveryPreference, addressId }
+        webhookPayload: { paymentIntentId, deliveryPreference, addressId, deliveryFee: req.body.deliveryFee }
       }
     }).catch(e => console.warn('[PAYMENT] Failed to log transaction record:', e.message));
 

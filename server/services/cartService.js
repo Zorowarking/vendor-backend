@@ -31,6 +31,13 @@ class CartService {
 
     try {
         const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours expiry
+
+        // 0. Verify Product belongs to Vendor (SECURITY)
+        const targetProduct = await prisma.product.findUnique({ where: { id: productId } });
+        if (!targetProduct || targetProduct.vendorId !== vendorId) {
+            throw { status: 400, message: 'This product does not belong to the selected restaurant.' };
+        }
+
         let queryWhere = customerId ? { customerId, vendorId } : { guestId, vendorId };
 
         // 1. Enforce Vendor Limits
