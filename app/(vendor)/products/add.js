@@ -866,38 +866,26 @@ export default function AddProduct() {
                         </TouchableOpacity>
                       </View>
 
-                      <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <TouchableOpacity 
-                          style={styles.linkProductButton}
-                          onPress={() => {
-                            Alert.alert('Link Product', 'This will allow you to pick from your existing products.');
-                          }}
-                        >
-                          <Ionicons name="link-outline" size={14} color={Colors.primary} />
-                          <Text style={styles.linkProductText}>Link Menu Item</Text>
-                        </TouchableOpacity>
-                        
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15 }}>
-                            <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Allow Qty?</Text>
-                            <Switch 
-                              scaleX={0.8} scaleY={0.8}
-                              value={opt.allowQuantity} 
-                              onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                      <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
+                          <Text style={{ fontSize: 13, color: Colors.subText, marginRight: 8 }}>Allow Qty?</Text>
+                          <Switch 
+                            scaleX={0.9} scaleY={0.9}
+                            value={opt.allowQuantity} 
+                            onValueChange={(val) => updateOptionInGroup(group.id, opt.id, { allowQuantity: val })} 
+                          />
+                        </View>
+                        {opt.allowQuantity && (
+                          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Text style={{ fontSize: 13, color: Colors.subText, marginRight: 8 }}>Free</Text>
+                            <TextInput 
+                              style={[styles.input, { width: 45, padding: 6, textAlign: 'center', fontSize: 13 }]} 
+                              keyboardType="numeric"
+                              value={opt.freeLimit?.toString()}
+                              onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
                             />
                           </View>
-                          {opt.allowQuantity && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                              <Text style={{ fontSize: 12, color: Colors.subText, marginRight: 5 }}>Free</Text>
-                              <TextInput 
-                                style={[styles.input, { width: 40, padding: 4, textAlign: 'center', fontSize: 12 }]} 
-                                keyboardType="numeric"
-                                value={opt.freeLimit?.toString()}
-                                onChangeText={(text) => updateOptionInGroup(group.id, opt.id, { freeLimit: parseInt(text) || 0 })}
-                              />
-                            </View>
-                          )}
-                        </View>
+                        )}
                       </View>
                     </View>
                   ))}
