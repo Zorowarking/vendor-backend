@@ -53,6 +53,8 @@ export default function EditProduct() {
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [savingCategory, setSavingCategory] = useState(false);
+  const [showNewTypeModal, setShowNewTypeModal] = useState(false);
+  const [newTypeInput, setNewTypeInput] = useState('');
   
   // Add-on State
   const [addOnName, setAddOnName] = useState('');
@@ -162,6 +164,17 @@ export default function EditProduct() {
         setIsCustomizable(true);
       }
     }
+  };
+
+  const handleCreateType = () => {
+    if (!newTypeInput.trim()) return;
+    const cleanType = newTypeInput.trim();
+    if (!types.includes(cleanType)) {
+      setTypes(prev => [...prev, cleanType]);
+    }
+    setType(cleanType);
+    setShowNewTypeModal(false);
+    setNewTypeInput('');
   };
 
   const pickImage = async () => {
@@ -452,6 +465,39 @@ export default function EditProduct() {
           </View>
         </Modal>
 
+        {/* New Type Modal */}
+        <Modal visible={showNewTypeModal} transparent animationType="fade" onRequestClose={() => setShowNewTypeModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>New Product Type</Text>
+              <TextInput 
+                style={styles.modalInput}
+                placeholder="Type Name (e.g. Seafood)"
+                value={newTypeInput}
+                onChangeText={setNewTypeInput}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={styles.modalCancel} 
+                  onPress={() => {
+                    setShowNewTypeModal(false);
+                    setNewTypeInput('');
+                  }}
+                >
+                  <Text style={{ color: Colors.text }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.modalConfirm}
+                  onPress={handleCreateType}
+                >
+                  <Text style={{ color: Colors.white, fontWeight: '600' }}>Add Type</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         <View style={styles.section}>
           <Text style={styles.label}>{showByoTemplates ? 'Admin BYO Template' : 'Category'}</Text>
           <Text style={styles.subLabel}>
@@ -633,21 +679,13 @@ export default function EditProduct() {
                 </TouchableOpacity>
               ))}
               <TouchableOpacity 
-                style={[styles.chip, type === 'New' && styles.activeChip]}
-                onPress={() => setType('New')}
+                style={styles.chip}
+                onPress={() => setShowNewTypeModal(true)}
               >
-                <Text style={[styles.chipText, type === 'New' && styles.activeChipText]}>+ New</Text>
+                <Text style={styles.chipText}>+ New</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
-          {type === 'New' && (
-            <TextInput 
-              style={[styles.input, { marginTop: 8 }]} 
-              placeholder="New Type Name" 
-              value={newType} 
-              onChangeText={setNewType} 
-            />
-          )}
         </View>
 
         <View style={styles.toggleRow}>
