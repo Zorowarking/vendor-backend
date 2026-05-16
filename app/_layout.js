@@ -21,6 +21,10 @@ import { systemBubbleService } from '../services/systemBubbleService';
 import { useVendorStore } from '../store/vendorStore';
 import { vendorApi } from '../services/vendorApi';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Prevent auto-hiding to avoid flickering during auth initialization
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function Layout() {
   const { isAuthenticated, role, profileStatus, user } = useAuthStore();
@@ -162,6 +166,9 @@ export default function Layout() {
 
   useEffect(() => {
     if (!isMounted) return;
+
+    // Hide splash screen as soon as we're mounted and auth is checked
+    SplashScreen.hideAsync().catch(() => {});
 
     const inAuthGroup = segments[0] === 'auth';
     const currentScreen = segments[1];

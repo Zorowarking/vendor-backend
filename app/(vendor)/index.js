@@ -45,7 +45,7 @@ const checkOperatingHours = (operatingHours) => {
 };
 
 
-function ActiveTimer({ acceptedAt }) {
+const ActiveTimer = React.memo(({ acceptedAt }) => {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -58,9 +58,9 @@ function ActiveTimer({ acceptedAt }) {
 
   const mins = Math.floor(elapsed / 60);
   return <Text style={styles.timeSinceText}>{mins} min ago</Text>;
-}
+});
 
-function SlaTimer({ createdAt }) {
+const SlaTimer = React.memo(({ createdAt }) => {
   const [timeLeft, setTimeLeft] = useState(INCOMING_SLA_SECONDS);
 
   useEffect(() => {
@@ -85,9 +85,9 @@ function SlaTimer({ createdAt }) {
       </Text>
     </View>
   );
-}
+});
 
-function PrepTimer({ startTime }) {
+const PrepTimer = React.memo(({ startTime }) => {
   const [timeLeft, setTimeLeft] = useState(60); // 1 minute (for testing)
 
   useEffect(() => {
@@ -112,7 +112,7 @@ function PrepTimer({ startTime }) {
       </Text>
     </View>
   );
-}
+});
 
 function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, isOutsideHours, onContactSupport }) {
   const order = orders[0]; // Show the oldest pending order
@@ -393,7 +393,7 @@ function RejectionReasonModal({ visible, onCancel, onConfirm }) {
 
 
 
-function ActiveOrderCard({ order, router }) {
+const ActiveOrderCard = React.memo(({ order, router }) => {
   // Accepted, Preparing, Ready
   const handleStatusUpdate = async (newStatus) => {
     try {
@@ -481,9 +481,9 @@ function ActiveOrderCard({ order, router }) {
       </View>
     </TouchableOpacity>
   );
-}
+});
 
-function HistoryOrderCard({ order, router }) {
+const HistoryOrderCard = React.memo(({ order, router }) => {
   return (
     <TouchableOpacity style={[styles.card, styles.historyCard]} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
@@ -512,12 +512,22 @@ function HistoryOrderCard({ order, router }) {
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 export default function VendorOrdersDashboard() {
   const router = useRouter();
-  const { user } = useAuthStore();
-  const { onlineStatus, incomingOrders, activeOrders, orderHistory, addIncomingOrder, removeIncomingOrder, addActiveOrder, updateOrder } = useVendorStore();
+  const userUid = useAuthStore(state => state.user?.uid);
+  
+  const onlineStatus = useVendorStore(state => state.onlineStatus);
+  const incomingOrders = useVendorStore(state => state.incomingOrders);
+  const activeOrders = useVendorStore(state => state.activeOrders);
+  const orderHistory = useVendorStore(state => state.orderHistory);
+  
+  const addIncomingOrder = useVendorStore(state => state.addIncomingOrder);
+  const removeIncomingOrder = useVendorStore(state => state.removeIncomingOrder);
+  const addActiveOrder = useVendorStore(state => state.addActiveOrder);
+  const updateOrder = useVendorStore(state => state.updateOrder);
+
   const [activeTab, setActiveTab] = useState('ACTIVE'); // 'ACTIVE' or 'HISTORY'
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -555,7 +565,7 @@ export default function VendorOrdersDashboard() {
 
 
   useEffect(() => {
-    if (user?.uid && profile?.id) {
+    if (userUid && profile?.id) {
       socketService.connect(profile.id);
       
       const handleNewOrder = async (orderData) => {
@@ -607,7 +617,7 @@ export default function VendorOrdersDashboard() {
         if (soundRef.current) soundRef.current.unloadAsync();
       };
     }
-  }, [user, profile?.id]);
+  }, [userUid, profile?.id]);
 
 
 
@@ -617,20 +627,25 @@ export default function VendorOrdersDashboard() {
 
   const handleAccept = async (orderId) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    
+    // 1. Optimistic Update
+    const order = incomingOrders.find(o => o.id === orderId);
+    if (order) {
+      removeIncomingOrder(orderId);
+      addActiveOrder({ ...order, status: 'accepted', acceptedAt: new Date().toISOString() });
+    }
+
     try {
       await vendorApi.acceptOrder(orderId);
-      const order = incomingOrders.find(o => o.id === orderId);
-      if (order) {
-        removeIncomingOrder(orderId);
-        addActiveOrder({ ...order, status: 'accepted', acceptedAt: new Date().toISOString() });
-      }
     } catch (e) {
+      // Rollback if failed (re-fetch orders or manually put it back)
       const errorMsg = e.response?.data?.error || 'Failed to accept order';
       if (errorMsg.includes('already processed')) {
-        Alert.alert('Notice', 'This order has already been processed or cancelled due to timeout.');
-        removeIncomingOrder(orderId);
+        // Just refresh if it's already gone
+        fetchOrders();
       } else {
         Alert.alert('Error', errorMsg);
+        fetchOrders();
       }
     }
   };
@@ -646,12 +661,10 @@ export default function VendorOrdersDashboard() {
   const confirmSupport = async (reason) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await vendorApi.contactSupport(supportOrderId, reason);
       
       const order = incomingOrders.find(o => o.id === supportOrderId);
       if (order) {
         removeIncomingOrder(supportOrderId);
-        // Add to active orders so it remains visible but needs admin/vendor action
         addActiveOrder({ 
           ...order, 
           status: 'pending_vendor_response', 
@@ -659,14 +672,17 @@ export default function VendorOrdersDashboard() {
           flagReason: reason 
         });
       }
+
+      await vendorApi.contactSupport(supportOrderId, reason);
       
       Alert.alert(
         'Support Notified', 
-        'We have alerted the admin team. The order will remain in your dashboard while support reviews the issue. You can still accept it if the issue is resolved.',
+        'We have alerted the admin team. The order will remain in your dashboard while support reviews the issue.',
         [{ text: 'OK' }]
       );
     } catch (e) {
       Alert.alert('Error', 'Failed to reach support. Please try again.');
+      fetchOrders();
     } finally {
       setSupportOrderId(null);
     }
@@ -675,32 +691,33 @@ export default function VendorOrdersDashboard() {
   const confirmRejection = async (reason) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      await vendorApi.rejectOrder(rejectOrderId, reason);
+      
+      // Optimistic
       useVendorStore.getState().moveToHistory(rejectOrderId);
       updateOrder(rejectOrderId, { status: 'cancelled_by_vendor' });
+      
+      await vendorApi.rejectOrder(rejectOrderId, reason);
       setRejectOrderId(null);
     } catch (e) {
       const errorMsg = e.response?.data?.error || 'Failed to reject order';
-      
-      // If order not found, it might be a mock or already deleted. Remove from UI.
-      if (e.response?.status === 404) {
-        useVendorStore.getState().removeIncomingOrder(rejectOrderId);
-        setRejectOrderId(null);
-        return;
-      }
-      
       Alert.alert('Error', errorMsg);
+      fetchOrders();
+      setRejectOrderId(null);
     }
   };
 
-  const onRefresh = async () => {
+  const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     await Promise.all([fetchProfile(), fetchOrders()]);
     setRefreshing(false);
-  };
+  }, []);
 
-
-
+  const renderItem = React.useCallback(({ item }) => {
+    if (activeTab === 'ACTIVE') {
+      return <ActiveOrderCard order={item} router={router} />;
+    }
+    return <HistoryOrderCard order={item} router={router} />;
+  }, [activeTab, router]);
 
   return (
     <View style={styles.container}>
@@ -709,8 +726,6 @@ export default function VendorOrdersDashboard() {
           <Text style={styles.offlineText}>You are offline — no new orders will be received.</Text>
         </View>
       )}
-
-
 
       <View style={styles.tabsRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'ACTIVE' && styles.activeTab]} onPress={() => setActiveTab('ACTIVE')}>
@@ -721,36 +736,38 @@ export default function VendorOrdersDashboard() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <FlatList 
+        data={activeTab === 'ACTIVE' ? activeOrders : orderHistory}
+        keyExtractor={item => item.id}
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
-      >
-        {loading ? (
-          [1, 2, 3].map(i => (
-            <SkeletonLoader key={i} width={width - 32} height={120} style={{ marginBottom: 16, borderRadius: 12 }} />
-          ))
-        ) : activeTab === 'ACTIVE' ? (
-          activeOrders.length === 0 ? (
+        initialNumToRender={6}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        removeClippedSubviews={Platform.OS === 'android'}
+        renderItem={renderItem}
+        ListEmptyComponent={
+          loading ? (
+            <View style={{ padding: 16 }}>
+              {[1, 2, 3].map(i => (
+                <SkeletonLoader key={i} width={width - 32} height={120} style={{ marginBottom: 16, borderRadius: 12 }} />
+              ))}
+            </View>
+          ) : activeTab === 'ACTIVE' ? (
             <EmptyState 
               icon="restaurant-outline" 
               title="No active orders" 
               description="New orders will appear here as they come in. Make sure you're online!"
             />
           ) : (
-            activeOrders.map(order => <ActiveOrderCard key={order.id} order={order} router={router} />)
-          )
-        ) : (
-          orderHistory.length === 0 ? (
             <EmptyState 
               icon="receipt-outline" 
               title="No history yet" 
               description="Your completed and cancelled orders will be archived here."
             />
-          ) : (
-            orderHistory.map(order => <HistoryOrderCard key={order.id} order={order} router={router} />)
           )
-        )}
-      </ScrollView>
+        }
+      />
 
       {/* Full Screen Incoming Order Modal */}
       <IncomingOrderModal 
