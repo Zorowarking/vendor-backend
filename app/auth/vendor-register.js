@@ -228,15 +228,7 @@ export default function VendorRegisterScreen() {
               <Text style={styles.nextButtonText}>Next</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => {
-                useAuthStore.getState().setRole(null);
-                router.replace('/auth/role-select');
-              }}
-            >
-              <Text style={styles.backButtonText}>← Change Role</Text>
-            </TouchableOpacity>
+
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

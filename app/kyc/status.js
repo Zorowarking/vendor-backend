@@ -230,10 +230,26 @@ export default function KYCStatus() {
         <View style={styles.footer}>
           <TouchableOpacity 
             style={styles.supportLink}
-            onPress={() => Linking.openURL('mailto:support@zorowarking.com')}
+            onPress={async () => {
+              const message = `Hello Foodie Support, I am Vendor: ${user?.fullName || 'New Vendor'}. I need help with my KYC verification.`;
+              const whatsappUrl = `whatsapp://send?phone=919063851105&text=${encodeURIComponent(message)}`;
+              const browserUrl = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+              
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                const supported = await Linking.canOpenURL(whatsappUrl);
+                if (supported) {
+                  await Linking.openURL(whatsappUrl);
+                } else {
+                  await Linking.openURL(browserUrl);
+                }
+              } catch (err) {
+                await Linking.openURL(browserUrl);
+              }
+            }}
           >
-            <Ionicons name="help-circle-outline" size={20} color={Colors.primary} />
-            <Text style={styles.supportLinkText}>Need help? Contact Support</Text>
+            <Ionicons name="logo-whatsapp" size={20} color={Colors.primary} />
+            <Text style={styles.supportLinkText}>Need help? Chat with Support</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.logoutBtn} onPress={logout}>

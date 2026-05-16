@@ -286,73 +286,7 @@ function RejectionReasonModal({ visible, onCancel, onConfirm }) {
   );
 }
 
-function CommissionSelectionModal({ visible, onSelect, loading }) {
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.commissionSelectionContent}>
-          <View style={styles.commissionHeader}>
-            <View style={styles.commissionIconBg}>
-              <Ionicons name="calculator" size={28} color={Colors.white} />
-            </View>
-            <Text style={styles.commissionModalTitle}>Business Configuration</Text>
-            <Text style={styles.commissionModalSub}>Choose your platform commission model to continue. This setting is permanent.</Text>
-          </View>
 
-          <TouchableOpacity 
-            style={styles.modelOption} 
-            onPress={() => onSelect('ADD_ON')}
-            disabled={loading}
-          >
-            <View style={styles.modelHeader}>
-              <View style={styles.modelIcon}>
-                <Ionicons name="add-circle" size={24} color={Colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modelName}>Add-on Model</Text>
-                <Text style={styles.modelPrice}>5% added to price</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.border} />
-            </View>
-            <Text style={styles.modelDescription}>
-              The platform fee is added on top of your product price. You receive exactly what you charge, and the customer pays the difference.
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.modelOption} 
-            onSelect={() => onSelect('DEDUCTED')} // Wait, typo in my thought? onPress
-            onPress={() => onSelect('DEDUCTED')}
-            disabled={loading}
-          >
-            <View style={styles.modelHeader}>
-              <View style={[styles.modelIcon, { backgroundColor: Colors.success + '15' }]}>
-                <Ionicons name="remove-circle" size={24} color={Colors.success} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modelName}>Deducted Model</Text>
-                <Text style={styles.modelPrice}>5% deducted from price</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.border} />
-            </View>
-            <Text style={styles.modelDescription}>
-              The platform fee is taken from your product price. Customers see your exact price, and the platform takes a 5% cut from the sale.
-            </Text>
-          </TouchableOpacity>
-
-          {loading && (
-            <ActivityIndicator color={Colors.primary} style={{ marginTop: 10 }} />
-          )}
-
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle" size={16} color={Colors.subText} />
-            <Text style={styles.infoBoxText}>You cannot change this later. Please choose carefully.</Text>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 function ActiveOrderCard({ order, router }) {
   // Accepted, Preparing, Ready
@@ -609,20 +543,6 @@ export default function VendorOrdersDashboard() {
     }
   };
 
-  const handleCommissionSelect = async (model) => {
-    try {
-      setUpdatingCommission(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await vendorApi.updateProfile({ ...profile, commissionModel: model });
-      await fetchProfile(); // Refresh profile to hide modal
-      Alert.alert('Success', 'Commission model set successfully! You can now start receiving orders.');
-    } catch (e) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to set commission model');
-    } finally {
-      setUpdatingCommission(false);
-    }
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchProfile(), fetchOrders()]);
@@ -640,17 +560,7 @@ export default function VendorOrdersDashboard() {
         </View>
       )}
 
-      {profile && profile.commissionModel === null && (
-        <View style={styles.setupBanner}>
-          <View style={styles.setupIcon}>
-            <Ionicons name="shield-checkmark" size={24} color={Colors.white} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.setupTitle}>Configuration Required</Text>
-            <Text style={styles.setupSub}>Please select your commission model below to proceed.</Text>
-          </View>
-        </View>
-      )}
+
 
       <View style={styles.tabsRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'ACTIVE' && styles.activeTab]} onPress={() => setActiveTab('ACTIVE')}>
@@ -709,11 +619,7 @@ export default function VendorOrdersDashboard() {
         onConfirm={confirmRejection}
       />
 
-      <CommissionSelectionModal 
-        visible={profile !== null && profile.commissionModel === null}
-        onSelect={handleCommissionSelect}
-        loading={updatingCommission}
-      />
+
     </View>
   );
 }

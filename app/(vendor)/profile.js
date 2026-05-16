@@ -116,29 +116,7 @@ export default function VendorProfile() {
   };
 
 
-  const handleUpdateCommission = async (model) => {
-    if (profile.commissionModel) {
-      Alert.alert(
-        'Action Restricted',
-        'Your commission model is already set. Please contact the admin to request any changes.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
 
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setLoading(true);
-      const updatedProfile = { ...profile, commissionModel: model };
-      await vendorApi.updateProfile(updatedProfile);
-      setProfile(updatedProfile);
-      Alert.alert('Success', 'Commission model updated successfully!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update commission model');
-    } finally {
-      setLoading(false);
-    }
-  };
 
 
   const handleSaveDetails = async () => {
@@ -457,18 +435,16 @@ export default function VendorProfile() {
           <Text style={styles.sectionTitle}>Platform Commission Model</Text>
           <Text style={styles.sectionSubtitle}>
             {profile.commissionModel 
-              ? 'Your commission model is locked. Contact admin to change.' 
-              : 'Choose how platform fees are applied to your products.'}
+              ? 'Your commission model is assigned by the administration.' 
+              : 'No commission model has been assigned to your account yet. Please contact support.'}
           </Text>
           
-          <TouchableOpacity 
+          <View 
             style={[
               styles.commissionCard, 
               profile.commissionModel === 'ADD_ON' && styles.commissionCardActive,
-              profile.commissionModel && { opacity: 0.8 }
+              { opacity: profile.commissionModel === 'ADD_ON' ? 1 : 0.6 }
             ]}
-            onPress={() => handleUpdateCommission('ADD_ON')}
-            disabled={loading}
           >
             <View style={[styles.radio, profile.commissionModel === 'ADD_ON' && styles.radioActive]}>
               {profile.commissionModel === 'ADD_ON' && <View style={styles.radioInner} />}
@@ -477,16 +453,14 @@ export default function VendorProfile() {
               <Text style={styles.commissionTitle}>Add-on Model</Text>
               <Text style={styles.commissionDesc}>5% is added on top of your price. Customers pay more, you receive your full price.</Text>
             </View>
-          </TouchableOpacity>
+          </View>
  
-          <TouchableOpacity 
+          <View 
             style={[
               styles.commissionCard, 
               profile.commissionModel === 'DEDUCTED' && styles.commissionCardActive,
-              profile.commissionModel && { opacity: 0.8 }
+              { opacity: profile.commissionModel === 'DEDUCTED' ? 1 : 0.6 }
             ]}
-            onPress={() => handleUpdateCommission('DEDUCTED')}
-            disabled={loading}
           >
             <View style={[styles.radio, profile.commissionModel === 'DEDUCTED' && styles.radioActive]}>
               {profile.commissionModel === 'DEDUCTED' && <View style={styles.radioInner} />}
@@ -495,7 +469,7 @@ export default function VendorProfile() {
               <Text style={styles.commissionTitle}>Deducted Model</Text>
               <Text style={styles.commissionDesc}>5% is deducted from your price. Customers pay your price, platform takes a cut.</Text>
             </View>
-          </TouchableOpacity>
+          </View>
           
           {profile.commissionModel && (
             <View style={styles.lockedNote}>
