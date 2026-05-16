@@ -60,6 +60,33 @@ function ActiveTimer({ acceptedAt }) {
   return <Text style={styles.timeSinceText}>{mins} min ago</Text>;
 }
 
+function SlaTimer({ createdAt }) {
+  const [timeLeft, setTimeLeft] = useState(INCOMING_SLA_SECONDS);
+
+  useEffect(() => {
+    if (!createdAt) return;
+    const update = () => {
+      const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+      setTimeLeft(Math.max(0, INCOMING_SLA_SECONDS - elapsed));
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [createdAt]);
+
+  const mins = Math.floor(timeLeft / 60);
+  const secs = timeLeft % 60;
+  const isOver = timeLeft === 0;
+
+  return (
+    <View style={[styles.timerBadge, isOver && styles.timerBadgeDanger, { alignSelf: 'flex-start', marginBottom: 8 }]}>
+      <Text style={[styles.timerText, isOver && styles.timerTextDanger]}>
+        {isOver ? 'SLA BREACHED' : `Acceptance: ${mins}:${secs.toString().padStart(2, '0')} left`}
+      </Text>
+    </View>
+  );
+}
+
 function PrepTimer({ startTime }) {
   const [timeLeft, setTimeLeft] = useState(60); // 1 minute (for testing)
 
@@ -419,6 +446,9 @@ function ActiveOrderCard({ order, router }) {
       </Text>
       
       {order.acceptedAt && <ActiveTimer acceptedAt={order.acceptedAt} />}
+      {(order.status === 'pending_vendor' || order.status === 'pending_vendor_response') && (
+        <SlaTimer createdAt={order.createdAt} />
+      )}
       {order.status === 'preparing' && order.preparingAt && <PrepTimer startTime={order.preparingAt} />}
 
       <View style={styles.actionRow}>
