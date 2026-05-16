@@ -1,4 +1,4 @@
-import { Platform, NativeModules } from 'react-native';
+import { Platform, NativeModules, PermissionsAndroid, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { vendorApi } from './vendorApi';
 import { useAuthStore } from '../store/authStore';
@@ -64,6 +64,41 @@ export const notificationService = {
    * Request Permission and Sync Token to Backend
    */
   requestPermissionAndToken: async () => {
+    // 1. Android 13+ Runtime Permission Request (Critical for receiving orders)
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          {
+            title: 'Receive New Orders',
+            message: 'Vantyrn Vendor needs permission to notify you about new incoming orders and status updates.',
+            buttonNeutral: 'Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'Allow',
+          }
+        );
+        
+        if (granted === PermissionsAndroid.RESULTS.DENIED) {
+          console.warn('[NOTIF] POST_NOTIFICATIONS permission denied.');
+          return null;
+        }
+
+        if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+          Alert.alert(
+            'Action Required',
+            'Notifications are disabled. You must enable them in settings to receive and accept new orders.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() }
+            ]
+          );
+          return null;
+        }
+      } catch (err) {
+        console.warn('[NOTIF] Permission request error:', err);
+      }
+    }
+
     if (!messaging) {
       console.log('[MOCK FCM] Permission Requested. Using Mock Token.');
       return 'mock_fcm_token_' + Date.now();
