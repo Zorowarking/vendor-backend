@@ -8,8 +8,8 @@ if (!__DEV__) {
   };
 }
 
-import React, { useState, useEffect } from 'react';
-import { View, DeviceEventEmitter, Platform, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, DeviceEventEmitter, Platform, Alert, AppState } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useAuthStore } from '../store/authStore';
 import { notificationService } from '../services/notificationService';
@@ -52,6 +52,26 @@ export default function Layout() {
       }).catch(() => {});
     };
   }, []);
+
+  // Track AppState for background/foreground badge notifications
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (role === 'VENDOR') {
+        const vendorStore = useVendorStore.getState();
+        vendorStore.setAppState(nextAppState);
+        
+        // If returning to foreground, clear the unread activity badge 
+        // (we assume they're looking at the app now)
+        if (nextAppState === 'active') {
+          vendorStore.setHasUnreadActivity(false);
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [role]);
 
   // Notification Initialization
   useEffect(() => {

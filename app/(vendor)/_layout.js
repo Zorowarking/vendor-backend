@@ -8,6 +8,7 @@ import { useVendorStore } from '../../store/vendorStore';
 
 export default function VendorLayout() {
   const incomingOrders = useVendorStore((state) => state.incomingOrders);
+  const hasUnreadActivity = useVendorStore((state) => state.hasUnreadActivity);
   const pendingCount = incomingOrders.length;
 
   return (
@@ -29,7 +30,7 @@ export default function VendorLayout() {
           name="index"
           options={{
             title: 'Live Orders',
-            tabBarBadge: pendingCount > 0 ? pendingCount : undefined,
+            tabBarBadge: pendingCount > 0 ? pendingCount : (hasUnreadActivity ? '!' : undefined),
           }}
         />
         <MaterialTopTabs.Screen

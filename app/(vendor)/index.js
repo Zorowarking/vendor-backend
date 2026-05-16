@@ -537,7 +537,13 @@ export default function VendorOrdersDashboard() {
         } catch (error) {
           console.log('Failed to play sound', error);
         }
+        
         addIncomingOrder(orderData);
+        
+        // Track unread activity for background notifications
+        if (useVendorStore.getState().appState !== 'active') {
+          useVendorStore.getState().setHasUnreadActivity(true);
+        }
       };
 
 
@@ -546,6 +552,11 @@ export default function VendorOrdersDashboard() {
           useVendorStore.getState().moveToHistory(data.id);
         }
         updateOrder(data.id, { status: data.status });
+        
+        // Track unread activity for background notifications
+        if (useVendorStore.getState().appState !== 'active') {
+          useVendorStore.getState().setHasUnreadActivity(true);
+        }
       };
 
       socketService.onNewOrder(handleNewOrder);
@@ -554,9 +565,7 @@ export default function VendorOrdersDashboard() {
       return () => {
         socketService.offNewOrder(handleNewOrder);
         socketService.offOrderUpdate(handleOrderUpdate);
-        // Do not disconnect here if we want to stay connected between tab switches 
-        // but here it's fine as it's the main screen
-        socketService.disconnect();
+        // Do not disconnect socket here, let app/_layout handle global connection lifecycle
         if (soundRef.current) soundRef.current.unloadAsync();
       };
     }

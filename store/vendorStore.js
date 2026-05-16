@@ -6,12 +6,17 @@ export const useVendorStore = create()(
   persist(
     (set, get) => ({
       onlineStatus: 'offline', // 'online', 'offline', 'stop_new_orders'
+      appState: 'active', // 'active', 'background', 'inactive'
+      hasUnreadActivity: false,
       incomingOrders: [], // Orders waiting for acceptance
       activeOrders: [],   // Accepted, Preparing, Ready
       orderHistory: [],   // Completed, Cancelled
       vendorStats: null,
       products: [],
       lastSynced: null,
+      
+      setAppState: (state) => set({ appState: state }),
+      setHasUnreadActivity: (val) => set({ hasUnreadActivity: val }),
       
       setProducts: (data) => {
         const currentProducts = get().products;
