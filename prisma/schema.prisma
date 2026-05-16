@@ -441,7 +441,7 @@ model AnalyticsEvent {
 
 model Cart {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  customerId   String?    @unique @map("customer_id") @db.Uuid
+  customerId   String?    @map("customer_id") @db.Uuid
   vendorId     String     @map("vendor_id") @db.Uuid
   isGuest      Boolean    @default(false) @map("is_guest")
   isActive     Boolean    @default(true) @map("is_active")
@@ -449,10 +449,12 @@ model Cart {
   checkedOutAt DateTime?  @map("checked_out_at") @db.Timestamptz(6)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  guestId      String?    @unique @map("guest_id") @db.VarChar(255)
+  guestId      String?    @map("guest_id") @db.VarChar(255)
   items        CartItem[]
   customer     Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
+  @@unique([customerId, vendorId])
+  @@unique([guestId, vendorId])
   @@map("carts")
   @@schema("customer")
 }
@@ -489,7 +491,7 @@ model Customer {
   addresses        Address[]
   ageVerification  AgeVerification?
   analyticsEvents  AnalyticsEvent[]
-  cart             Cart?
+  carts           Cart[]
   profile          Profile?          @relation(fields: [profileId], references: [id])
   feedback         Feedback[]
   loginAttemptLogs LoginAttemptLog[]
