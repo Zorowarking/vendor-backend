@@ -35,15 +35,26 @@ export default function Layout() {
 
   useEffect(() => {
     const init = async () => {
-      await useAuthStore.getState().initialize();
-      setIsMounted(true);
-      
-      // Initialize bubble service for Android vendors
-      if (Platform.OS === 'android') {
-        systemBubbleService.initialize();
+      try {
+        await useAuthStore.getState().initialize();
+        
+        // Initialize bubble service for Android vendors
+        if (Platform.OS === 'android') {
+          systemBubbleService.initialize();
+        }
+      } catch (err) {
+        console.error('[LAYOUT] Init Error:', err);
+      } finally {
+        setIsMounted(true);
       }
     };
     init();
+
+    // Fallback: Ensure splash screen hides after 5 seconds no matter what
+    const timeout = setTimeout(() => {
+      setIsMounted(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 5000);
 
     // Activate keep-awake safely inside component lifecycle
     let keepAwakeTag;
@@ -55,6 +66,7 @@ export default function Layout() {
     }).catch(() => {});
 
     return () => {
+      clearTimeout(timeout);
       import('expo-keep-awake').then((KeepAwake) => {
         if (keepAwakeTag) KeepAwake.deactivateKeepAwake(keepAwakeTag);
       }).catch(() => {});

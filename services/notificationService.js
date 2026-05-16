@@ -76,12 +76,15 @@ export const notificationService = {
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
       if (enabled) {
+        console.log('[NOTIF] Permission granted. Fetching token...');
         const token = await messaging().getToken();
         await notificationService.syncTokenWithBackend(token);
         return token;
+      } else {
+        console.warn('[NOTIF] Permission denied or not determined.');
       }
     } catch (error) {
-      console.error('Failed to get FCM permission/token:', error);
+      console.error('[NOTIF] Failed to get FCM permission/token:', error);
     }
   },
 
