@@ -605,6 +605,31 @@ export default function AddProduct() {
           )}
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.label}>Quick Templates</Text>
+          <Text style={styles.subLabel}>Auto-fill details from system templates</Text>
+          <View style={styles.chipContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipScroll}>
+              {allTemplates.map(t => (
+                <TouchableOpacity 
+                  key={t.id} 
+                  style={[styles.chip, templateId === t.id && styles.activeChipTemplate]}
+                  onPress={() => handleTemplateSelect(t)}
+                >
+                  <Ionicons 
+                    name="flash" 
+                    size={14} 
+                    color={templateId === t.id ? Colors.white : Colors.primary} 
+                    style={{ marginRight: 4 }} 
+                  />
+                  <Text style={[styles.chipText, templateId === t.id && styles.activeChipText]}>{t.templateName}</Text>
+                </TouchableOpacity>
+              ))}
+              {allTemplates.length === 0 && <Text style={styles.emptyText}>No templates found</Text>}
+            </ScrollView>
+          </View>
+        </View>
+
         <View style={styles.row}>
           <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
             <Text style={styles.label}>Price (₹) *</Text>
@@ -1050,6 +1075,22 @@ const styles = StyleSheet.create({
   activeChipText: {
     color: Colors.white,
     fontWeight: '600',
+  },
+  activeChipTemplate: {
+    backgroundColor: '#311b92',
+    borderColor: '#311b92',
+  },
+  chipContainer: {
+    marginTop: 4,
+  },
+  chipScroll: {
+    paddingRight: 16,
+  },
+  emptyText: {
+    fontSize: 12,
+    color: '#999',
+    fontStyle: 'italic',
+    padding: 10,
   },
   toggleRow: {
     flexDirection: 'row',
