@@ -90,13 +90,20 @@ export default function ProductsList() {
 
 
   const toggleAvailability = async (id, currentStatus) => {
+    // Optimistic update
+    setProducts(prev => 
+      prev.map(p => p.id === id ? { ...p, isActive: !currentStatus } : p)
+    );
+    
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await vendorApi.toggleProductAvailability(id, !currentStatus);
-      setProducts(prev => 
-        prev.map(p => p.id === id ? { ...p, isAvailable: !currentStatus } : p)
-      );
     } catch (error) {
-      Alert.alert('Error', 'Failed to update availability');
+      // Rollback on failure
+      setProducts(prev => 
+        prev.map(p => p.id === id ? { ...p, isActive: currentStatus } : p)
+      );
+      Alert.alert('Error', 'Failed to update availability. Please check your connection.');
     }
   };
 

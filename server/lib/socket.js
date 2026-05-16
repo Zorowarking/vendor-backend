@@ -59,8 +59,8 @@ const initSocket = (server) => {
 
   io = new Server(server, {
     transports: ['websocket'], // ONLY WEBSOCKET - Prevents HTTP 502 polling storms
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    pingTimeout: 30000,
+    pingInterval: 15000,
     connectTimeout: 45000,
     allowEIO3: true,
     cors: {

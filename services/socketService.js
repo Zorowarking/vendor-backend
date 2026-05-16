@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import { AppState } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 
 const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'https://vendor-backend-production-c171.up.railway.app';
@@ -8,6 +9,7 @@ class SocketService {
     this.socket = null;
     this.role = null;
     this.userId = null;
+    this.appStateSubscription = null;
   }
 
   connect(userId, role = 'VENDOR') {
@@ -25,7 +27,7 @@ class SocketService {
     console.log(`[SOCKET] Connecting to ${namespaceUrl}...`);
     
     this.socket = io(namespaceUrl, {
-      transports: ['websocket'], // ONLY WebSocket to prevent 502 polling storms
+      transports: ['websocket'],
       auth: { token },
       query: { 
         userId, 
@@ -33,45 +35,60 @@ class SocketService {
         ...(role === 'VENDOR' ? { vendorId: userId } : { riderId: userId })
       },
       reconnection: true,
-      reconnectionAttempts: 20,
-      reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
       randomizationFactor: 0.5,
       timeout: 20000,
     });
 
     this.socket.on('connect', () => {
       console.log(`${role} Socket connected:`, this.socket.id);
-      if (role === 'VENDOR') {
-        this.socket.emit('join_vendor_room', userId);
-      } else {
-        this.socket.emit('join:rider', { riderId: userId });
-      }
+      this._joinRoom();
+    });
+
+    // Handle reconnection - re-join rooms automatically
+    this.socket.on('reconnect', (attempt) => {
+      console.log(`[SOCKET] Reconnected after ${attempt} attempts. Re-joining rooms...`);
+      this._joinRoom();
     });
 
     this.socket.on('disconnect', (reason) => {
       console.warn(`${role} Socket disconnected:`, reason);
-      if (reason === 'io server disconnect') {
-        // Reconnect manually if server forcefully disconnected
+      if (reason === 'io server disconnect' || reason === 'transport close') {
         this.socket.connect();
       }
     });
 
     this.socket.on('connect_error', (err) => {
-      // Silence noisy errors during production or clean logs
       if (err.message.includes('timeout') || err.message.includes('xhr poll error')) {
-        console.warn(`[SOCKET] Offline Mode: Could not reach ${SOCKET_URL}. Ensure backend is running.`);
+        console.warn(`[SOCKET] Offline Mode: Could not reach ${SOCKET_URL}.`);
       } else {
-        console.error('[SOCKET] Connection error details:', {
-          message: err.message,
-          type: err.type,
-          description: err.description,
-          context: err.context,
-          url: SOCKET_URL
-        });
+        console.error('[SOCKET] Connection error details:', err.message);
       }
     });
 
+    // AppState listener for instant foreground recovery
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+    }
+    this.appStateSubscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        console.log('[SOCKET] App returned to foreground. Ensuring connection...');
+        if (this.socket && !this.socket.connected) {
+          this.socket.connect();
+        }
+      }
+    });
+  }
+
+  _joinRoom() {
+    if (!this.socket || !this.userId) return;
+    if (this.role === 'VENDOR') {
+      this.socket.emit('join_vendor_room', this.userId);
+    } else {
+      this.socket.emit('join:rider', { riderId: this.userId });
+    }
   }
 
   onNewOrder(callback) {
@@ -135,6 +152,10 @@ class SocketService {
   }
 
   disconnect() {
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -143,7 +164,6 @@ class SocketService {
     }
   }
 
-  // Generic on/off/emit
   on(event, callback) {
     if (this.socket) this.socket.on(event, callback);
   }

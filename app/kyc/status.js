@@ -9,7 +9,8 @@ import {
   Linking, 
   ScrollView, 
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  AppState
 } from 'react-native';
 
 import { useRouter } from 'expo-router';
@@ -56,26 +57,36 @@ export default function KYCStatus() {
     }
   }, [user?.uid, setProfileStatus]);
 
-  useEffect(() => {
-    // Initial fetch on mount just in case we missed a state change while offline
-    const checkStatus = async () => {
-      try {
-        const vendor = await apiClient.get(`/api/vendor/profile?t=${Date.now()}`).then(res => res.data.vendor);
-        if (vendor && vendor.kycStatus) {
-          const remoteStatus = vendor.kycStatus.toUpperCase();
-          if (remoteStatus !== kycStatus) {
-            console.log(`[KYC-SYNC] Status CHANGE detected: ${kycStatus} -> ${remoteStatus}`);
-            setKycStatus(remoteStatus);
-            setProfileStatus(remoteStatus);
-          }
+  const checkStatus = async () => {
+    try {
+      const vendor = await apiClient.get(`/api/vendor/profile?t=${Date.now()}`).then(res => res.data.vendor);
+      if (vendor && vendor.kycStatus) {
+        const remoteStatus = vendor.kycStatus.toUpperCase();
+        if (remoteStatus !== kycStatus) {
+          console.log(`[KYC-SYNC] Status CHANGE detected: ${kycStatus} -> ${remoteStatus}`);
+          setKycStatus(remoteStatus);
+          setProfileStatus(remoteStatus);
         }
-      } catch (err) {
-        console.error('[KYC-SYNC] Network/Server Error:', err.message);
       }
-    };
+    } catch (err) {
+      console.error('[KYC-SYNC] Network/Server Error:', err.message);
+    }
+  };
 
+  useEffect(() => {
+    // Initial fetch on mount
     checkStatus();
-  }, []);
+
+    // Foreground listener for instant sync when returning to app
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active') {
+        console.log('[KYC-SYNC] App foregrounded, checking status...');
+        checkStatus();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [kycStatus]);
 
   const renderStatusIcon = () => {
     switch (kycStatus) {
