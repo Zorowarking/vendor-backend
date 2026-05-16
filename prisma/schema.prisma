@@ -671,10 +671,13 @@ model SupportRequest {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   customerId       String?   @map("customer_id") @db.Uuid
   orderId          String?   @map("order_id") @db.Uuid
-  optionLabel      String?   @map("option_label")
+  issueType        String?   @map("issue_type") @db.VarChar(100)
+  message          String?
+  status           String    @default("PENDING") @db.VarChar(30)
   isEscalated      Boolean   @default(false) @map("is_escalated")
   whatsappTicketId String?   @map("whatsapp_ticket_id") @db.VarChar(255)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
   customer         Customer? @relation(fields: [customerId], references: [id])
   order            Order?    @relation(fields: [orderId], references: [id])
 

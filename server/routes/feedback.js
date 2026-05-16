@@ -31,7 +31,7 @@ router.post('/:id', firebaseAuth, requireCustomer, async (req, res) => {
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    if (order.status !== 'Delivered') {
+    if (order.status?.toLowerCase() !== 'delivered') {
       return res.status(400).json({ error: 'Feedback can only be submitted for delivered orders' });
     }
 
@@ -44,14 +44,44 @@ router.post('/:id', firebaseAuth, requireCustomer, async (req, res) => {
       return res.status(409).json({ error: 'Feedback already submitted for this order' });
     }
 
-    // 5. Create Feedback
-    const feedback = await prisma.feedback.create({
-      data: {
-        orderId,
-        customerId: req.customer.id,
-        rating: parseInt(rating),
-        comment
+    // 5. Create Feedback and update Vendor Rating Summary in transaction
+    const { feedback } = await prisma.$transaction(async (tx) => {
+      const fb = await tx.feedback.create({
+        data: {
+          orderId,
+          customerId: req.customer.id,
+          rating: parseInt(rating),
+          comment
+        }
+      });
+
+      // Update Vendor Rating Summary
+      const oldSummary = await tx.vendorRatingsSummary.findUnique({
+        where: { vendorId: order.vendorId }
+      });
+
+      if (!oldSummary) {
+        await tx.vendorRatingsSummary.create({
+          data: {
+            vendorId: order.vendorId,
+            avgRating: parseInt(rating),
+            totalReviews: 1
+          }
+        });
+      } else {
+        const newCount = oldSummary.totalReviews + 1;
+        const newAvg = (Number(oldSummary.avgRating) * oldSummary.totalReviews + parseInt(rating)) / newCount;
+        
+        await tx.vendorRatingsSummary.update({
+          where: { vendorId: order.vendorId },
+          data: {
+            avgRating: newAvg,
+            totalReviews: newCount
+          }
+        });
       }
+
+      return { feedback: fb };
     });
 
     res.json({ success: true, feedback });

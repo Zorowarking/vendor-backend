@@ -138,6 +138,7 @@ try {
     const storageRoutes = require('./routes/storage');
     const shadowfaxRoutes = require('./src/modules/delivery/shadowfax/shadowfax.routes');
     const feedbackRoutes = require('./routes/feedback');
+    const complaintRoutes = require('./routes/complaints');
 
     app.use('/api/auth', authRoutes);
     app.use('/api/browsing', browsingRoutes);
@@ -149,6 +150,7 @@ try {
     app.use('/api/storage', storageRoutes);
     app.use('/api/delivery/shadowfax', shadowfaxRoutes);
     app.use('/api/feedback', feedbackRoutes);
+    app.use('/api/customer/complaints', complaintRoutes);
     app.use('/api/admin', require('./routes/admin'));
     app.use('/api/sandbox', require('./routes/sandbox'));
 
