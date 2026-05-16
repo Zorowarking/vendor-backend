@@ -764,7 +764,7 @@ export default function AddProduct() {
         <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
           <View>
             <Text style={styles.label}>Advanced Customization</Text>
-            <Text style={styles.subLabel}>"Build Your Own" mode (e.g. Pizza toppings)</Text>
+            <Text style={styles.subLabel}>Enable extra options and groups for this product</Text>
           </View>
           <Switch 
             value={isCustomizable} 

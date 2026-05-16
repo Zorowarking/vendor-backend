@@ -782,11 +782,11 @@ export default function EditProduct() {
           ))}
         </View>
 
-        {/* Build Your Own Customization Section */}
+        {/* Advanced Customization Section */}
         <View style={styles.customHeader}>
           <View>
-            <Text style={styles.label}>Build Your Own</Text>
-            <Text style={styles.subLabel}>Enable advanced customization options</Text>
+            <Text style={styles.label}>Advanced Customization</Text>
+            <Text style={styles.subLabel}>Enable extra options and groups for this product</Text>
           </View>
           <Switch 
             value={isCustomizable} 
