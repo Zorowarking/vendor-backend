@@ -54,11 +54,13 @@ class CartService {
         }
 
         const start = Date.now();
-        let cart = await prisma.cart.findUnique({
+        let cart = await prisma.cart.findFirst({
           where: customerId ? { 
-            customerId_vendorId: { customerId, vendorId } 
+            customerId, 
+            vendorId 
           } : { 
-            guestId_vendorId: { guestId: guestId, vendorId } 
+            guestId, 
+            vendorId 
           },
           include: { items: true }
         });
@@ -132,12 +134,8 @@ class CartService {
 
         if (requestedVendorId) {
           // SINGLE VENDOR MODE (Legacy support for checkout)
-          const cart = await prisma.cart.findUnique({
-            where: customerId ? { 
-              customerId_vendorId: { customerId, vendorId: requestedVendorId } 
-            } : { 
-              guestId_vendorId: { guestId: guestId, vendorId: requestedVendorId } 
-            },
+          const cart = await prisma.cart.findFirst({
+            where: customerId ? { customerId, vendorId: requestedVendorId } : { guestId, vendorId: requestedVendorId },
             include: { items: true }
           });
           
