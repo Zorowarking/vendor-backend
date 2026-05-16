@@ -21,6 +21,9 @@ export default function ReviewsScreen() {
       }
     } catch (error) {
       console.error('Failed to fetch reviews:', error);
+      if (error.response?.data) {
+        console.log('Error Details from Server:', JSON.stringify(error.response.data, null, 2));
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
