@@ -14,19 +14,21 @@ const env = require('../src/config/env');
 // POST /orders — initiate payment, validate cart, age verification, guest login
 router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    const { deliveryPreference, addressId } = req.body;
+    const { deliveryPreference, addressId, vendorId } = req.body;
 
-    // 1. Validate Guest Login - enforce logged in status at checkout (already done via firebaseAuth + requireCustomer)
-    
+    if (!vendorId) {
+      return res.status(400).json({ error: 'Vendor ID is required for checkout' });
+    }
+
     // 2. Delivery preference must be explicitly set
     if (!deliveryPreference) {
       return res.status(400).json({ error: 'Delivery preference must be explicitly selected.' });
     }
 
     // 3. Get Cart
-    const cart = await CartService.getCart({ customerId: req.customer.id });
+    const cart = await CartService.getCart({ customerId: req.customer.id }, vendorId);
     if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ error: 'Cart is empty' });
+      return res.status(400).json({ error: 'Cart is empty for this vendor' });
     }
 
     // VENDOR GATEKEEPER CHECK (Pre-Payment)

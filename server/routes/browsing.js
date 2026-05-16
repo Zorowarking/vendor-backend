@@ -86,30 +86,48 @@ router.get('/vendors/:id/products', guestSession, async (req, res) => {
       include: { 
         addOns: true, 
         images: true,
+        categories: true,
         customizationGroups: {
           include: { options: true }
         }
       }
     });
-    const mappedProducts = products.map(p => ({
-      ...p,
-      image: p.images && p.images.length > 0 ? p.images[0].url : null,
-      imageUrl: p.images && p.images.length > 0 ? p.images[0].url : null,
-      price: Number(p.basePrice), // Alias for frontend
-      addons: p.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })), // Alias and numeric price
-      customizationGroups: (p.customizationGroups || []).map(g => ({
-        ...g,
-        options: (g.options || []).map(o => ({
-          ...o,
-          priceModifier: Number(o.priceModifier || 0),
-          allowQuantity: !!o.allowQuantity,
-          freeLimit: o.freeLimit || 0,
-          conflicts: o.conflicts || null,
-          isAvailable: o.isAvailable !== false,
-          displayOrder: o.displayOrder || 0
+    // 1. Fetch all categories for this vendor to build a name map
+    const vendorCategories = await prisma.category.findMany({
+      where: { vendorId: id }
+    });
+    const catMap = vendorCategories.reduce((acc, cat) => ({ ...acc, [cat.id]: cat.name }), {});
+
+    const mappedProducts = products.map(p => {
+      // 2. Resolve category name: 
+      // Priority 1: Name from the categories relation (most accurate)
+      // Priority 2: Mapping the category UUID from catMap
+      // Priority 3: The existing category string
+      const resolvedCatName = (p.categories && p.categories.length > 0)
+        ? p.categories[0].name
+        : (catMap[p.category] || p.category || 'Other');
+
+      return {
+        ...p,
+        category: resolvedCatName,
+        image: p.images && p.images.length > 0 ? p.images[0].url : null,
+        imageUrl: p.images && p.images.length > 0 ? p.images[0].url : null,
+        price: Number(p.basePrice), // Alias for frontend
+        addons: p.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })), // Alias and numeric price
+        customizationGroups: (p.customizationGroups || []).map(g => ({
+          ...g,
+          options: (g.options || []).map(o => ({
+            ...o,
+            priceModifier: Number(o.priceModifier || 0),
+            allowQuantity: !!o.allowQuantity,
+            freeLimit: o.freeLimit || 0,
+            conflicts: o.conflicts || null,
+            isAvailable: o.isAvailable !== false,
+            displayOrder: o.displayOrder || 0
+          }))
         }))
-      }))
-    }));
+      };
+    });
     res.json({ success: true, products: mappedProducts });
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch products' });
@@ -125,6 +143,7 @@ router.get('/products/:id', guestSession, async (req, res) => {
       include: { 
         addOns: true, 
         images: true,
+        categories: true,
         customizationGroups: {
           include: { options: true }
         }
@@ -135,6 +154,7 @@ router.get('/products/:id', guestSession, async (req, res) => {
     
     const mappedProduct = {
       ...product,
+      category: product.categories && product.categories.length > 0 ? product.categories[0].name : (product.category || 'Other'),
       image: product.images && product.images.length > 0 ? `${product.images[0].url}?t=${Date.now()}` : null,
       price: Number(product.basePrice),
       addons: product.addOns?.map(a => ({ ...a, price: Number(a.price || 0) })),

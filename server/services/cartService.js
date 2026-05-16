@@ -31,11 +31,35 @@ class CartService {
 
     try {
         const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours expiry
-        let queryWhere = customerId ? { customerId } : { guestId };
+        let queryWhere = customerId ? { customerId, vendorId } : { guestId, vendorId };
+
+        // 1. Enforce Vendor Limits
+        const activeCarts = await prisma.cart.findMany({
+          where: customerId ? { customerId } : { guestId },
+          include: { items: { take: 1 } }
+        });
+        
+        const nonEmptyCarts = activeCarts.filter(c => c.items.length > 0);
+        const alreadyHasThisVendor = nonEmptyCarts.some(c => c.vendorId === vendorId);
+        
+        if (!alreadyHasThisVendor) {
+          if (!customerId && nonEmptyCarts.length >= 1) {
+            // Guest User: 1-vendor limit
+            throw { status: 409, message: 'Guests can only order from one vendor at a time. Please login to shop from multiple restaurants!' };
+          }
+          if (customerId && nonEmptyCarts.length >= 3) {
+            // Logged-in User: 3-vendor limit
+            throw { status: 403, message: 'You can only have items from up to 3 different vendors in your cart.' };
+          }
+        }
 
         const start = Date.now();
-        let cart = await prisma.cart.findFirst({
-          where: queryWhere,
+        let cart = await prisma.cart.findUnique({
+          where: customerId ? { 
+            customerId_vendorId: { customerId, vendorId } 
+          } : { 
+            guestId_vendorId: { guestId: guestId, vendorId } 
+          },
           include: { items: true }
         });
         console.log(`[CART-SERVICE] Lookup took ${Date.now() - start}ms`);
@@ -47,43 +71,15 @@ class CartService {
             include: { items: true }
           });
         } else {
-          // Attempt to adopt guest cart if upgrading
-          if (customerId && guestId) {
-            cart = await prisma.cart.findFirst({
-              where: { guestId },
-              include: { items: true }
-            });
-          }
-
-          if (cart) {
-            cart = await prisma.cart.update({
-              where: { id: cart.id },
-              data: { customerId, guestId: null, expiresAt },
-              include: { items: true }
-            });
-          } else {
-            cart = await prisma.cart.create({
-              data: {
-                customerId,
-                guestId: customerId ? null : guestId,
-                vendorId,
-                expiresAt
-              },
-              include: { items: true }
-            });
-          }
-        }
-
-        // 2. Validate Single Vendor Rule
-        if (cart.vendorId && cart.vendorId !== vendorId && cart.items.length > 0) {
-          throw { status: 409, message: 'Cross-vendor add blocked. Clear cart or checkout first.' };
-        }
-
-        // 3. Update vendorId if cart was empty
-        if (cart.items.length === 0 && cart.vendorId !== vendorId) {
-          await prisma.cart.update({
-            where: { id: cart.id },
-            data: { vendorId }
+          // No cart for THIS vendor yet. Create one.
+          cart = await prisma.cart.create({
+            data: {
+              customerId,
+              guestId: customerId ? null : guestId,
+              vendorId,
+              expiresAt
+            },
+            include: { items: true }
           });
         }
 
@@ -122,128 +118,137 @@ class CartService {
   /**
    * Calculate cart totals with add-on charge logic
    */
-  static async getCart(identifier) {
+  static async getCart(identifier, requestedVendorId = null) {
     const { customerId, guestId } = identifier;
     
     try {
-        let cart = await prisma.cart.findFirst({
-          where: customerId ? { customerId } : { guestId },
+        const queryWhere = customerId ? { customerId } : { guestId };
+        
+        // 1. Fetch carts
+        const cartQuery = {
+          where: requestedVendorId ? { ...queryWhere, vendorId: requestedVendorId } : queryWhere,
+          include: { items: true }
+        };
+
+        if (requestedVendorId) {
+          // SINGLE VENDOR MODE (Legacy support for checkout)
+          const cart = await prisma.cart.findUnique({
+            where: customerId ? { 
+              customerId_vendorId: { customerId, vendorId: requestedVendorId } 
+            } : { 
+              guestId_vendorId: { guestId: guestId, vendorId: requestedVendorId } 
+            },
+            include: { items: true }
+          });
+          
+          if (!cart) return null;
+          
+          // Enrich this single cart (reuse existing logic but for one)
+          return await this._enrichCarts([cart], true);
+        }
+
+        // MULTI VENDOR MODE (For cart screen)
+        const allCarts = await prisma.cart.findMany({
+          where: queryWhere,
           include: { items: true }
         });
 
-        if (!cart && customerId && guestId) {
-          cart = await prisma.cart.findFirst({
-            where: { guestId },
-            include: { items: true }
-          });
+        if (allCarts.length === 0) return { carts: [], totalItems: 0, grandTotal: 0 };
+        return await this._enrichCarts(allCarts, false);
 
-          if (cart) {
-            cart = await prisma.cart.update({
-              where: { id: cart.id },
-              data: { customerId, guestId: null },
-              include: { items: true }
-            });
-          }
-        }
-
-        if (!cart) return null;
-
-        const vendor = cart.vendorId ? await prisma.vendor.findUnique({
-          where: { id: cart.vendorId }
-        }) : null;
-
-        const productIds = cart.items.map(item => item.productId);
-        const products = await prisma.product.findMany({
-          where: { id: { in: productIds } },
-          include: { 
-            addOns: true,
-            customizationGroups: {
-              include: { options: true }
-            }
-          }
-        });
-
-        const productMap = products.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
-
-        let subtotal = 0;
-        let totalAddonCharges = 0;
-
-        const items = cart.items.map(item => {
-          const product = productMap[item.productId];
-          if (!product) return { ...item, name: 'Unknown Product', basePrice: 0, total: 0 };
-
-          const basePrice = Number(product.basePrice || 0);
-          const itemSubtotal = basePrice * item.quantity;
-          
-          let itemAddonCharge = 0;
-          const selectedAddons = item.options?.selectedAddons || [];
-          
-          // Calculate charges per-addon based on their specific freeLimit
-          selectedAddons.forEach(selected => {
-            // Find the add-on details from the product's add-on list
-            // We match by name or ID (fallback to name for compatibility)
-            const addonName = typeof selected === 'string' ? selected : (selected.name || '');
-            const addonDetails = product.addOns.find(a => a.name === addonName || a.id === selected.id);
-            
-            if (addonDetails) {
-              const qty = selected.quantity || 1;
-              const freeLimit = addonDetails.freeLimit || 0;
-              const price = Number(addonDetails.price || 0);
-              
-              const chargeableQty = Math.max(0, qty - freeLimit);
-              itemAddonCharge += (chargeableQty * price);
-            }
-          });
-          
-          // 2. Calculate charges for NEW Customization Groups
-          const selectedCustomizations = item.options?.customizations || [];
-          selectedCustomizations.forEach(groupSelection => {
-            const groupDetails = product.customizationGroups.find(g => g.id === groupSelection.groupId);
-            if (groupDetails && groupSelection.selectedOptions) {
-              groupSelection.selectedOptions.forEach(selectedOpt => {
-                const optId = typeof selectedOpt === 'string' ? selectedOpt : selectedOpt.id;
-                const optDetails = groupDetails.options.find(o => o.id === optId);
-                if (optDetails) {
-                  const optQty = typeof selectedOpt === 'object' ? (selectedOpt.quantity || 1) : 1;
-                  const freeLimit = optDetails.freeLimit || 0;
-                  const chargeableQty = Math.max(0, optQty - freeLimit);
-                  itemAddonCharge += (Number(optDetails.priceModifier || 0) * chargeableQty);
-                }
-              });
-            }
-          });
-
-          // Multiply addon/customization charges by item quantity (pricing is per unit)
-          const totalLineAddonCharge = itemAddonCharge * item.quantity;
-
-          subtotal += itemSubtotal;
-          totalAddonCharges += totalLineAddonCharge;
-
-          return {
-            ...item,
-            ageVerified: item.ageVerifiedCheckbox,
-            name: product.name || 'Product',
-            isRestricted: product.isRestricted,
-            price: basePrice,
-            unitPrice: basePrice + itemAddonCharge,
-            addonCharge: totalLineAddonCharge,
-            total: itemSubtotal + totalLineAddonCharge
-          };
-        });
-
-        return {
-          id: cart.id,
-          vendorId: cart.vendorId,
-          vendorName: vendor?.businessName,
-          items,
-          subtotal,
-          totalAddonCharges,
-          total: subtotal + totalAddonCharges
-        };
     } catch (err) {
         console.error('[CART-SERVICE] Error in getCart:', err);
         throw err;
     }
+  }
+
+  /**
+   * Internal helper to enrich cart items with product and vendor details
+   */
+  static async _enrichCarts(allCarts, singleMode = false) {
+    const vendorIds = [...new Set(allCarts.map(c => c.vendorId))];
+    const vendors = await prisma.vendor.findMany({ where: { id: { in: vendorIds } } });
+    const vendorMap = vendors.reduce((acc, v) => ({ ...acc, [v.id]: v }), {});
+
+    const allProductIds = [...new Set(allCarts.flatMap(c => c.items.map(i => i.productId)))];
+    const products = await prisma.product.findMany({
+      where: { id: { in: allProductIds } },
+      include: { 
+        addOns: true,
+        customizationGroups: { include: { options: true } }
+      }
+    });
+    const productMap = products.reduce((acc, p) => ({ ...acc, [p.id]: p }), {});
+
+    const enrichedCarts = allCarts.map(cart => {
+      let subtotal = 0;
+      let totalAddonCharges = 0;
+      
+      const items = cart.items.map(item => {
+        const product = productMap[item.productId];
+        if (!product) return { ...item, name: 'Unknown Product', basePrice: 0, total: 0 };
+
+        const basePrice = Number(product.basePrice || 0);
+        const itemSubtotal = basePrice * item.quantity;
+        
+        let itemAddonCharge = 0;
+        const selectedAddons = item.options?.selectedAddons || [];
+        selectedAddons.forEach(selected => {
+          const addonName = typeof selected === 'string' ? selected : (selected.name || '');
+          const addonDetails = product.addOns.find(a => a.name === addonName || a.id === selected.id);
+          if (addonDetails) {
+            const qty = selected.quantity || 1;
+            const freeLimit = addonDetails.freeLimit || 0;
+            itemAddonCharge += (Math.max(0, qty - freeLimit) * Number(addonDetails.price || 0));
+          }
+        });
+
+        const selectedCustomizations = item.options?.customizations || [];
+        selectedCustomizations.forEach(groupSelection => {
+          const groupDetails = product.customizationGroups.find(g => g.id === groupSelection.groupId);
+          if (groupDetails && groupSelection.selectedOptions) {
+            groupSelection.selectedOptions.forEach(selectedOpt => {
+              const optId = typeof selectedOpt === 'string' ? selectedOpt : selectedOpt.id;
+              const optDetails = groupDetails.options.find(o => o.id === optId);
+              if (optDetails) {
+                const optQty = typeof selectedOpt === 'object' ? (selectedOpt.quantity || 1) : 1;
+                itemAddonCharge += (Number(optDetails.priceModifier || 0) * Math.max(0, optQty - (optDetails.freeLimit || 0)));
+              }
+            });
+          }
+        });
+
+        const totalLineAddonCharge = itemAddonCharge * item.quantity;
+        subtotal += itemSubtotal;
+        totalAddonCharges += totalLineAddonCharge;
+
+        return {
+          ...item,
+          name: product.name,
+          price: basePrice,
+          unitPrice: basePrice + itemAddonCharge,
+          total: itemSubtotal + totalLineAddonCharge
+        };
+      }).filter(i => i.name !== 'Unknown Product');
+
+      return {
+        id: cart.id,
+        vendorId: cart.vendorId,
+        vendorName: vendorMap[cart.vendorId]?.businessName || 'Unknown Vendor',
+        items,
+        subtotal,
+        totalAddonCharges,
+        total: subtotal + totalAddonCharges
+      };
+    }).filter(c => c.items.length > 0);
+
+    if (singleMode) return enrichedCarts[0] || null;
+
+    return {
+      carts: enrichedCarts,
+      totalItems: enrichedCarts.reduce((acc, c) => acc + c.items.length, 0),
+      grandTotal: enrichedCarts.reduce((acc, c) => acc + c.total, 0)
+    };
   }
 
   static async clearCart(identifier) {

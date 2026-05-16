@@ -1031,13 +1031,17 @@ router.post('/products', firebaseAuth, requireKyc, async (req, res) => {
       }
     }
 
+    // Fetch the primary category name for the string field (for grouping in UI)
+    const primaryCat = await prisma.category.findUnique({ where: { id: resolvedCategoryIds[0] } });
+    const categoryName = primaryCat?.name || 'Uncategorized';
+
     const productPayload = {
       vendorId: profile.vendor.id, 
       name, 
       description, 
       productType: type, 
       basePrice: parseFloat(price) || 0,
-      category: resolvedCategoryIds[0] || 'Uncategorized',
+      category: categoryName,
       isRestricted: isRestricted === 'true' || isRestricted === true,
       isActive: false, 
       reviewStatus: 'pending_review',

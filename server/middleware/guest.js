@@ -13,7 +13,7 @@ const guestSession = async (req, res, next) => {
     // If no guest ID, the frontend should ideally call /api/auth/guest first
     // but we can generate one if it's a browsing request.
     const newGuestId = `guest_${uuidv4()}`;
-    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     try {
       await prisma.guestSession.create({
@@ -44,7 +44,7 @@ const guestSession = async (req, res, next) => {
       console.log(`[GUEST] ${isMissing ? 'Missing' : 'Expired'} session for ID: ${guestId}. Regenerating...`);
       // Re-use logic for new session creation
       const newGuestId = `guest_${uuidv4()}`;
-      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
       await prisma.guestSession.create({
         data: { guestId: newGuestId, expiresAt }

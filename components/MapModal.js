@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator, Platform } from 'react-native';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, FlatList } from 'react-native';
 import Colors from '../constants/Colors';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
@@ -40,6 +40,60 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   });
 
   const [loadingLocation, setLoadingLocation] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  const handleSearch = async (query) => {
+    setSearchQuery(query);
+    if (query.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GOOGLE_API_KEY}&components=country:in`
+      );
+      const data = await response.json();
+      if (data.status === 'OK') {
+        setSearchResults(data.predictions);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const selectPlace = async (placeId) => {
+    setSearchResults([]);
+    setSearchQuery('');
+    try {
+      setLoadingLocation(true);
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GOOGLE_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.status === 'OK') {
+        const { lat, lng } = data.result.geometry.location;
+        const newCoords = { latitude: lat, longitude: lng };
+        setMarker(newCoords);
+        setRegion({
+          ...newCoords,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        });
+      }
+    } catch (error) {
+      console.error('Select place error:', error);
+    } finally {
+      setLoadingLocation(false);
+    }
+  };
 
   // HTML for the Leaflet Map Fallback
   const mapHtml = `
@@ -179,6 +233,42 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
             onMessage={onWebMessage}
             scrollEnabled={false}
           />
+        )}
+
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={onClose}>
+            <Ionicons name="close" size={24} color="#000" />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search for location..."
+            value={searchQuery}
+            onChangeText={handleSearch}
+            placeholderTextColor="#999"
+          />
+          {isSearching && <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 10 }} />}
+        </View>
+
+        {searchResults.length > 0 && (
+          <View style={styles.searchResultsContainer}>
+            <FlatList
+              data={searchResults}
+              keyExtractor={(item) => item.place_id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.searchResultItem}
+                  onPress={() => selectPlace(item.place_id)}
+                >
+                  <Ionicons name="location-outline" size={20} color="#666" style={{ marginRight: 12 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.resultMainText} numberOfLines={1}>{item.structured_formatting.main_text}</Text>
+                    <Text style={styles.resultSubText} numberOfLines={1}>{item.structured_formatting.secondary_text}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 250 }}
+            />
+          </View>
         )}
 
         <View style={styles.overlay}>
@@ -341,5 +431,62 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  header: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    zIndex: 1000,
+  },
+  backBtn: {
+    padding: 5,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 15,
+    color: '#000',
+    paddingVertical: 8,
+  },
+  searchResultsContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 115 : 95,
+    left: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    overflow: 'hidden',
+    zIndex: 1000,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  resultMainText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  resultSubText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
   },
 });
