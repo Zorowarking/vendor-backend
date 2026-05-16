@@ -2,7 +2,10 @@ import { Platform, NativeModules } from 'react-native';
 
 let FloatingBubble = null;
 try {
-  FloatingBubble = require('react-native-floating-bubble');
+  // Only require if the native module is detected
+  if (NativeModules.RNFloatingBubble || NativeModules.FloatingBubble) {
+    FloatingBubble = require('react-native-floating-bubble');
+  }
 } catch (e) {
   // Library not found or not a native build
 }

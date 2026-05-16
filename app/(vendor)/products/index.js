@@ -92,7 +92,7 @@ export default function ProductsList() {
   const toggleAvailability = async (id, currentStatus) => {
     // Optimistic update
     setProducts(prev => 
-      prev.map(p => p.id === id ? { ...p, isActive: !currentStatus } : p)
+      prev.map(p => p.id === id ? { ...p, isAvailable: !currentStatus } : p)
     );
     
     try {
@@ -101,7 +101,7 @@ export default function ProductsList() {
     } catch (error) {
       // Rollback on failure
       setProducts(prev => 
-        prev.map(p => p.id === id ? { ...p, isActive: currentStatus } : p)
+        prev.map(p => p.id === id ? { ...p, isAvailable: currentStatus } : p)
       );
       Alert.alert('Error', 'Failed to update availability. Please check your connection.');
     }
@@ -158,14 +158,14 @@ export default function ProductsList() {
 
       <View style={styles.actionContainer}>
         <Switch
-          value={item.isActive}
-          onValueChange={() => item.reviewStatus === 'pending_review' ? Alert.alert('Under Review', 'This item is under review and cannot be activated yet.') : toggleAvailability(item.id, item.isActive)}
+          value={item.isAvailable}
+          onValueChange={() => item.reviewStatus === 'pending_review' ? Alert.alert('Under Review', 'This item is under review and cannot be activated yet.') : toggleAvailability(item.id, item.isAvailable)}
           trackColor={{ false: Colors.border, true: Colors.success + '40' }}
-          thumbColor={item.isActive ? Colors.success : Colors.subText}
+          thumbColor={item.isAvailable ? Colors.success : Colors.subText}
           disabled={item.reviewStatus === 'pending_review'}
         />
-        <Text style={[styles.availabilityText, { color: item.reviewStatus === 'pending_review' ? Colors.warning : (item.isActive ? Colors.success : Colors.subText) }]}>
-          {item.reviewStatus === 'pending_review' ? 'Review Pending' : (item.isActive ? 'Active' : 'Inactive')}
+        <Text style={[styles.availabilityText, { color: item.reviewStatus === 'pending_review' ? Colors.warning : (item.isAvailable ? Colors.success : Colors.subText) }]}>
+          {item.reviewStatus === 'pending_review' ? 'Review Pending' : (item.isAvailable ? 'Active' : 'Inactive')}
         </Text>
       </View>
     </TouchableOpacity>

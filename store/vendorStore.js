@@ -14,7 +14,9 @@ export const useVendorStore = create()(
       lastSynced: null,
       
       setProducts: (data) => {
-        const productsArr = Array.isArray(data) ? data : (data && Array.isArray(data.products) ? data.products : []);
+        const currentProducts = get().products;
+        const resolvedData = typeof data === 'function' ? data(currentProducts) : data;
+        const productsArr = Array.isArray(resolvedData) ? resolvedData : (resolvedData && Array.isArray(resolvedData.products) ? resolvedData.products : []);
         set({ products: productsArr, lastSynced: Date.now() });
       },
       addProductToStore: (product) => set((state) => {

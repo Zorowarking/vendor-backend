@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { vendorApi } from './vendorApi';
 import { useAuthStore } from '../store/authStore';
@@ -7,9 +7,12 @@ import { useNotificationStore } from '../store/notificationStore';
 // Dynamic import for FCM (Safe for Expo Go)
 let messaging = null;
 try {
-  messaging = require('@react-native-firebase/messaging').default;
+  // Only attempt require if the native module is actually linked (prevents crash in Expo Go)
+  if (NativeModules.RNFBMessagingModule) {
+    messaging = require('@react-native-firebase/messaging').default;
+  }
 } catch (e) {
-  console.warn('FCM native library not found. Falling back to Mock Notification mode.');
+  console.warn('[NOTIF] FCM native library not found. Falling back to Mock Notification mode.');
 }
 
 const FCM_TOKEN_KEY = 'fcm_token_v1';

@@ -11,7 +11,8 @@ import { Alert, NativeModules } from 'react-native';
 // Safely require native firebase auth
 let nativeAuth = null;
 try {
-  if (NativeModules.RNFBAppModule) {
+  // Defensive check for the presence of the native module to prevent startup crashes in Expo Go
+  if (NativeModules.RNFBAuthModule && NativeModules.RNFBAppModule) {
     nativeAuth = require('@react-native-firebase/auth').default;
   }
 } catch (e) {
@@ -76,8 +77,28 @@ export const authService = {
         profileStatus = syncResponse.data.user.profileStatus;
         console.log('--- BACKEND SYNC SUCCESS ---', { role, profileStatus });
       }
+      
+      // AUTO-ASSIGN VENDOR ROLE: If the user has no role, assign VENDOR automatically
+      if (syncResponse.data.success && !role) {
+        console.log('--- AUTO-ASSIGNING VENDOR ROLE ---');
+        try {
+          const roleResponse = await axios.post(`${API_BASE_URL}/api/auth/role`, { role: 'VENDOR' }, {
+            headers: { Authorization: `Bearer ${sessionToken}` }
+          });
+          if (roleResponse.data.success) {
+            role = 'VENDOR';
+            profileStatus = roleResponse.data.user.profileStatus || 'PENDING';
+          }
+        } catch (roleErr) {
+          console.error('Auto-role assignment failed:', roleErr.message);
+          // Fallback for development: assume VENDOR role locally
+          role = 'VENDOR';
+        }
+      }
     } catch (err) {
       console.warn('Backend sync failed, falling back to PENDING status:', err.message);
+      // Fallback: Default to VENDOR role if everything else fails in development
+      if (!role) role = 'VENDOR';
     }
 
     useAuthStore.getState().login({
@@ -100,7 +121,15 @@ export const authService = {
       console.log('Cleaned Phone:', cleanPhone);
       
       // Developer Bypass: If using a test number, don't call Firebase
-      if (cleanPhone === MOCK_TEST_NUMBER || cleanPhone === '+917777777777') {
+      const mockNumbers = [
+        MOCK_TEST_NUMBER, 
+        '+917777777777', 
+        '+918888888888', 
+        '+911111111111', 
+        '+910000000000',
+        '+919063851105'
+      ];
+      if (mockNumbers.includes(cleanPhone)) {
         console.log('--- DEV MOCK MODE TRIGGERED ---');
         return { 
           isMock: true, 
@@ -108,9 +137,9 @@ export const authService = {
             if (code === MOCK_OTP) {
               return Promise.resolve({ 
                 user: { 
-                  uid: 'mock-uid-123', 
+                  uid: `mock-uid-${cleanPhone.replace(/[^0-9]/g, '')}`, 
                   phoneNumber: cleanPhone, 
-                  getIdToken: () => Promise.resolve('mock-session-token-123') 
+                  getIdToken: () => Promise.resolve(`mock-session-token-${cleanPhone.replace(/[^0-9]/g, '')}`) 
                 } 
               });
             }

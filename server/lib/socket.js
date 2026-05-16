@@ -18,9 +18,14 @@ const authenticateSocket = async (socket, next) => {
       return next();
     }
     
-    // DEV MOCK: Vendor Token
-    if (token === 'mock-session-token-123') {
-      socket.user = { uid: 'mock-uid-123', phoneNumber: '+919999999999', email: 'dev@test.com' };
+    // DEV MOCK: Vendor Token (Supports dynamic phone numbers)
+    if (token.startsWith('mock-session-token-')) {
+      const phone = '+' + token.replace('mock-session-token-', '');
+      socket.user = { 
+        uid: `mock-uid-${phone.replace(/[^0-9]/g, '')}`, 
+        phoneNumber: phone, 
+        email: 'dev@test.com' 
+      };
       return next();
     }
     

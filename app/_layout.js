@@ -160,19 +160,13 @@ export default function Layout() {
       return;
     }
 
-    // Role Selection Enforcement: If not a vendor, must select role
-    if (isAuthenticated && role !== 'VENDOR' && currentScreen !== 'role-select') {
-      router.replace('/auth/role-select');
-      return;
-    }
-
     // Role-based onboarding checks (only if not already Ready or Enforcement)
     if (isAuthenticated && profileStatus !== 'READY' && profileStatus !== 'ACTIVE') {
 
       if (profileStatus === 'PENDING') {
         const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
         const currentPath = segments.join('/');
-        if (!onboardingScreens.some(screen => currentPath.includes(screen)) && currentScreen !== 'role-select') {
+        if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
           if (role === 'VENDOR') router.replace('/auth/vendor-register');
         }
       } else if (profileStatus === 'UNDER_REVIEW') {
@@ -199,7 +193,7 @@ export default function Layout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
         <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
-        <Stack.Screen name="auth/role-select" options={{ title: 'Role Selection' }} />
+
       </Stack>
     </View>
     </ErrorBoundary>

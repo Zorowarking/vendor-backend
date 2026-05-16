@@ -13,11 +13,12 @@ const firebaseAuth = async (req, res, next) => {
   const idToken = authHeader.split('Bearer ')[1];
 
   try {
-    // DEV MOCK: Vendor Token
-    if (idToken === 'mock-session-token-123') {
+    // DEV MOCK: Vendor Token (Supports dynamic phone numbers)
+    if (idToken.startsWith('mock-session-token-')) {
+      const phone = '+' + idToken.replace('mock-session-token-', '');
       req.user = {
-        uid: 'mock-uid-123',
-        phoneNumber: '+919999999999',
+        uid: `mock-uid-${phone.replace(/[^0-9]/g, '')}`,
+        phoneNumber: phone,
         email: 'dev@test.com'
       };
       return next();
