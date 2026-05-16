@@ -187,4 +187,22 @@ router.get('/products/:id', guestSession, async (req, res) => {
 });
 
 
+// GET /vendors/:id/reviews — all feedback for a vendor
+router.get('/vendors/:id/reviews', guestSession, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reviews = await prisma.feedback.findMany({
+      where: { order: { vendorId: id } },
+      include: {
+        customer: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ success: true, reviews });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch reviews' });
+  }
+});
+
 module.exports = router;

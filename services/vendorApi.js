@@ -171,5 +171,10 @@ export const vendorApi = {
   getOrders: async () => {
     const response = await apiClient.get('/api/vendor/orders');
     return response.data;
+  },
+
+  getReviews: async () => {
+    const response = await apiClient.get('/api/vendor/reviews');
+    return response.data;
   }
 };

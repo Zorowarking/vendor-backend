@@ -29,14 +29,14 @@ const updateFloatingBubble = async (vendorId, isActive, activeOrderCount = 0) =>
   if (!admin.apps.length) return;
 
   try {
-    // Fetch the FCM token for the vendor profile.
+    // Fetch the FCM token via the vendor's profile
     const vendor = await require('./prisma').prisma.vendor.findUnique({
       where: { id: vendorId },
-      select: { fcmToken: true }
+      include: { profile: { select: { fcmToken: true } } }
     });
     
-    const fcmToken = vendor?.fcmToken;
-    if (!fcmToken || fcmToken === 'MOCK_TOKEN_OR_FETCH_FROM_DB') return;
+    const fcmToken = vendor?.profile?.fcmToken || vendor?.fcmToken;
+    if (!fcmToken || fcmToken.startsWith('mock_')) return;
 
     await admin.messaging().send({
       token: fcmToken,
@@ -49,7 +49,7 @@ const updateFloatingBubble = async (vendorId, isActive, activeOrderCount = 0) =>
         priority: 'high'
       }
     });
-    console.log(`[FCM] Bubble update sent for vendor ${vendorId}. Active: ${isActive}`);
+    console.log(`[FCM] Bubble update sent for vendor ${vendorId}.`);
   } catch (error) {
     console.error(`[FCM] Bubble update error:`, error.message);
   }
@@ -64,12 +64,13 @@ const sendToVendor = async (vendorId, payload) => {
   try {
     const vendor = await require('./prisma').prisma.vendor.findUnique({
       where: { id: vendorId },
-      select: { fcmToken: true }
+      include: { profile: { select: { fcmToken: true } } }
     });
     
-    if (vendor?.fcmToken) {
+    const fcmToken = vendor?.profile?.fcmToken || vendor?.fcmToken;
+    if (fcmToken) {
       await sendPushNotification(
-        vendor.fcmToken, 
+        fcmToken, 
         payload.title, 
         payload.body, 
         { ...payload, type: payload.type || 'new_order' }
@@ -118,8 +119,8 @@ const broadcastToUsers = async (targetAudience, payload) => {
     const prisma = require('./prisma').prisma;
 
     if (targetAudience === 'VENDORS' || targetAudience === 'ALL') {
-      const vendors = await prisma.vendor.findMany({
-        where: { fcmToken: { not: null } },
+      const vendors = await prisma.profile.findMany({
+        where: { fcmToken: { not: null }, role: 'VENDOR' },
         select: { fcmToken: true }
       });
       tokens = tokens.concat(vendors.map(v => v.fcmToken));

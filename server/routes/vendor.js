@@ -275,7 +275,8 @@ router.get('/profile', firebaseAuth, async (req, res) => {
           include: { 
             bankDetails: true,
             complianceFlags: true,
-            operatingHoursList: true
+            operatingHoursList: true,
+            ratingsSummary: true
           } 
         } 
       } 
@@ -293,7 +294,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       }));
       profile = await withRetry(() => prisma.profile.findUnique({ 
         where: { firebaseUid: uid }, 
-        include: { vendor: { include: { bankDetails: true, complianceFlags: true, operatingHoursList: true } } } 
+        include: { vendor: { include: { bankDetails: true, complianceFlags: true, operatingHoursList: true, ratingsSummary: true } } } 
       }));
     }
 
@@ -312,7 +313,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       // Re-fetch with the new vendor record
       const updatedProfile = await withRetry(() => prisma.profile.findUnique({ 
         where: { id: profile.id }, 
-        include: { vendor: { include: { bankDetails: true, complianceFlags: true } } } 
+        include: { vendor: { include: { bankDetails: true, complianceFlags: true, ratingsSummary: true } } } 
       }));
       
       if (updatedProfile) {
@@ -1703,6 +1704,39 @@ router.put('/products/:id/customization/sort', firebaseAuth, requireKyc, async (
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update sort order' });
+  }
+});
+
+// GET /reviews — list all feedback for this vendor
+router.get('/reviews', firebaseAuth, async (req, res) => {
+  try {
+    const { uid } = req.user;
+    const profile = await prisma.profile.findUnique({
+      where: { firebaseUid: uid },
+      include: { vendor: true }
+    });
+
+    if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const reviews = await prisma.feedback.findMany({
+      where: { 
+        order: { vendorId: profile.vendor.id }
+      },
+      include: {
+        customer: {
+          select: { fullName: true }
+        },
+        order: {
+          select: { id: true, createdAt: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({ success: true, reviews });
+  } catch (error) {
+    console.error('[VENDOR] Reviews Error:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
   }
 });
 

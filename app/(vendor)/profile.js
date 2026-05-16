@@ -328,6 +328,35 @@ export default function VendorProfile() {
       <View style={styles.content}>
         {uploading && <ActivityIndicator color={Colors.primary} style={{ marginBottom: 15 }} />}
         
+        {/* Performance Overview */}
+        <View style={styles.performanceGrid}>
+          <View style={styles.perfCard}>
+            <View style={styles.perfIconBox}>
+              <Ionicons name="star" size={24} color="#FFD700" />
+            </View>
+            <Text style={styles.perfValue}>
+              {profile.ratingsSummary?.avgRating ? Number(profile.ratingsSummary.avgRating).toFixed(1) : '0.0'}
+            </Text>
+            <Text style={styles.perfLabel}>Avg Rating</Text>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.perfCard}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/reviews');
+            }}
+          >
+            <View style={styles.perfIconBox}>
+              <Ionicons name="chatbubbles" size={24} color={Colors.primary} />
+            </View>
+            <Text style={styles.perfValue}>
+              {profile.ratingsSummary?.totalReviews || 0}
+            </Text>
+            <Text style={styles.perfLabel}>Total Reviews</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Business Details</Text>
@@ -823,6 +852,44 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16, paddingTop: 50
+  },
+  performanceGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  perfCard: {
+    backgroundColor: Colors.white,
+    width: '48%',
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  perfIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.grey,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  perfValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: Colors.black,
+  },
+  perfLabel: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginTop: 2,
+    fontWeight: '600',
   },
   section: {
     backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 16,

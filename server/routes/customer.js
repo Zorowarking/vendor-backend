@@ -101,7 +101,9 @@ router.get('/profile', firebaseAuth, async (req, res) => {
 
 router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    const { fullName, email, profilePicUrl } = req.body;
+    const { fullName, email, profilePicUrl, fcmToken } = req.body;
+    
+    // Update Customer record
     const updated = await prisma.customer.update({
       where: { id: req.customer.id },
       data: { 
@@ -110,6 +112,15 @@ router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
         profilePicUrl: profilePicUrl || undefined 
       }
     });
+
+    // Sync FCM Token to Profile if provided
+    if (fcmToken) {
+      await prisma.profile.update({
+        where: { id: req.customer.profileId },
+        data: { fcmToken }
+      });
+      console.log(`[CUSTOMER] FCM Token updated for ${req.customer.id}`);
+    }
     res.json({ success: true, customer: updated });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update profile' });

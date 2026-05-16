@@ -40,7 +40,7 @@ export const notificationService = {
     });
 
     // Handle Foreground notifications
-    const unsubscribe = messaging().onMessage(async remoteMessage => {
+    const unsubscribeMessage = messaging().onMessage(async remoteMessage => {
       console.log('Foreground message received:', remoteMessage);
       useNotificationStore.getState().setActiveNotification(remoteMessage);
       if (onForegroundMessage) {
@@ -48,7 +48,16 @@ export const notificationService = {
       }
     });
 
-    return unsubscribe;
+    // Handle Token Refresh
+    const unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
+      console.log('FCM Token refreshed:', token);
+      notificationService.syncTokenWithBackend(token);
+    });
+
+    return () => {
+      unsubscribeMessage();
+      unsubscribeTokenRefresh();
+    };
   },
 
   /**
