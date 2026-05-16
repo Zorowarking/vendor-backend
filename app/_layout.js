@@ -140,6 +140,12 @@ export default function Layout() {
       return;
     }
 
+    // If unauthenticated but in auth group, only allow login and otp-verify
+    if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify') {
+      router.replace('/auth/login');
+      return;
+    }
+
     if (isAuthenticated && inAuthGroup && role && (profileStatus === 'READY' || profileStatus === 'ACTIVE')) {
       if (role === 'VENDOR') router.replace('/(vendor)');
       return;

@@ -137,6 +137,29 @@ export default function VendorBankScreen() {
                 <Text style={styles.nextButtonText}>Submit & Proceed to KYC</Text>
               )}
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => {
+                Alert.alert(
+                  'Cancel Registration',
+                  'Are you sure you want to go back to the login screen? Your progress will be lost.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Go Back', 
+                      style: 'destructive', 
+                      onPress: async () => {
+                        await useAuthStore.getState().logout();
+                        router.replace('/auth/login');
+                      } 
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.backButtonText}>← Back to Login</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -200,5 +223,15 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  backButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  backButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

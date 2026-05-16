@@ -228,7 +228,28 @@ export default function VendorRegisterScreen() {
               <Text style={styles.nextButtonText}>Next</Text>
             </TouchableOpacity>
 
-
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => {
+                Alert.alert(
+                  'Cancel Registration',
+                  'Are you sure you want to go back to the login screen? Your progress will be lost.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Go Back', 
+                      style: 'destructive', 
+                      onPress: async () => {
+                        await useAuthStore.getState().logout();
+                        router.replace('/auth/login');
+                      } 
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.backButtonText}>← Back to Login</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

@@ -21,7 +21,7 @@ export default function VendorLayout() {
         tabBar={(props) => <FloatingTabBar {...props} />}
         screenOptions={{
           tabBarPosition: 'bottom',
-          swipeEnabled: true,
+          swipeEnabled: false,
           headerShown: false,
         }}
       >

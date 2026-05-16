@@ -131,6 +131,29 @@ export default function KYCIndex() {
             </Text>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => {
+            Alert.alert(
+              'Cancel Verification',
+              'Are you sure you want to go back to the login screen? Your progress will be saved, but you will need to log in again to continue.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Go Back', 
+                  style: 'destructive', 
+                  onPress: async () => {
+                    await useAuthStore.getState().logout();
+                    router.replace('/auth/login');
+                  } 
+                }
+              ]
+            );
+          }}
+        >
+          <Text style={styles.backButtonText}>← Back to Login</Text>
+        </TouchableOpacity>
         
         {(profileStatus === 'APPROVED' || profileStatus === 'READY' || profileStatus === 'ACTIVE') && (
           <View style={styles.warningBox}>
@@ -259,5 +282,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     lineHeight: 18,
     fontWeight: '500',
-  }
+  },
+  backButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

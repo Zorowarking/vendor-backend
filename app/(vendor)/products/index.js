@@ -191,8 +191,7 @@ export default function ProductsList() {
         <ErrorState message={error} onRetry={() => fetchProducts(true)} />
       )}
 
-      {!error && (loading ? (
-
+      {!error && (loading && products.length === 0 ? (
         <View style={{ padding: 16 }}>
           {[1, 2, 3, 4].map(i => (
             <SkeletonLoader key={i} width={width - 32} height={100} style={{ marginBottom: 16, borderRadius: 12 }} />
