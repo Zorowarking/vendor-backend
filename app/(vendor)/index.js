@@ -209,13 +209,96 @@ function IncomingOrderModal({ visible, orders, onAccept, onReject, onDismiss, is
 
 const REJECTION_REASONS = [
   'Store closed',
-  'Kitchen closed',
+  ' Kitchen closed',
   'Item(s) unavailable',
   'Unable to fulfill order',
   'Staff unavailable',
   'Technical issue',
   'Other'
 ];
+
+const SUPPORT_REASONS = [
+  'Item out of stock',
+  'Store temporarily busy',
+  'Technical issue',
+  'Unable to prepare within time',
+  'Pricing issue',
+  'Store closing early',
+  'Other'
+];
+
+function SupportReasonModal({ visible, onCancel, onConfirm }) {
+  const [selectedReason, setSelectedReason] = useState(null);
+  const [otherText, setOtherText] = useState('');
+
+  const canConfirm = selectedReason && (selectedReason !== 'Other' || otherText.trim().length > 0);
+
+  const handleConfirm = () => {
+    if (!canConfirm) return;
+    const finalReason = selectedReason === 'Other' ? `Other: ${otherText}` : selectedReason;
+    onConfirm(finalReason);
+    setSelectedReason(null);
+    setOtherText('');
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalOverlay}>
+        <View style={styles.rejectionContent}>
+          <View style={styles.supportHeaderRow}>
+            <Ionicons name="chatbubble-ellipses" size={24} color="#E65100" />
+            <Text style={[styles.rejectionTitle, { marginLeft: 10, marginBottom: 0 }]}>Contact Support</Text>
+          </View>
+          <Text style={styles.rejectionSub}>Select a reason why you're having trouble with this order. Admin will be notified.</Text>
+          
+          <ScrollView style={{ maxHeight: 300 }}>
+            {SUPPORT_REASONS.map(reason => (
+              <TouchableOpacity 
+                key={reason} 
+                style={[styles.reasonItem, selectedReason === reason && styles.reasonItemActive]}
+                onPress={() => setSelectedReason(reason)}
+              >
+                <View style={[styles.radio, selectedReason === reason && styles.radioActive]}>
+                  {selectedReason === reason && <View style={styles.radioInner} />}
+                </View>
+                <Text style={[styles.reasonText, selectedReason === reason && styles.reasonTextActive]}>
+                  {reason}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {selectedReason === 'Other' && (
+            <View style={styles.otherInputContainer}>
+              <Text style={styles.otherLabel}>Please specify *</Text>
+              <TextInput 
+                style={styles.otherInput} 
+                placeholder="Enter details..." 
+                value={otherText}
+                onChangeText={setOtherText}
+                multiline
+              />
+            </View>
+          )}
+
+          <View style={styles.actionRowModal}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+              <Text style={styles.cancelBtnText}>Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.confirmRejectBtn, { backgroundColor: '#E65100' }, !canConfirm && styles.disabledBtn]} 
+              onPress={handleConfirm}
+              disabled={!canConfirm}
+            >
+              <Text style={styles.confirmRejectBtnText}>Notify Support</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 
 function RejectionReasonModal({ visible, onCancel, onConfirm }) {
   const [selectedReason, setSelectedReason] = useState(null);
@@ -344,9 +427,14 @@ function ActiveOrderCard({ order, router }) {
       {order.status === 'preparing' && order.preparingAt && <PrepTimer startTime={order.preparingAt} />}
 
       <View style={styles.actionRow}>
-        {order.status === 'accepted' && (
-          <TouchableOpacity style={styles.primaryButton} onPress={() => handleStatusUpdate('preparing')}>
-            <Text style={styles.primaryButtonText}>Start Preparing</Text>
+        {(order.status === 'accepted' || order.status === 'pending_vendor_response') && (
+          <TouchableOpacity 
+            style={[styles.primaryButton, order.status === 'pending_vendor_response' && { backgroundColor: Colors.success }]} 
+            onPress={() => handleStatusUpdate(order.status === 'pending_vendor_response' ? 'accepted' : 'preparing')}
+          >
+            <Text style={styles.primaryButtonText}>
+              {order.status === 'pending_vendor_response' ? 'Accept Order' : 'Start Preparing'}
+            </Text>
           </TouchableOpacity>
         )}
         {order.status === 'preparing' && (
@@ -402,6 +490,7 @@ export default function VendorOrdersDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState(null);
   const [rejectOrderId, setRejectOrderId] = useState(null);
+  const [supportOrderId, setSupportOrderId] = useState(null);
   const [updatingCommission, setUpdatingCommission] = useState(false);
   const soundRef = useRef(null);
 
@@ -508,17 +597,36 @@ export default function VendorOrdersDashboard() {
     setRejectOrderId(orderId);
   };
 
-  const handleContactSupport = async (orderId) => {
+  const handleContactSupport = (orderId) => {
+    setSupportOrderId(orderId);
+  };
+
+  const confirmSupport = async (reason) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await vendorApi.contactSupport(orderId);
+      await vendorApi.contactSupport(supportOrderId, reason);
+      
+      const order = incomingOrders.find(o => o.id === supportOrderId);
+      if (order) {
+        removeIncomingOrder(supportOrderId);
+        // Add to active orders so it remains visible but needs admin/vendor action
+        addActiveOrder({ 
+          ...order, 
+          status: 'pending_vendor_response', 
+          isFlagged: true, 
+          flagReason: reason 
+        });
+      }
+      
       Alert.alert(
-        'Support Contacted', 
-        'Support has been notified about this order. They will contact you shortly to assist with the rejection request during operating hours.',
-        [{ text: 'OK', onPress: () => handleDismiss(orderId) }]
+        'Support Notified', 
+        'We have alerted the admin team. The order will remain in your dashboard while support reviews the issue. You can still accept it if the issue is resolved.',
+        [{ text: 'OK' }]
       );
     } catch (e) {
       Alert.alert('Error', 'Failed to reach support. Please try again.');
+    } finally {
+      setSupportOrderId(null);
     }
   };
 
@@ -619,7 +727,11 @@ export default function VendorOrdersDashboard() {
         onConfirm={confirmRejection}
       />
 
-
+      <SupportReasonModal 
+        visible={!!supportOrderId}
+        onCancel={() => setSupportOrderId(null)}
+        onConfirm={confirmSupport}
+      />
     </View>
   );
 }
@@ -640,6 +752,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3, shadowColor: Colors.black, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 } },
   historyCard: { opacity: 0.8 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  supportHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
   flaggedBadge: { 
     flexDirection: 'row', 

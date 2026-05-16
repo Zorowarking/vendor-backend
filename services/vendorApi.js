@@ -153,8 +153,8 @@ export const vendorApi = {
     return response.data;
   },
 
-  contactSupport: async (orderId) => {
-    const response = await apiClient.put(`/api/vendor/orders/${orderId}/contact-support`);
+  contactSupport: async (orderId, reason) => {
+    const response = await apiClient.put(`/api/vendor/orders/${orderId}/contact-support`, { reason });
     return response.data;
   },
 

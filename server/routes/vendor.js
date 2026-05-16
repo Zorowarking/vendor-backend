@@ -687,20 +687,30 @@ router.put('/orders/:id/reject', firebaseAuth, requireKyc, async (req, res) => {
 router.put('/orders/:id/contact-support', firebaseAuth, requireKyc, async (req, res) => {
   try {
     const { id } = req.params;
+    const { reason } = req.body;
+    
     await prisma.order.update({
       where: { id },
-      data: { status: 'pending_vendor_response' }
+      data: { 
+        status: 'pending_vendor_response',
+        isFlagged: true,
+        flagReason: reason || 'Support requested by vendor'
+      }
     });
 
-    // Start 1 minute BullMQ timeout
-    await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 1 * 60 * 1000 });
+    // Start 1 minute BullMQ timeout (increased to 5 for support)
+    await orderSlaQueue.add('supportTimeout', { orderId: id, type: 'vendor_support' }, { delay: 5 * 60 * 1000 });
     
     // Broadcast to admin socket
     const io = require('../lib/socket').getIo();
-    if (io) io.of('/admin').to('admin_global').emit('vendor_support_request', { orderId: id });
+    if (io) io.of('/admin').to('admin_global').emit('vendor_support_request', { 
+      orderId: id,
+      reason: reason || 'No specific reason'
+    });
 
     res.json({ success: true });
   } catch (error) {
+    console.error('[VENDOR] Support request error:', error);
     res.status(500).json({ error: 'Support request failed' });
   }
 });
