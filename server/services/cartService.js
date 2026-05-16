@@ -287,16 +287,19 @@ class CartService {
   static async removeItem(identifier, itemId) {
     const { customerId, guestId } = identifier;
     
-    const cart = await prisma.cart.findFirst({
-        where: customerId ? { customerId } : { guestId }
+    const carts = await prisma.cart.findMany({
+        where: customerId ? { customerId } : { guestId },
+        select: { id: true }
     });
 
-    if (!cart) return; // Cart doesn't exist, nothing to remove
+    if (carts.length === 0) return; // Cart doesn't exist, nothing to remove
+
+    const cartIds = carts.map(c => c.id);
 
     await prisma.cartItem.deleteMany({
       where: { 
         id: itemId,
-        cartId: cart.id // Security: Ensure item belongs to THIS cart
+        cartId: { in: cartIds } // Security: Ensure item belongs to one of user's carts
       }
     });
   }
