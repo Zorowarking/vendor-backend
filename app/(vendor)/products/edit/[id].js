@@ -913,8 +913,6 @@ export default function EditProduct() {
                       </View>
                     </View>
                   ))}
-                    </View>
-                  ))}
                   
                   <TouchableOpacity onPress={() => addOptionToGroup(group.id)} style={styles.addOptBtn}>
                     <Ionicons name="add" size={18} color={Colors.primary} />
