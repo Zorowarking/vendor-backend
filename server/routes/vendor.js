@@ -1718,6 +1718,9 @@ router.get('/reviews', firebaseAuth, async (req, res) => {
 
     if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
 
+    // DIAGNOSTIC: Log available models to identify if 'feedback' is missing or renamed
+    console.log('[VENDOR] Available Models:', Object.keys(prisma).filter(k => !k.startsWith('_') && !k.startsWith('$')));
+
     console.log(`[VENDOR] Fetching reviews for vendor: ${profile.vendor.id}`);
 
     const reviews = await withRetry(() => prisma.feedback.findMany({
