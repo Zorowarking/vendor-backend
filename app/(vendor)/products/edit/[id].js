@@ -804,12 +804,6 @@ export default function EditProduct() {
               <Text style={styles.sectionTitle}>
                 {templateId ? 'Admin Template (BYO)' : 'Options Groups'}
               </Text>
-              {!templateId && (
-                <TouchableOpacity onPress={addCustomizationGroup} style={styles.addGroupBtn}>
-                  <Ionicons name="add" size={20} color={Colors.white} />
-                  <Text style={styles.addGroupBtnText}>New Group</Text>
-                </TouchableOpacity>
-              )}
             </View>
 
             {templateId && (
@@ -967,6 +961,16 @@ export default function EditProduct() {
                 </View>
               </View>
             ))}
+
+            {!templateId && (
+              <TouchableOpacity 
+                onPress={addCustomizationGroup} 
+                style={[styles.addGroupBtn, { marginTop: 15, width: '100%', justifyContent: 'center' }]}
+              >
+                <Ionicons name="add" size={20} color={Colors.white} />
+                <Text style={styles.addGroupBtnText}>New Group</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
