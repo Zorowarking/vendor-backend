@@ -427,19 +427,25 @@ function ActiveOrderCard({ order, router }) {
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
-          {order.paymentMethod?.startsWith('Sandbox') && (
-            <View style={[styles.sandboxBadge, { marginLeft: 8 }]}>
-              <Text style={styles.sandboxText}>SANDBOX</Text>
-            </View>
-          )}
-          {(order.isFlagged || order.isFlaggedAdmin) && (
-            <View style={styles.flaggedBadge}>
-              <Ionicons name="flag" size={10} color={Colors.white} />
-              <Text style={styles.flaggedText}>FLAGGED</Text>
-            </View>
-          )}
+          <View style={styles.badgeContainer}>
+            {order.paymentMethod?.startsWith('Sandbox') && (
+              <View style={styles.sandboxBadge}>
+                <Text style={styles.sandboxText}>SANDBOX</Text>
+              </View>
+            )}
+            {(order.isFlagged || order.isFlaggedAdmin) && (
+              <View style={styles.flaggedBadge}>
+                <Ionicons name="flag" size={10} color={Colors.white} />
+                <Text style={styles.flaggedText}>FLAGGED</Text>
+              </View>
+            )}
+          </View>
         </View>
-        <Text style={styles.statusBadge}>{order.status}</Text>
+        <View style={styles.headerRight}>
+          <Text style={[styles.statusBadge, order.status === 'ready_for_pickup' && styles.statusBadgeSuccess]} numberOfLines={1}>
+            {order.status.replace(/_/g, ' ')}
+          </Text>
+        </View>
       </View>
       <Text style={styles.itemsSummary} numberOfLines={2}>
         {order.items?.map(i => `${i.qty}x ${i.name || 'Item'}`).join(', ') || 'No items'}
@@ -481,12 +487,14 @@ function HistoryOrderCard({ order, router }) {
   return (
     <TouchableOpacity style={[styles.card, styles.historyCard]} onPress={() => router.push(`/orders/${order.id}`)}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.orderId, { fontSize: 12 }]}>Order #{order.id.substring(0, 8)}</Text>
-      </View>
-      <Text style={styles.customerName}>{order.customerName}</Text>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.orderId, { fontSize: 12 }]}>Order #{order.id.substring(0, 8)}</Text>
+        </View>
         <Text style={styles.historyTotal}>
           ₹{typeof order.total === 'number' ? order.total.toFixed(2) : Number(order.total || 0).toFixed(2)}
         </Text>
+      </View>
+      <Text style={styles.customerName}>{order.customerName}</Text>
       
       <View style={styles.badgeRow}>
         <Text style={[
@@ -785,18 +793,18 @@ const styles = StyleSheet.create({
 
   card: { backgroundColor: Colors.white, borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3, shadowColor: Colors.black, shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 } },
   historyCard: { opacity: 0.8 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  supportHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  headerLeft: { flex: 1, marginRight: 8 },
+  headerRight: { alignItems: 'flex-end', maxWidth: '40%' },
+  badgeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
 
-  headerLeft: { flexDirection: 'row', alignItems: 'center' },
   flaggedBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     backgroundColor: Colors.error, 
     paddingHorizontal: 6, 
     paddingVertical: 2, 
-    borderRadius: 4, 
-    marginLeft: 8 
+    borderRadius: 4,
   },
   flaggedText: { 
     color: Colors.white, 
@@ -820,7 +828,9 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: Colors.white, fontWeight: 'bold' },
   successButton: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 8, backgroundColor: Colors.success },
   successButtonText: { color: Colors.white, fontWeight: 'bold' },
-  statusBadge: { backgroundColor: Colors.grey, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, fontSize: 12, fontWeight: 'bold', color: Colors.subText },
+  statusBadge: { backgroundColor: Colors.grey, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, fontSize: 11, fontWeight: 'bold', color: Colors.subText, textTransform: 'uppercase' },
+  statusBadgeSuccess: { backgroundColor: Colors.success + '15', color: Colors.success },
+  statusBadgeDanger: { backgroundColor: Colors.error + '15', color: Colors.error },
   statusBadgeDanger: { backgroundColor: Colors.error + '30', color: Colors.error },
   
   emptyText: { color: Colors.subText, fontStyle: 'italic', textAlign: 'center', marginTop: 40 },
