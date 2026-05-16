@@ -1711,14 +1711,16 @@ router.put('/products/:id/customization/sort', firebaseAuth, requireKyc, async (
 router.get('/reviews', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
-    const profile = await prisma.profile.findUnique({
+    const profile = await withRetry(() => prisma.profile.findUnique({
       where: { firebaseUid: uid },
       include: { vendor: true }
-    });
+    }));
 
     if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
 
-    const reviews = await prisma.feedback.findMany({
+    console.log(`[VENDOR] Fetching reviews for vendor: ${profile.vendor.id}`);
+
+    const reviews = await withRetry(() => prisma.feedback.findMany({
       where: { 
         order: { vendorId: profile.vendor.id }
       },
@@ -1731,12 +1733,12 @@ router.get('/reviews', firebaseAuth, async (req, res) => {
         }
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }));
 
     res.json({ success: true, reviews });
   } catch (error) {
-    console.error('[VENDOR] Reviews Error:', error);
-    res.status(500).json({ error: 'Failed to fetch reviews' });
+    console.error('[VENDOR] Reviews Error:', error.message || error);
+    res.status(500).json({ error: 'Failed to fetch reviews', details: error.message });
   }
 });
 
