@@ -161,6 +161,20 @@ model Profile {
   @@schema("vendor_delivery")
 }
 
+model AccountBlock {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  profileId     String    @map("profile_id") @db.Uuid
+  status        String    @db.VarChar(30) // SUSPENDED, DISABLED
+  disabledUntil DateTime? @map("disabled_until") @db.Timestamptz(6)
+  reason        String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([profileId])
+  @@map("account_blocks")
+  @@schema("vendor_delivery")
+}
+
 model NotificationLog {
   id     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId String   @map("user_id") @db.Uuid

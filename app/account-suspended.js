@@ -8,7 +8,43 @@ import Colors from '../constants/Colors';
 import { Stack } from 'expo-router';
 
 export default function AccountSuspended() {
-  const { suspensionReason, logout } = useAuthStore();
+  const { profileStatus, suspensionReason, logout } = useAuthStore();
+  const [timeLeft, setTimeLeft] = React.useState('');
+  const [disabledUntil, setDisabledUntil] = React.useState(null);
+
+  React.useEffect(() => {
+    if (profileStatus && profileStatus.startsWith('DISABLED:')) {
+      const untilStr = profileStatus.split('DISABLED:')[1];
+      setDisabledUntil(new Date(untilStr));
+    } else {
+      setDisabledUntil(null);
+    }
+  }, [profileStatus]);
+
+  React.useEffect(() => {
+    if (!disabledUntil) return;
+
+    const updateTimer = () => {
+      const diff = disabledUntil - new Date();
+      if (diff <= 0) {
+        setTimeLeft('00:00:00');
+        // Auto-heal local state!
+        useAuthStore.getState().setProfileStatus('READY');
+        return;
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      const pad = (num) => String(num).padStart(2, '0');
+      setTimeLeft(`${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [disabledUntil]);
 
   const handleContactSupport = () => {
     Linking.openURL('mailto:support@vantyrn.com?subject=Account Suspension Appeal');
@@ -27,10 +63,22 @@ export default function AccountSuspended() {
           Your account has been temporarily suspended due to a violation of our community guidelines or terms of service.
         </Text>
 
-        <View style={styles.reasonCard}>
-          <Text style={styles.reasonLabel}>Reason for Suspension:</Text>
-          <Text style={styles.reasonText}>{suspensionReason || 'Multiple delivery failures reported by customers.'}</Text>
-        </View>
+        {disabledUntil ? (
+          <View style={[styles.reasonCard, { borderLeftColor: '#D97706', backgroundColor: '#FFFBEB' }]}>
+            <Text style={[styles.reasonLabel, { color: '#D97706' }]}>TEMPORARY BLOCK RESTORE IN</Text>
+            <Text style={{ fontSize: 32, fontWeight: '900', color: '#B45309', letterSpacing: 2, fontVariant: ['tabular-nums'], textAlign: 'center', marginVertical: 10 }}>
+              {timeLeft || '--:--:--'}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#78350F', textAlign: 'center', fontWeight: '500' }}>
+              Ends: {disabledUntil.toLocaleTimeString()} ({disabledUntil.toLocaleDateString()})
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.reasonCard}>
+            <Text style={styles.reasonLabel}>Reason for Suspension:</Text>
+            <Text style={styles.reasonText}>{suspensionReason || 'Multiple delivery failures reported by customers.'}</Text>
+          </View>
+        )}
 
         <TouchableOpacity 
           style={styles.supportButton} 

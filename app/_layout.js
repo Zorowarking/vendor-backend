@@ -40,7 +40,18 @@ export default function Layout() {
   useEffect(() => {
     const init = async () => {
       try {
-        await useAuthStore.getState().initialize();
+        const authStore = useAuthStore.getState();
+        await authStore.initialize();
+        
+        // Fetch fresh profile status on launch if authenticated
+        if (authStore.isAuthenticated && authStore.role === 'VENDOR') {
+          try {
+            const profile = await vendorApi.getProfile();
+            if (profile && profile.profileStatus) {
+              authStore.setProfileStatus(profile.profileStatus);
+            }
+          } catch (_) {}
+        }
         
         // Initialize bubble service for Android vendors
         if (Platform.OS === 'android') {
@@ -88,6 +99,29 @@ export default function Layout() {
       subscription.remove();
     };
   }, [role]);
+
+  // Background vendor status sync
+  useEffect(() => {
+    if (!isAuthenticated || role !== 'VENDOR') return;
+
+    const checkVendorStatus = async () => {
+      try {
+        const profile = await vendorApi.getProfile();
+        if (profile && profile.profileStatus) {
+          const currentStatus = useAuthStore.getState().profileStatus;
+          if (currentStatus !== profile.profileStatus) {
+            console.log(`[VENDOR-LAYOUT] Profile status updated from ${currentStatus} to ${profile.profileStatus}`);
+            useAuthStore.getState().setProfileStatus(profile.profileStatus);
+          }
+        }
+      } catch (e) {
+        console.warn('[VENDOR-LAYOUT] Background status check failed:', e.message);
+      }
+    };
+
+    const interval = setInterval(checkVendorStatus, 15000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, role]);
 
   // Notification Initialization
   useEffect(() => {
@@ -220,28 +254,34 @@ export default function Layout() {
         return;
       }
 
-      if (isAuthenticated && inAuthGroup && role && (profileStatus === 'READY' || profileStatus === 'ACTIVE')) {
+      const isReadyOrActive = profileStatus === 'READY' || profileStatus === 'ACTIVE' || profileStatus === 'APPROVED';
+      if (isAuthenticated && inAuthGroup && role && isReadyOrActive) {
         if (role === 'VENDOR') router.replace('/(vendor)');
         return;
       }
 
       // Global Status Enforcement
-      if (profileStatus === 'SUSPENDED') {
-        if (segments[0] !== 'account-suspended') {
-          router.replace('/account-suspended');
-        }
-        return;
-      }
+      const isSuspended = profileStatus === 'SUSPENDED';
+      const isDisabledTemp = profileStatus && profileStatus.startsWith('DISABLED:');
 
-      if (profileStatus === 'DISABLED') {
+      if (isSuspended) {
+        // Suspended maps to permanent termination screen
         if (segments[0] !== 'account-disabled') {
           router.replace('/account-disabled');
         }
         return;
       }
 
+      if (isDisabledTemp) {
+        // Temporarily disabled maps to account-suspended screen with ticking countdown timer
+        if (segments[0] !== 'account-suspended') {
+          router.replace('/account-suspended');
+        }
+        return;
+      }
+
       // Role-based onboarding checks (only if not already Ready or Enforcement)
-      if (isAuthenticated && profileStatus !== 'READY' && profileStatus !== 'ACTIVE') {
+      if (isAuthenticated && !isReadyOrActive && !isSuspended && !isDisabledTemp) {
         if (profileStatus === 'PENDING') {
           const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
           const currentPath = segments.join('/');

@@ -232,4 +232,224 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/admin/customer/:id/suspend
+ * Suspend a customer account forever
+ */
+router.post('/customer/:id/suspend', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params; // customer ID
+    
+    // Find customer's profile
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!customer || !customer.profileId) {
+      return res.status(404).json({ error: 'Customer profile not found' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: customer.profileId },
+      data: { profileStatus: 'SUSPENDED' }
+    });
+
+    try {
+      emitAccountStatusUpdate(customer.id, 'SUSPENDED');
+    } catch (_) {}
+
+    res.json({ success: true, message: 'Customer suspended forever', profile: updatedProfile });
+  } catch (error) {
+    res.status(500).json({ error: 'Suspension failed', details: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/customer/:id/disable
+ * Disable a customer account temporarily for a specific number of hours
+ */
+router.post('/customer/:id/disable', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { hours } = req.body;
+    
+    if (!hours || isNaN(hours) || Number(hours) <= 0) {
+      return res.status(400).json({ error: 'Valid temporary duration (hours) is required' });
+    }
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!customer || !customer.profileId) {
+      return res.status(404).json({ error: 'Customer profile not found' });
+    }
+
+    const disabledUntil = new Date(Date.now() + Number(hours) * 60 * 60 * 1000).toISOString();
+    const statusString = `DISABLED:${disabledUntil}`;
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: customer.profileId },
+      data: { profileStatus: statusString }
+    });
+
+    try {
+      emitAccountStatusUpdate(customer.id, statusString);
+    } catch (_) {}
+
+    res.json({ 
+      success: true, 
+      message: `Customer disabled for ${hours} hours`, 
+      disabledUntil,
+      profile: updatedProfile 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Disabling failed', details: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/customer/:id/enable
+ * Enable a suspended/disabled customer account back to APPROVED/ACTIVE
+ */
+router.post('/customer/:id/enable', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!customer || !customer.profileId) {
+      return res.status(404).json({ error: 'Customer profile not found' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: customer.profileId },
+      data: { profileStatus: 'APPROVED' }
+    });
+
+    try {
+      emitAccountStatusUpdate(customer.id, 'APPROVED');
+    } catch (_) {}
+
+    res.json({ success: true, message: 'Customer account enabled successfully', profile: updatedProfile });
+  } catch (error) {
+    res.status(500).json({ error: 'Enabling failed', details: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/vendor/:id/suspend
+ * Suspend a vendor account forever
+ */
+router.post('/vendor/:id/suspend', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params; // vendor ID
+    
+    // Find vendor's profile
+    const vendor = await prisma.vendor.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!vendor || !vendor.profileId) {
+      return res.status(404).json({ error: 'Vendor profile not found' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: vendor.profileId },
+      data: { profileStatus: 'SUSPENDED' }
+    });
+
+    try {
+      emitAccountStatusUpdate(vendor.id, 'SUSPENDED');
+    } catch (_) {}
+
+    res.json({ success: true, message: 'Vendor suspended forever', profile: updatedProfile });
+  } catch (error) {
+    res.status(500).json({ error: 'Suspension failed', details: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/vendor/:id/disable
+ * Disable a vendor account temporarily for a specific number of hours
+ */
+router.post('/vendor/:id/disable', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { hours } = req.body;
+    
+    if (!hours || isNaN(hours) || Number(hours) <= 0) {
+      return res.status(400).json({ error: 'Valid temporary duration (hours) is required' });
+    }
+
+    const vendor = await prisma.vendor.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!vendor || !vendor.profileId) {
+      return res.status(404).json({ error: 'Vendor profile not found' });
+    }
+
+    const disabledUntil = new Date(Date.now() + Number(hours) * 60 * 60 * 1000).toISOString();
+    const statusString = `DISABLED:${disabledUntil}`;
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: vendor.profileId },
+      data: { profileStatus: statusString }
+    });
+
+    try {
+      emitAccountStatusUpdate(vendor.id, statusString);
+    } catch (_) {}
+
+    res.json({ 
+      success: true, 
+      message: `Vendor disabled for ${hours} hours`, 
+      disabledUntil,
+      profile: updatedProfile 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Disabling failed', details: error.message });
+  }
+});
+
+/**
+ * POST /api/admin/vendor/:id/enable
+ * Enable a suspended/disabled vendor account back to APPROVED/ACTIVE
+ */
+router.post('/vendor/:id/enable', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const vendor = await prisma.vendor.findUnique({
+      where: { id },
+      include: { profile: true }
+    });
+
+    if (!vendor || !vendor.profileId) {
+      return res.status(404).json({ error: 'Vendor profile not found' });
+    }
+
+    const updatedProfile = await prisma.profile.update({
+      where: { id: vendor.profileId },
+      data: { profileStatus: 'APPROVED' }
+    });
+
+    try {
+      emitAccountStatusUpdate(vendor.id, 'APPROVED');
+    } catch (_) {}
+
+    res.json({ success: true, message: 'Vendor account enabled successfully', profile: updatedProfile });
+  } catch (error) {
+    res.status(500).json({ error: 'Enabling failed', details: error.message });
+  }
+});
+
 module.exports = router;

@@ -74,7 +74,21 @@ export const useAuthStore = create((set) => ({
     });
   },
 
-  setProfileStatus: (status, reason = null) => set({ profileStatus: status, suspensionReason: reason }),
+  setProfileStatus: (status, reason = null) => {
+    set({ profileStatus: status, suspensionReason: reason });
+    try {
+      AsyncStorage.getItem('auth_session').then((session) => {
+        if (session) {
+          const userData = JSON.parse(session);
+          userData.profileStatus = status;
+          userData.suspensionReason = reason || null;
+          AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to persist profile status change:', e);
+    }
+  },
   setRole: (role) => set({ role }),
   setKycDoc: (docId, data) => set((state) => ({ kycDocs: { ...state.kycDocs, [docId]: data } })),
 }));

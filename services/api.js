@@ -19,12 +19,54 @@ const apiClient = axios.create({
   },
 });
 
+import { auth as webAuth } from './firebase';
+import { NativeModules } from 'react-native';
+
+// Safely require native firebase auth
+let nativeAuth = null;
+try {
+  if (NativeModules.RNFBAppModule) {
+    nativeAuth = require('@react-native-firebase/auth').default;
+  }
+} catch (e) {}
+
+const getFreshToken = async () => {
+  try {
+    // 1. Try Native Auth current user
+    if (nativeAuth) {
+      const user = nativeAuth().currentUser;
+      if (user) {
+        const freshToken = await user.getIdToken();
+        if (freshToken) return freshToken;
+      }
+    }
+    // 2. Try Web Auth current user
+    if (webAuth && webAuth.currentUser) {
+      const freshToken = await webAuth.currentUser.getIdToken();
+      if (freshToken) return freshToken;
+    }
+  } catch (e) {
+    console.warn('[VENDOR-API] Failed to get fresh Firebase ID token dynamically:', e.message);
+  }
+  // 3. Fallback to Zustand static token
+  return useAuthStore.getState().sessionToken;
+};
+
 // Request Interceptor: Attach Auth Token
 apiClient.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().sessionToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    const { sessionToken, isAuthenticated } = useAuthStore.getState();
+    if (isAuthenticated || sessionToken) {
+      const dynamicToken = await getFreshToken();
+      if (dynamicToken) {
+        config.headers.Authorization = `Bearer ${dynamicToken}`;
+        // Update store with fresh token if changed
+        if (dynamicToken !== sessionToken) {
+          useAuthStore.setState({ sessionToken: dynamicToken });
+        }
+      } else if (sessionToken) {
+        config.headers.Authorization = `Bearer ${sessionToken}`;
+      }
     }
     return config;
   },
@@ -59,8 +101,8 @@ apiClient.interceptors.response.use(
         console.warn('Account suspended. Redirecting...');
         setProfileStatus('SUSPENDED', reason || 'Policy Violation');
       } else if (code === 'account_disabled') {
-        console.warn('Account permanently disabled. Redirecting...');
-        setProfileStatus('DISABLED');
+        console.warn('Account temporarily disabled. Redirecting...');
+        setProfileStatus(error.response.data.status || 'DISABLED');
       }
     }
     

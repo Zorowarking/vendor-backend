@@ -326,6 +326,20 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       var finalProfile = profile;
     }
 
+    // Self-Healing block expiration for temporarily disabled accounts
+    if (finalProfile.profileStatus && finalProfile.profileStatus.startsWith('DISABLED:')) {
+      const disabledUntilStr = finalProfile.profileStatus.split('DISABLED:')[1];
+      const disabledUntil = new Date(disabledUntilStr);
+      if (disabledUntil < new Date()) {
+        console.log(`[VENDOR-PROFILE] Temporary block expired. Restoring profile status for ${finalProfile.id}`);
+        const restoredProfile = await prisma.profile.update({
+          where: { id: finalProfile.id },
+          data: { profileStatus: 'APPROVED' }
+        });
+        finalProfile.profileStatus = 'APPROVED';
+      }
+    }
+
     const v = finalProfile.vendor;
     
     // Transform to match frontend expectations
@@ -343,6 +357,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       profilePic: addCacheBuster(v.profilePicUrl) || 'https://via.placeholder.com/150',
       operatingHours: v.operatingHours || 'Not configured',
       kycStatus: v.accountStatus,
+      profileStatus: finalProfile.profileStatus,
       commissionModel: v.commissionModel,
       location: {
         address: v.businessAddress,
@@ -361,7 +376,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       complianceFlags: v.complianceFlags.map(f => f.reason) || []
     };
 
-    console.log(`[VENDOR-API] Profile fetch for UID: ${uid}, Status: ${v.accountStatus}`);
+    console.log(`[VENDOR-API] Profile fetch for UID: ${uid}, Status: ${v.accountStatus}, ProfileStatus: ${finalProfile.profileStatus}`);
     res.json({ success: true, vendor: vendorResponse });
 
   } catch (error) {

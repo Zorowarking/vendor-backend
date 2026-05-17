@@ -75,7 +75,20 @@ router.post('/age-verify', firebaseAuth, async (req, res) => {
 router.get('/profile', firebaseAuth, async (req, res) => {
   try {
     // Self-Healing Profile Alignment
-    const profile = await getOrCreateCustomerProfile(req.user);
+    let profile = await getOrCreateCustomerProfile(req.user);
+
+    // Self-Healing block expiration for temporarily disabled accounts
+    if (profile.profileStatus && profile.profileStatus.startsWith('DISABLED:')) {
+      const disabledUntilStr = profile.profileStatus.split('DISABLED:')[1];
+      const disabledUntil = new Date(disabledUntilStr);
+      if (disabledUntil < new Date()) {
+        console.log(`[PROFILE-SYNC] Temporary block expired. Restoring profile status for ${profile.id}`);
+        profile = await prisma.profile.update({
+          where: { id: profile.id },
+          data: { profileStatus: 'APPROVED' }
+        });
+      }
+    }
 
     // Re-fetch to include full address list
     const fullProfile = await prisma.profile.findUnique({
@@ -162,10 +175,12 @@ router.post('/address', firebaseAuth, requireCustomer, async (req, res) => {
       addressType: type || 'Home'
     };
 
-    // Find existing address for this customer to update, or create new
+    // Find existing address for this customer and this addressType to update, or create new
     const existingAddress = await prisma.address.findFirst({
-      where: { customerId: req.customer.id },
-      orderBy: { createdAt: 'desc' }
+      where: { 
+        customerId: req.customer.id,
+        addressType: type || 'Home'
+      }
     });
 
     let address;
