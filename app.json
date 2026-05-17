@@ -31,7 +31,8 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.VIBRATE",
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
       "intentFilters": [
         {
@@ -84,9 +85,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "01ec4e8c-e0ce-44ec-9355-ca8aab564b14"
+        "projectId": "e16f9710-34c6-4a45-b5fc-73cbf7e83e3a"
       }
     },
-    "owner": "zaid12345"
+    "owner": "zaid073"
   }
 }
