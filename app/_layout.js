@@ -155,6 +155,13 @@ export default function Layout() {
       });
 
       const removeSub = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
+        // ONLY show this alert if the bubble was closed outside the app (i.e., when AppState is NOT active)
+        // If AppState is active, it means the app is in the foreground, and we hid it programmatically, so skip the alert.
+        if (AppState.currentState === 'active') {
+          console.log('[BUBBLE] Bubble hidden programmatically in foreground. Skipping offline dialog.');
+          return;
+        }
+
         Alert.alert(
           "Bubble Hidden",
           "You removed the floating bubble. Would you like to go offline as well to stop receiving new orders?",
