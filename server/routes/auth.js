@@ -65,7 +65,8 @@ router.post('/sync', firebaseAuth, async (req, res) => {
         uid: profile.firebaseUid,
         phoneNumber: profile.phoneNumber,
         role: profile.role,
-        profileStatus: currentStatus
+        profileStatus: currentStatus,
+        phoneVerified: profile.vendor ? profile.vendor.phoneVerified : false
       }
     });
   } catch (error) {
@@ -96,8 +97,9 @@ router.post('/role', firebaseAuth, async (req, res) => {
     }));
 
     // Create a skeleton record in the corresponding table if it doesn't exist
+    let vendorRecord = null;
     if (role === 'VENDOR') {
-      await withRetry(() => prisma.vendor.upsert({
+      vendorRecord = await withRetry(() => prisma.vendor.upsert({
         where: { phone: profile.phoneNumber },
         update: { profileId: profile.id },
         create: {
@@ -105,7 +107,8 @@ router.post('/role', firebaseAuth, async (req, res) => {
           phone: profile.phoneNumber,
           businessName: 'My Store', // Placeholder
           ownerName: 'Vendor Owner', // Placeholder
-          businessAddress: 'Address Pending' // Placeholder
+          businessAddress: 'Address Pending', // Placeholder
+          phoneVerified: false
         }
       }));
     } else if (role === 'RIDER') {
@@ -126,7 +129,8 @@ router.post('/role', firebaseAuth, async (req, res) => {
         uid: profile.firebaseUid,
         phoneNumber: profile.phoneNumber,
         role: profile.role,
-        profileStatus: profile.profileStatus
+        profileStatus: profile.profileStatus,
+        phoneVerified: role === 'VENDOR' ? (vendorRecord?.phoneVerified ?? false) : false
       }
     });
   } catch (error) {
@@ -152,6 +156,64 @@ router.post('/status-dev', firebaseAuth, async (req, res) => {
   } catch (error) {
     console.error('[AUTH] Sync error:', error);
     res.status(500).json({ error: 'Sync failed', details: error.message });
+  }
+});
+
+/**
+ * One-time verification endpoint for post-approval vendor payout activation
+ */
+router.post('/verify-phone-payout', firebaseAuth, async (req, res) => {
+  try {
+    const { uid } = req.user;
+    
+    // 1. Fetch Profile
+    const profile = await prisma.profile.findUnique({
+      where: { firebaseUid: uid },
+      include: { vendor: true }
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    if (profile.role !== 'VENDOR' || !profile.vendor) {
+      return res.status(400).json({ error: 'Only vendor accounts can complete phone verification.' });
+    }
+
+    // 2. Perform Single Atomic Transaction to lock phone number verification
+    const updatedVendor = await prisma.$transaction(async (tx) => {
+      // Set phoneVerified to true and accountStatus to ACTIVE
+      const v = await tx.vendor.update({
+        where: { id: profile.vendor.id },
+        data: { 
+          phoneVerified: true,
+          accountStatus: 'ACTIVE'
+        }
+      });
+
+      // Keep Profile table synchronized
+      await tx.profile.update({
+        where: { id: profile.id },
+        data: { 
+          profileStatus: 'READY' 
+        }
+      });
+
+      return v;
+    });
+
+    console.log(`[AUTH] Phone payout verification successful for Vendor: ${profile.vendor.id}, Phone: ${updatedVendor.phone}`);
+
+    res.json({
+      success: true,
+      message: 'Phone number verified for payouts successfully.',
+      phoneVerified: true,
+      profileStatus: 'READY'
+    });
+
+  } catch (error) {
+    console.error('[AUTH] verify-phone-payout error:', error);
+    res.status(500).json({ error: 'Verification update failed', details: error.message });
   }
 });
 

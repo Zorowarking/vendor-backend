@@ -15,7 +15,7 @@ export default function VendorRegisterScreen() {
   const [formData, setFormData] = useState({
     businessName: '',
     ownerName: '',
-    phone: user?.phoneNumber || '',
+    phone: '',
     email: user?.email || '',
     address: '',
     category: 'Food',
@@ -34,13 +34,13 @@ export default function VendorRegisterScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [timeMode, setTimeMode] = useState('open'); // 'open' or 'close'
   const [mapVisible, setMapVisible] = useState(false);
-
+ 
   const router = useRouter();
-
+ 
   const handleInputChange = (name, value) => {
     setFormData({ ...formData, [name]: value });
   };
-
+ 
   const handlePinLocation = async () => {
     setLoadingLocation(true);
     let { status } = await Location.requestForegroundPermissionsAsync();
@@ -49,7 +49,7 @@ export default function VendorRegisterScreen() {
       setLoadingLocation(false);
       return;
     }
-
+ 
     let location = await Location.getCurrentPositionAsync({});
     setFormData({ 
       ...formData, 
@@ -61,13 +61,13 @@ export default function VendorRegisterScreen() {
     setLoadingLocation(false);
     setMapVisible(true);
   };
-
+ 
   const onConfirmLocation = (coords) => {
     setFormData({ ...formData, location: coords });
     setMapVisible(false);
     Alert.alert('Location Pinned', 'Map coordinates saved successfully!');
   };
-
+ 
   const handleTimeChange = (event, selectedDate) => {
     setShowTimePicker(false);
     if (selectedDate && activeDay) {
@@ -87,19 +87,19 @@ export default function VendorRegisterScreen() {
       });
     }
   };
-
+ 
   const handleNext = () => {
-    if (!formData.businessName || !formData.ownerName || !formData.address || !formData.location) {
-      Alert.alert('Required Fields', 'Business Name, Owner Name, Address, and Location Pin are mandatory.');
+    if (!formData.businessName || !formData.ownerName || !formData.phone || !formData.address || !formData.location) {
+      Alert.alert('Required Fields', 'Business Name, Owner Name, Phone Number, Address, and Location Pin are mandatory.');
       return;
     }
     
     // Save to global state instead of URL params to avoid data loss due to string limits
     useAuthStore.getState().setVendorRegistrationData(formData);
-
+ 
     router.push('/auth/vendor-bank');
   };
-
+ 
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView 
@@ -111,7 +111,7 @@ export default function VendorRegisterScreen() {
             <Text style={styles.title}>Vendor Details</Text>
             <Text style={styles.subtitle}>Help us set up your store</Text>
           </View>
-
+ 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Business Name *</Text>
@@ -122,7 +122,7 @@ export default function VendorRegisterScreen() {
                 onChangeText={(text) => handleInputChange('businessName', text)}
               />
             </View>
-
+ 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Owner Name *</Text>
               <TextInput
@@ -132,14 +132,16 @@ export default function VendorRegisterScreen() {
                 onChangeText={(text) => handleInputChange('ownerName', text)}
               />
             </View>
-
+ 
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
-                <Text style={styles.label}>Phone (Locked)</Text>
+                <Text style={styles.label}>Phone Number *</Text>
                 <TextInput
-                  style={[styles.input, styles.disabledInput]}
+                  style={styles.input}
+                  placeholder="e.g. +919999999999"
+                  keyboardType="phone-pad"
                   value={formData.phone}
-                  editable={false}
+                  onChangeText={(text) => handleInputChange('phone', text)}
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1 }]}>
@@ -153,6 +155,7 @@ export default function VendorRegisterScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email Address</Text>

@@ -30,7 +30,7 @@ import * as SplashScreen from 'expo-splash-screen';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function Layout() {
-  const { isAuthenticated, role, profileStatus, user } = useAuthStore();
+  const { isAuthenticated, role, profileStatus, phoneVerified, user } = useAuthStore();
   const { activeNotification, setActiveNotification, clearNotification } = useNotificationStore();
   const segments = useSegments();
   const router = useRouter();
@@ -249,12 +249,12 @@ export default function Layout() {
       }
 
       // If unauthenticated but in auth group, only allow login and otp-verify
-      if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify') {
+      if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify' && segments[1] !== 'verify-phone') {
         router.replace('/auth/login');
         return;
       }
 
-      const isReadyOrActive = profileStatus === 'READY' || profileStatus === 'ACTIVE' || profileStatus === 'APPROVED';
+      const isReadyOrActive = (profileStatus === 'READY' || profileStatus === 'ACTIVE' || profileStatus === 'APPROVED') && phoneVerified === true;
       if (isAuthenticated && inAuthGroup && role && isReadyOrActive) {
         if (role === 'VENDOR') router.replace('/(vendor)');
         return;
@@ -293,12 +293,17 @@ export default function Layout() {
           if (!currentPath.includes('kyc')) {
             router.replace('/kyc/status');
           }
+        } else if (profileStatus === 'APPROVED' && !phoneVerified) {
+          const currentPath = segments.join('/');
+          if (!currentPath.includes('verify-phone')) {
+            router.replace('/auth/verify-phone');
+          }
         }
       }
     }, 150);
 
     return () => clearTimeout(redirectTimeout);
-  }, [isAuthenticated, role, profileStatus, segments, isMounted, navigationState?.key]);
+  }, [isAuthenticated, role, profileStatus, phoneVerified, segments, isMounted, navigationState?.key]);
 
   if (!isMounted) return null;
 
@@ -316,7 +321,7 @@ export default function Layout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
           <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
-
+          <Stack.Screen name="auth/verify-phone" options={{ title: 'Verify Phone' }} />
         </Stack>
       </View>
       </SafeAreaProvider>

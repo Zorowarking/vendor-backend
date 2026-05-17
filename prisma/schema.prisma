@@ -42,8 +42,8 @@ model ProductTemplate {
   category     String?  @db.VarChar(100)
   templateName String   @map("template_name") @db.VarChar(255)
   templateData Json     @map("template_data")
-  isSkeletal   Boolean  @default(false) @map("is_skeletal")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  isSkeletal   Boolean  @default(false) @map("is_skeletal")
   vendor       Vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@index([vendorId])
@@ -132,13 +132,13 @@ model Product {
   customizationType        CustomizationType         @default(NORMAL) @map("customization_type")
   isCustomizable           Boolean                   @default(false) @map("is_customizable")
   category                 String?                   @db.VarChar(100)
-  categories               Category[]                @relation("ProductToCategory")
   addOns                   ProductAddon[]
   customizationGroups      CustomizationGroup[]
   images                   ProductImage[]
   productReviewSnapshots   ProductReviewSnapshot[]
   productReviewSubmissions ProductReviewSubmission[]
   vendor                   Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  categories               Category[]                @relation("ProductToCategory")
 
   @@map("products")
   @@schema("vendor_delivery")
@@ -158,20 +158,6 @@ model Profile {
   vendor        Vendor?
 
   @@map("profiles")
-  @@schema("vendor_delivery")
-}
-
-model AccountBlock {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  profileId     String    @map("profile_id") @db.Uuid
-  status        String    @db.VarChar(30) // SUSPENDED, DISABLED
-  disabledUntil DateTime? @map("disabled_until") @db.Timestamptz(6)
-  reason        String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
-
-  @@index([profileId])
-  @@map("account_blocks")
   @@schema("vendor_delivery")
 }
 
@@ -208,14 +194,14 @@ model Rider {
 }
 
 model Category {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  vendorId    String?   @map("vendor_id") @db.Uuid
-  name        String    @unique @db.VarChar(100)
-  description String?
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vendorId     String?   @map("vendor_id") @db.Uuid
+  name         String    @unique @db.VarChar(100)
+  description  String?
   displayOrder Int       @default(0) @map("display_order")
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  products    Product[] @relation("ProductToCategory")
-  vendor      Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  vendor       Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products     Product[] @relation("ProductToCategory")
 
   @@map("categories")
   @@schema("vendor_delivery")
@@ -372,6 +358,7 @@ model Vendor {
   profileId                 String?                     @unique @map("profile_id") @db.Uuid
   fcmToken                  String?                     @map("fcm_token")
   accountStatus             AccountStatus               @default(PENDING) @map("account_status")
+  phoneVerified             Boolean                     @default(false) @map("phone_verified")
   commissionModel           CommissionModel?            @map("commission_model")
   commissionRate            Decimal                     @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
   sfxStoreCode              String?                     @map("sfx_store_code") @db.VarChar(100)
@@ -380,6 +367,7 @@ model Vendor {
   delivery_provider         String                      @default("SHADOWFAX") @db.VarChar(50)
   shadowfax_linked          Boolean                     @default(false)
   orders                    Order[]
+  categories                Category[]
   productReviewSubmissions  ProductReviewSubmission[]
   productTemplates          ProductTemplate[]
   products                  Product[]
@@ -394,7 +382,6 @@ model Vendor {
   ratingsSummary            VendorRatingsSummary?
   slaMetrics                VendorSlaMetric?
   supportRequests           VendorSupportRequest[]
-  categories                Category[]
   profile                   Profile?                    @relation(fields: [profileId], references: [id])
 
   @@map("vendors")
@@ -502,10 +489,11 @@ model Customer {
   lastFailedAt     DateTime?         @map("last_failed_at") @db.Timestamptz(6)
   captchaRequired  Boolean           @default(false) @map("captcha_required")
   profilePicUrl    String?           @map("profile_pic_url")
+  status           AccountStatus     @default(ACTIVE)
   addresses        Address[]
   ageVerification  AgeVerification?
   analyticsEvents  AnalyticsEvent[]
-  carts           Cart[]
+  carts            Cart[]
   profile          Profile?          @relation(fields: [profileId], references: [id])
   feedback         Feedback[]
   loginAttemptLogs LoginAttemptLog[]
@@ -639,12 +627,12 @@ model Order {
   deliveredAt              DateTime?              @map("delivered_at") @db.Timestamptz(6)
   createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  refundStatus             String?                @default("NONE") @map("refund_status") @db.VarChar(20)
-  refundAmount             Decimal?               @map("refund_amount") @db.Decimal(10, 2)
   deliveryFailureReason    String?                @map("delivery_failure_reason") @db.VarChar(255)
   preparingAt              DateTime?              @map("preparing_at") @db.Timestamptz(6)
   readyAt                  DateTime?              @map("ready_at") @db.Timestamptz(6)
   sfxOrderId               BigInt?                @unique @map("sfx_order_id")
+  refundAmount             Decimal?               @map("refund_amount") @db.Decimal(10, 2)
+  refundStatus             String?                @default("NONE") @map("refund_status") @db.VarChar(20)
   analyticsEvents          AnalyticsEvent[]
   feedback                 Feedback?
   items                    OrderItem[]
@@ -685,13 +673,13 @@ model SupportRequest {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   customerId       String?   @map("customer_id") @db.Uuid
   orderId          String?   @map("order_id") @db.Uuid
-  issueType        String?   @map("issue_type") @db.VarChar(100)
-  message          String?
-  status           String    @default("PENDING") @db.VarChar(30)
   isEscalated      Boolean   @default(false) @map("is_escalated")
   whatsappTicketId String?   @map("whatsapp_ticket_id") @db.VarChar(255)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  issueType        String?   @map("issue_type") @db.VarChar(100)
+  message          String?
   resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  status           String    @default("PENDING") @db.VarChar(30)
   customer         Customer? @relation(fields: [customerId], references: [id])
   order            Order?    @relation(fields: [orderId], references: [id])
 
@@ -700,35 +688,37 @@ model SupportRequest {
 }
 
 model CustomizationGroup {
-  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  productId     String                @map("product_id") @db.Uuid
-  name          String                @db.VarChar(255)
-  isRequired    Boolean               @default(false) @map("is_required")
-  selectionType String                @default("SINGLE") @map("selection_type") @db.VarChar(50)
-  maxSelections Int?                  @map("max_selections")
-  displayOrder  Int                   @default(0) @map("display_order")
-  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  product       Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
-  options       CustomizationOption[]
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId      String                @map("product_id") @db.Uuid
+  name           String                @db.VarChar(255)
+  isRequired     Boolean               @default(false) @map("is_required")
+  selectionType  String                @default("SINGLE") @map("selection_type") @db.VarChar(50)
+  maxSelections  Int?                  @map("max_selections")
+  displayOrder   Int                   @default(0) @map("display_order")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  extra_price    Decimal               @default(0) @db.Decimal(10, 2)
+  free_threshold Int                   @default(0)
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options        CustomizationOption[]
 
   @@map("product_customization_groups")
   @@schema("vendor_delivery")
 }
 
 model CustomizationOption {
-  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  groupId       String             @map("group_id") @db.Uuid
-  name          String             @db.VarChar(255)
-  priceModifier Decimal            @default(0) @map("price_modifier") @db.Decimal(10, 2)
-  isAvailable   Boolean            @default(true) @map("is_available")
-  displayOrder  Int                @default(0) @map("display_order")
-  allowQuantity Boolean            @default(false) @map("allow_quantity")
-  freeLimit     Int                @default(0) @map("free_limit")
-  conflicts     Json?
-  linkedProductId String?          @map("linked_product_id") @db.Uuid
-  image_url     String?
-  group         CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  groupId         String             @map("group_id") @db.Uuid
+  name            String             @db.VarChar(255)
+  priceModifier   Decimal            @default(0) @map("price_modifier") @db.Decimal(10, 2)
+  isAvailable     Boolean            @default(true) @map("is_available")
+  displayOrder    Int                @default(0) @map("display_order")
+  allowQuantity   Boolean            @default(false) @map("allow_quantity")
+  freeLimit       Int                @default(0) @map("free_limit")
+  image_url       String?
+  conflicts       Json?
+  linkedProductId String?            @map("linked_product_id") @db.Uuid
+  group           CustomizationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@map("product_customization_options")
   @@schema("vendor_delivery")
@@ -783,6 +773,8 @@ model byo_template_groups {
   is_required    Boolean       @default(false)
   max_limit      Int?
   display_order  Int           @default(0)
+  extra_price    Decimal       @default(0) @db.Decimal(10, 2)
+  free_threshold Int           @default(0)
   byo_templates  byo_templates @relation(fields: [template_id], references: [id], onDelete: Cascade)
 
   @@schema("vendor_delivery")
@@ -794,6 +786,7 @@ model byo_templates {
   category                  String?                     @db.VarChar(100)
   created_at                DateTime                    @default(now()) @db.Timestamptz(6)
   updated_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  description               String?
   byo_template_groups       byo_template_groups[]
   vendor_assigned_templates vendor_assigned_templates[]
 

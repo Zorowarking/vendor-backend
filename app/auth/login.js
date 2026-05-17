@@ -124,41 +124,7 @@ export default function LoginScreen() {
             style={styles.logo}
           />
           <Text style={styles.title}>Vendors App</Text>
-          <Text style={styles.subtitle}>Enter your phone number to continue</Text>
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Phone Number</Text>
-          <View style={styles.phoneInput}>
-            <Text style={styles.countryCode}>+91</Text>
-            <TextInput
-              value={phoneNumber}
-              onChangeText={setPhoneNumber}
-              keyboardType="phone-pad"
-              maxLength={10}
-              placeholder="00000 00000"
-              style={styles.input}
-              editable={!loading}
-            />
-          </View>
-        </View>
-
-        <TouchableOpacity 
-          style={[styles.button, loading && styles.disabledButton]}
-          onPress={handleSendOTP}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.buttonText}>Send OTP</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.dividerContainer}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
+          <Text style={styles.subtitle}>Sign in with your Google account to get started</Text>
         </View>
 
         <TouchableOpacity 
@@ -166,11 +132,17 @@ export default function LoginScreen() {
           onPress={handleGoogleLogin}
           disabled={loading}
         >
-          <Image 
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} 
-            style={styles.googleIcon} 
-          />
-          <Text style={styles.googleButtonText}>Continue with Google</Text>
+          {loading ? (
+            <ActivityIndicator color={Colors.primary} />
+          ) : (
+            <>
+              <Image 
+                source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} 
+                style={styles.googleIcon} 
+              />
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.footerText}>

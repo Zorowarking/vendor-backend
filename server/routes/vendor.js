@@ -358,6 +358,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       operatingHours: v.operatingHours || 'Not configured',
       kycStatus: v.accountStatus,
       profileStatus: finalProfile.profileStatus,
+      phoneVerified: v.phoneVerified,
       commissionModel: v.commissionModel,
       location: {
         address: v.businessAddress,
@@ -389,7 +390,7 @@ router.put('/profile', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
     const { 
-      businessName, ownerName, address, category, description, location, 
+      businessName, ownerName, phone, address, category, description, location, 
       operatingHours, bankData, fcmToken, email, deliveryRadius, logo, banner, profilePic,
       commissionModel
     } = req.body;
@@ -418,7 +419,8 @@ router.put('/profile', firebaseAuth, async (req, res) => {
           phone: profile.phoneNumber,
           businessName: businessName || 'New Vendor',
           ownerName: ownerName || 'Pending Registration',
-          businessAddress: address || 'Pending'
+          businessAddress: address || 'Pending',
+          phoneVerified: false
         }
       }));
     }
@@ -442,6 +444,28 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       commissionModel: undefined // Handled separately below
     };
 
+    let phoneUpdated = false;
+    if (phone && phone !== vendor.phone) {
+      // Check if another profile already uses this phone number
+      const duplicatePhone = await prisma.profile.findFirst({
+        where: { 
+          phoneNumber: phone,
+          NOT: { id: profile.id }
+        }
+      });
+      if (duplicatePhone) {
+        return res.status(400).json({ error: 'This phone number is already registered under another account.' });
+      }
+      
+      updateData.phone = phone;
+      updateData.phoneVerified = false; // Reset phoneVerified if number changes
+      phoneUpdated = true;
+    }
+
+    if (email && email !== vendor.email) {
+      updateData.email = email;
+    }
+
     if (commissionModel) {
       if (vendor.commissionModel && vendor.commissionModel !== commissionModel) {
         return res.status(403).json({ error: 'Commission model cannot be changed. Please contact admin for assistance.' });
@@ -454,6 +478,14 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       where: { id: vendor.id },
       data: updateData
     }));
+
+    if (phoneUpdated) {
+      // Keep Profile table's phoneNumber and firebaseUid in sync
+      await withRetry(() => prisma.profile.update({
+        where: { id: profile.id },
+        data: { phoneNumber: phone }
+      }));
+    }
     
     // Sync to VendorOperatingHour table for relational queries
     if (parsedHours && typeof parsedHours === 'object') {
@@ -520,6 +552,8 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       profilePic: updatedV.profilePicUrl ? `${updatedV.profilePicUrl}?t=${Date.now()}` : 'https://via.placeholder.com/150',
       operatingHours: updatedV.operatingHours || 'Not configured',
       kycStatus: updatedV.accountStatus,
+      profileStatus: profile.profileStatus,
+      phoneVerified: updatedV.phoneVerified,
       commissionModel: updatedV.commissionModel,
       bankDetails: updatedV.bankDetails || null,
       location: { latitude: Number(updatedV.latitude || 0), longitude: Number(updatedV.longitude || 0) }

@@ -7,6 +7,7 @@ export const useAuthStore = create((set) => ({
   sessionToken: null,
   isAuthenticated: false,
   profileStatus: null, // 'PENDING' | 'UNDER_REVIEW' | 'READY' | 'SUSPENDED' | 'DISABLED'
+  phoneVerified: false,
   suspensionReason: null,
   kycDocs: {},
   vendorRegistrationData: null, // Holds data between Vendor Details and Bank Details screens
@@ -20,6 +21,7 @@ export const useAuthStore = create((set) => ({
       sessionToken: userData.sessionToken,
       isAuthenticated: true,
       profileStatus: userData.profileStatus,
+      phoneVerified: userData.phoneVerified || false,
       suspensionReason: userData.suspensionReason || null,
       kycDocs: {},
     });
@@ -42,6 +44,7 @@ export const useAuthStore = create((set) => ({
           sessionToken: userData?.sessionToken ?? null,
           isAuthenticated: !!userData?.sessionToken,
           profileStatus: userData?.profileStatus ?? null,
+          phoneVerified: userData?.phoneVerified ?? false,
           suspensionReason: userData?.suspensionReason || null,
         });
         return userData;
@@ -69,6 +72,7 @@ export const useAuthStore = create((set) => ({
       sessionToken: null,
       isAuthenticated: false,
       profileStatus: null,
+      phoneVerified: false,
       suspensionReason: null,
       kycDocs: {},
     });
@@ -89,6 +93,22 @@ export const useAuthStore = create((set) => ({
       console.warn('Failed to persist profile status change:', e);
     }
   },
+
+  verifyPhoneSuccess: () => {
+    set({ phoneVerified: true });
+    try {
+      AsyncStorage.getItem('auth_session').then((session) => {
+        if (session) {
+          const userData = JSON.parse(session);
+          userData.phoneVerified = true;
+          AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to persist phone verification success:', e);
+    }
+  },
+
   setRole: (role) => set({ role }),
   setKycDoc: (docId, data) => set((state) => ({ kycDocs: { ...state.kycDocs, [docId]: data } })),
 }));

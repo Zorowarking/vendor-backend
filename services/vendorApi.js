@@ -97,6 +97,11 @@ export const vendorApi = {
     return response.data;
   },
 
+  verifyPhonePayout: async () => {
+    const response = await apiClient.post('/api/auth/verify-phone-payout');
+    return response.data;
+  },
+
   uploadImage: async (uri, options = {}) => {
     try {
       const fileName = uri.split('/').pop();
