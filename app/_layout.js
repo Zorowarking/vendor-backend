@@ -288,12 +288,12 @@ export default function Layout() {
           if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
             if (role === 'VENDOR') router.replace('/auth/vendor-register');
           }
-        } else if (profileStatus === 'UNDER_REVIEW') {
+        } else if (profileStatus === 'UNDER_REVIEW' && phoneVerified) {
           const currentPath = segments.join('/');
           if (!currentPath.includes('kyc')) {
             router.replace('/kyc/status');
           }
-        } else if (profileStatus === 'APPROVED' && !phoneVerified) {
+        } else if ((profileStatus === 'UNDER_REVIEW' || profileStatus === 'APPROVED') && !phoneVerified) {
           const currentPath = segments.join('/');
           if (!currentPath.includes('verify-phone')) {
             router.replace('/auth/verify-phone');

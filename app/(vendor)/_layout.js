@@ -60,6 +60,30 @@ export default function VendorLayout() {
             title: 'My Store',
           }}
         />
+        <MaterialTopTabs.Screen
+          name="reviews"
+          options={{
+            title: 'Reviews',
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="products/add"
+          options={{
+            title: 'Add Product',
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="products/edit/[id]"
+          options={{
+            title: 'Edit Product',
+          }}
+        />
+        <MaterialTopTabs.Screen
+          name="orders/[orderId]"
+          options={{
+            title: 'Order Details',
+          }}
+        />
       </MaterialTopTabs>
     </View>
   );
