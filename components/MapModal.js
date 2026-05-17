@@ -28,45 +28,56 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   const canShowNativeMap = isNative && MapView;
 
   const [region, setRegion] = useState({
-    latitude: initialLocation?.latitude || 28.6139,
-    longitude: initialLocation?.longitude || 77.2090,
+    latitude: initialLocation?.latitude || 17.3850,
+    longitude: initialLocation?.longitude || 78.4867,
     latitudeDelta: 0.01,
     longitudeDelta: 0.01,
   });
 
   const [marker, setMarker] = useState({
-    latitude: initialLocation?.latitude || 28.6139,
-    longitude: initialLocation?.longitude || 77.2090,
+    latitude: initialLocation?.latitude || 17.3850,
+    longitude: initialLocation?.longitude || 78.4867,
   });
 
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchTimeout, setSearchTimeout] = useState(null);
 
   const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-  const handleSearch = async (query) => {
+  const handleSearch = (query) => {
     setSearchQuery(query);
     if (query.length < 3) {
       setSearchResults([]);
       return;
     }
 
-    try {
-      setIsSearching(true);
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GOOGLE_API_KEY}&components=country:in`
-      );
-      const data = await response.json();
-      if (data.status === 'OK') {
-        setSearchResults(data.predictions);
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-    } finally {
-      setIsSearching(false);
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
     }
+
+    // Debounce Google API calls by 400ms to avoid bottlenecking requests
+    const timeout = setTimeout(async () => {
+      try {
+        setIsSearching(true);
+        // Bias suggestions within a 50km radius around Hyderabad (17.3850, 78.4867)
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${GOOGLE_API_KEY}&components=country:in&location=17.3850,78.4867&radius=50000`
+        );
+        const data = await response.json();
+        if (data.status === 'OK') {
+          setSearchResults(data.predictions);
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    setSearchTimeout(timeout);
   };
 
   const selectPlace = async (placeId) => {

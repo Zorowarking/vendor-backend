@@ -228,10 +228,16 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
     }
     
     // Status remains default (kyc_submitted) or could be explicitly set to under_review
-    await withRetry(() => prisma.vendor.update({
-      where: { id: profile.vendor.id },
-      data: { accountStatus: 'KYC_SUBMITTED' }
-    }));
+    await withRetry(() => prisma.$transaction([
+      prisma.vendor.update({
+        where: { id: profile.vendor.id },
+        data: { accountStatus: 'KYC_SUBMITTED' }
+      }),
+      prisma.profile.update({
+        where: { id: profile.id },
+        data: { profileStatus: 'UNDER_REVIEW' }
+      })
+    ]));
 
     res.json({ 
       success: true, 
@@ -324,6 +330,27 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       }
     } else {
       var finalProfile = profile;
+    }
+
+    // Sync profileStatus based on vendor accountStatus to prevent client routing loops
+    if (finalProfile.role === 'VENDOR' && finalProfile.vendor) {
+      const vStatus = finalProfile.vendor.accountStatus;
+      let targetStatus = finalProfile.profileStatus;
+      if (['ACTIVE', 'APPROVED'].includes(vStatus)) {
+        targetStatus = 'ACTIVE';
+      } else if (['UNDER_REVIEW', 'KYC_SUBMITTED'].includes(vStatus)) {
+        targetStatus = 'UNDER_REVIEW';
+      }
+      
+      if (targetStatus !== finalProfile.profileStatus) {
+        console.log(`[VENDOR-PROFILE] Syncing status from ${finalProfile.profileStatus} to ${targetStatus}`);
+        const updatedProfile = await prisma.profile.update({
+          where: { id: finalProfile.id },
+          data: { profileStatus: targetStatus },
+          include: { vendor: { include: { bankDetails: true, complianceFlags: true, operatingHoursList: true, ratingsSummary: true } } }
+        });
+        finalProfile = updatedProfile;
+      }
     }
 
     // Self-Healing block expiration for temporarily disabled accounts
@@ -1074,10 +1101,14 @@ router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
 
 router.get('/products', firebaseAuth, async (req, res) => {
   try {
-    const profile = await prisma.profile.findUnique({ where: { firebaseUid: req.user.uid }, include: { vendor: true } });
+    const profile = await withRetry(() => prisma.profile.findUnique({ 
+      where: { firebaseUid: req.user.uid }, 
+      include: { vendor: true } 
+    }));
+    
     if (!profile?.vendor) return res.status(404).json({ error: 'Vendor not found' });
 
-    const products = await prisma.product.findMany({
+    const products = await withRetry(() => prisma.product.findMany({
       where: { vendorId: profile.vendor.id },
       include: { 
         addOns: true, 
@@ -1094,7 +1125,7 @@ router.get('/products', firebaseAuth, async (req, res) => {
         }
       },
       orderBy: { createdAt: 'desc' }
-    });
+    }));
 
     // B7: Vendor add-ons pricing config (mock hardcoded admin-set values for now)
     const config = { freeAddonUnitLimit: 3, perUnitCharge: 2.50 };
@@ -1130,7 +1161,8 @@ router.get('/products', firebaseAuth, async (req, res) => {
 
     res.json({ success: true, products: formattedProducts });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch products' });
+    console.error('[VENDOR-PRODUCTS] Failed to fetch products error:', error);
+    res.status(500).json({ error: 'Failed to fetch products', details: error.message });
   }
 });
 
