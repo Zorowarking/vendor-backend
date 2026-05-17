@@ -334,7 +334,7 @@ export default function AddProduct() {
               setCustomizationGroups([]);
               setImage(null);
               setTemplateId(null);
-              router.back();
+              router.push('/products/index');
             } 
           }
         ]

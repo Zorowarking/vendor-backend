@@ -143,7 +143,7 @@ export default function ProductsList() {
           'Choose an action',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Edit', onPress: () => router.push(`/(vendor)/products/edit/${item.id}`) },
+            { text: 'Edit', onPress: () => router.push(`/products/edit/${item.id}`) },
             { text: 'Delete', style: 'destructive', onPress: () => handleDelete(item.id) }
           ]
         );
@@ -213,7 +213,7 @@ export default function ProductsList() {
               {activeCategory === 'All' && (
                 <TouchableOpacity 
                   style={[styles.activeCategoryTab, { marginTop: 20, paddingHorizontal: 20 }]}
-                  onPress={() => router.push('/(vendor)/products/add')}
+                  onPress={() => router.push('/products/add')}
                 >
                   <Text style={styles.activeCategoryText}>Add Product</Text>
                 </TouchableOpacity>
@@ -226,7 +226,7 @@ export default function ProductsList() {
 
       <TouchableOpacity 
         style={styles.fab}
-        onPress={() => router.push('/(vendor)/products/add')}
+        onPress={() => router.push('/products/add')}
       >
         <Ionicons name="add" size={30} color={Colors.white} />
       </TouchableOpacity>
