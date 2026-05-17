@@ -58,20 +58,8 @@ export default function Layout() {
       SplashScreen.hideAsync().catch(() => {});
     }, 5000);
 
-    // Activate keep-awake safely inside component lifecycle
-    let keepAwakeTag;
-    import('expo-keep-awake').then((KeepAwake) => {
-      keepAwakeTag = 'vendor-app';
-      KeepAwake.activateKeepAwakeAsync(keepAwakeTag).catch(() => {
-        console.log('[DEBUG] Keep awake unavailable, skipping.');
-      });
-    }).catch(() => {});
-
     return () => {
       clearTimeout(timeout);
-      import('expo-keep-awake').then((KeepAwake) => {
-        if (keepAwakeTag) KeepAwake.deactivateKeepAwake(keepAwakeTag);
-      }).catch(() => {});
     };
   }, []);
 
