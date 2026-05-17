@@ -514,7 +514,7 @@ export default function VendorProfile() {
             <View style={[styles.badge, styles.badgeApproved]}>
               <Text style={styles.badgeText}>{profile.kycStatus}</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/kyc/home')}>
+            <TouchableOpacity onPress={() => router.push('/kyc')}>
               <Text style={styles.linkText}>Update Docs</Text>
             </TouchableOpacity>
           </View>
