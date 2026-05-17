@@ -1,0 +1,34 @@
+diff --git a/node_modules/react-native-floating-bubble/android/build.gradle b/node_modules/react-native-floating-bubble/android/build.gradle
+index 2173e8d..eaa8a2a 100644
+--- a/node_modules/react-native-floating-bubble/android/build.gradle
++++ b/node_modules/react-native-floating-bubble/android/build.gradle
+@@ -12,13 +12,16 @@ buildscript {
+ 
+ apply plugin: 'com.android.library'
+ 
++def safeExtGet(prop, fallback) {
++    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
++}
++
+ android {
+-    compileSdkVersion 23
+-    buildToolsVersion "23.0.1"
++    compileSdkVersion safeExtGet('compileSdkVersion', 34)
+ 
+     defaultConfig {
+-        minSdkVersion 16
+-        targetSdkVersion 22
++        minSdkVersion safeExtGet('minSdkVersion', 23)
++        targetSdkVersion safeExtGet('targetSdkVersion', 34)
+         versionCode 1
+         versionName "1.0"
+     }
+@@ -41,6 +44,6 @@ allprojects {
+ dependencies {
+     implementation 'com.facebook.react:react-native:+'
+     //compile 'com.txusballesteros:bubbles:1.2.1',
+-    implementation 'com.github.txusballesteros:bubbles-for-android:develop-SNAPSHOT'
++    implementation 'com.github.txusballesteros:bubbles-for-android:0df5db16798f5fdcbc35372a12ac8f3312e709cb'
+ }
+   
+\ No newline at end of file
