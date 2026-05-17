@@ -408,7 +408,8 @@ router.get('/profile', firebaseAuth, async (req, res) => {
     res.json({ success: true, vendor: vendorResponse });
 
   } catch (error) {
-    res.status(500).json({ error: 'Failed to get profile' });
+    console.error('[VENDOR-PROFILE] Failed to get profile error:', error);
+    res.status(500).json({ error: 'Failed to get profile', details: error.message });
   }
 });
 
