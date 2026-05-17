@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, Switch, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import { useVendorStore } from '../store/vendorStore';
+import { useAuthStore } from '../store/authStore';
+import { useRouter } from 'expo-router';
 import { vendorApi } from '../services/vendorApi';
 import Colors from '../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +13,8 @@ export default function VendorHeaderToggle() {
   const onlineStatus = useVendorStore((state) => state.onlineStatus);
   const activeOrders = useVendorStore((state) => state.activeOrders);
   const setOnlineStatus = useVendorStore((state) => state.setOnlineStatus);
-
-
+  const profileStatus = useAuthStore((state) => state.profileStatus);
+  const router = useRouter();
 
   const handleToggle = async (newValue) => {
     if (!newValue) {
@@ -47,6 +49,23 @@ export default function VendorHeaderToggle() {
       }
     } else {
       // User wants to go online
+      // Guard against pending KYC status
+      const isApproved = ['READY', 'ACTIVE', 'APPROVED'].includes(profileStatus?.toUpperCase());
+      if (!isApproved) {
+        Alert.alert(
+          'Verification Required',
+          'Your account is currently under review. You will be able to go online once our compliance team approves your KYC documents.',
+          [
+            { 
+              text: 'View KYC Status', 
+              onPress: () => router.push('/kyc/status') 
+            },
+            { text: 'Cancel', style: 'cancel' }
+          ]
+        );
+        return;
+      }
+
       await updateStatus(true);
 
       // Contextual prompt: Ask for overlay permission on Android if not granted

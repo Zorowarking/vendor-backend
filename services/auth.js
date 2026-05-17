@@ -129,7 +129,7 @@ export const authService = {
         '+910000000000': '123456',
         '+919063851105': '123456'
       };
-      if (cleanPhone in mockOtpMap) {
+      if (__DEV__ && cleanPhone in mockOtpMap) {
         console.log('--- DEV MOCK MODE TRIGGERED ---');
         const expectedOtp = mockOtpMap[cleanPhone];
         return { 

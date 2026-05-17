@@ -38,8 +38,10 @@ const requireKyc = async (req, res, next) => {
       '+910000000000',
       '+919063851105'
     ];
-    if (process.env.NODE_ENV !== 'production' || mockNumbers.includes(profile.phoneNumber)) {
-      isApproved = true;
+    if (process.env.NODE_ENV !== 'production') {
+      if (mockNumbers.includes(profile.phoneNumber)) {
+        isApproved = true;
+      }
     }
 
     // Reject if KYC not in an approved state

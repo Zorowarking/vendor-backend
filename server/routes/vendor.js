@@ -1632,12 +1632,13 @@ router.get('/earnings', firebaseAuth, requireKyc, async (req, res) => {
     // Group by date for chart (simple implementation)
     const groupedData = {};
     earningsList.forEach(e => {
-      const date = e.earnedAt.toISOString().split('T')[0];
+      const dateObj = e.earnedAt ? new Date(e.earnedAt) : new Date();
+      const date = dateObj.toISOString().split('T')[0];
       if (!groupedData[date]) {
         groupedData[date] = { gross: 0, net: 0, count: 0 };
       }
-      groupedData[date].gross += Number(e.orderTotal);
-      groupedData[date].net += Number(e.vendorPayout);
+      groupedData[date].gross += Number(e.orderTotal || 0);
+      groupedData[date].net += Number(e.vendorPayout || 0);
       groupedData[date].count += 1;
     });
 

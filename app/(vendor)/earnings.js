@@ -89,10 +89,12 @@ export default function VendorEarnings() {
   ];
 
   // Prepare safe chart data
-  const chartData = data.chartData || {
-    labels: ['-'],
-    datasets: [{ data: [0] }]
-  };
+  const chartData = (data && data.chartData && data.chartData.labels && data.chartData.labels.length > 0 && data.chartData.datasets && data.chartData.datasets[0]?.data?.length > 0)
+    ? data.chartData 
+    : {
+        labels: ['-'],
+        datasets: [{ data: [0] }]
+      };
 
   return (
     <ScrollView 
