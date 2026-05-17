@@ -53,7 +53,6 @@
     "plugins": [
       "expo-router",
       "expo-document-picker",
-      "expo-location",
       "expo-image-picker",
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
@@ -81,10 +80,13 @@
       "enabled": false
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false
+      },
       "eas": {
-        "projectId": "3cd53ead-d630-49a4-a60b-468e4bab9c94"
+        "projectId": "01ec4e8c-e0ce-44ec-9355-ca8aab564b14"
       }
-    }
+    },
+    "owner": "zaid12345"
   }
 }

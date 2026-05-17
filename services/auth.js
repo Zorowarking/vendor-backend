@@ -121,20 +121,21 @@ export const authService = {
       console.log('Cleaned Phone:', cleanPhone);
       
       // Developer Bypass: If using a test number, don't call Firebase
-      const mockNumbers = [
-        MOCK_TEST_NUMBER, 
-        '+917777777777', 
-        '+918888888888', 
-        '+911111111111', 
-        '+910000000000',
-        '+919063851105'
-      ];
-      if (mockNumbers.includes(cleanPhone)) {
+      const mockOtpMap = {
+        [MOCK_TEST_NUMBER]: '123456',
+        '+917777777777': '123456',
+        '+918888888888': '123456',
+        '+911111111111': '222222',
+        '+910000000000': '123456',
+        '+919063851105': '123456'
+      };
+      if (cleanPhone in mockOtpMap) {
         console.log('--- DEV MOCK MODE TRIGGERED ---');
+        const expectedOtp = mockOtpMap[cleanPhone];
         return { 
           isMock: true, 
           confirm: (code) => {
-            if (code === MOCK_OTP) {
+            if (code === expectedOtp) {
               return Promise.resolve({ 
                 user: { 
                   uid: `mock-uid-${cleanPhone.replace(/[^0-9]/g, '')}`, 

@@ -1,3 +1,4 @@
+import 'react-native-pager-view';
 import {
   createMaterialTopTabNavigator,
   MaterialTopTabNavigationOptions,

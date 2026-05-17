@@ -37,17 +37,22 @@ export const useAuthStore = create((set) => ({
       if (session) {
         const userData = JSON.parse(session);
         set({
-          user: userData.user,
-          role: userData.role,
-          sessionToken: userData.sessionToken,
-          isAuthenticated: true,
-          profileStatus: userData.profileStatus,
-          suspensionReason: userData.suspensionReason || null,
+          user: userData?.user ?? null,
+          role: userData?.role ?? null,
+          sessionToken: userData?.sessionToken ?? null,
+          isAuthenticated: !!userData?.sessionToken,
+          profileStatus: userData?.profileStatus ?? null,
+          suspensionReason: userData?.suspensionReason || null,
         });
         return userData;
       }
     } catch (e) {
       console.warn('Failed to restore session', e);
+      try {
+        await AsyncStorage.removeItem('auth_session');
+      } catch (rmErr) {
+        console.warn('Failed to clear corrupt session:', rmErr.message);
+      }
     }
     return null;
   },

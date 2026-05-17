@@ -1,3 +1,5 @@
+import 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 // PRODUCTION HARDENING: Disable all console logs in release builds
 if (!__DEV__) {
   console.log = () => {};
@@ -10,7 +12,8 @@ if (!__DEV__) {
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, DeviceEventEmitter, Platform, Alert, AppState } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
 import { notificationService } from '../services/notificationService';
 import NotificationBanner from '../components/NotificationBanner';
@@ -26,13 +29,12 @@ import * as SplashScreen from 'expo-splash-screen';
 // Prevent auto-hiding to avoid flickering during auth initialization
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-
 export default function Layout() {
   const { isAuthenticated, role, profileStatus, user } = useAuthStore();
   const { activeNotification, setActiveNotification, clearNotification } = useNotificationStore();
   const segments = useSegments();
   const router = useRouter();
+  const navigationState = useRootNavigationState();
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -98,13 +100,22 @@ export default function Layout() {
         setActiveNotification(remoteMessage);
       });
 
-      // 1. Always request permission on startup (for new installs)
-      const token = await notificationService.requestPermissionAndToken();
-      
-      // 2. If already logged in, ensure token is synced (double-check)
-      if (isAuthenticated && role === 'VENDOR' && token) {
-        await notificationService.syncTokenWithBackend(token);
-      }
+      // Production Hardening: Delay permission request slightly to avoid race conditions 
+      // with the splash screen hiding animation, ensuring the system permission dialog is never suppressed.
+      setTimeout(async () => {
+        try {
+          const token = await notificationService.requestPermissionAndToken();
+          
+          // 2. If already logged in, ensure token is synced (double-check)
+          // Pull state dynamically from store to avoid stale closures during the async delay
+          const currentAuth = useAuthStore.getState();
+          if (currentAuth.isAuthenticated && currentAuth.role === 'VENDOR' && token) {
+            await notificationService.syncTokenWithBackend(token);
+          }
+        } catch (err) {
+          console.warn('[NOTIF] Failed in delayed permission flow:', err);
+        }
+      }, 1500);
     };
 
     setupNotifications();
@@ -123,18 +134,27 @@ export default function Layout() {
   }, [isAuthenticated, role, user?.uid]);
 
   // System-level Bubble Update
+  const incomingOrders = useVendorStore((state) => state.incomingOrders || []);
+  const activeOrders = useVendorStore((state) => state.activeOrders || []);
+
   useEffect(() => {
     if (role === 'VENDOR') {
-      const incoming = useVendorStore.getState().incomingOrders.length;
-      const active = useVendorStore.getState().activeOrders.length;
+      const incoming = incomingOrders.length;
+      const active = activeOrders.length;
       systemBubbleService.update(incoming + active);
     }
-  }, [role, useVendorStore.getState().incomingOrders, useVendorStore.getState().activeOrders]);
+  }, [role, incomingOrders, activeOrders]);
 
-  // Bubble Removal Listener -> Offline Dialog
+
+  // Bubble Listeners (Press to reopen app, Remove to toggle offline)
   useEffect(() => {
     if (Platform.OS === 'android' && role === 'VENDOR' && isAuthenticated) {
-      const subscription = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
+      const pressSub = DeviceEventEmitter.addListener("floating-bubble-press", (e) => {
+        console.log('[BUBBLE] Bubble pressed, reopening app...');
+        systemBubbleService.reopen();
+      });
+
+      const removeSub = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
         Alert.alert(
           "Bubble Hidden",
           "You removed the floating bubble. Would you like to go offline as well to stop receiving new orders?",
@@ -162,12 +182,17 @@ export default function Layout() {
           ]
         );
       });
-      return () => subscription.remove();
+
+      return () => {
+        pressSub.remove();
+        removeSub.remove();
+      };
     }
   }, [role, isAuthenticated]);
 
   useEffect(() => {
-    if (!isMounted) return;
+    // CRITICAL: Must wait for both initialization and the root navigator to be mounted
+    if (!isMounted || !navigationState?.key) return;
 
     // Hide splash screen as soon as we're mounted and auth is checked
     SplashScreen.hideAsync().catch(() => {});
@@ -175,75 +200,80 @@ export default function Layout() {
     const inAuthGroup = segments[0] === 'auth';
     const currentScreen = segments[1];
 
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace('/auth/login');
-      return;
-    }
-
-    // If unauthenticated but in auth group, only allow login and otp-verify
-    if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify') {
-      router.replace('/auth/login');
-      return;
-    }
-
-    if (isAuthenticated && inAuthGroup && role && (profileStatus === 'READY' || profileStatus === 'ACTIVE')) {
-      if (role === 'VENDOR') router.replace('/(vendor)');
-      return;
-    }
-
-    // Global Status Enforcement
-    if (profileStatus === 'SUSPENDED') {
-      if (segments[0] !== 'account-suspended') {
-        router.replace('/account-suspended');
+    // Wrap redirects in a small timeout to let the navigation layer settle safely
+    const redirectTimeout = setTimeout(() => {
+      if (!isAuthenticated && !inAuthGroup) {
+        router.replace('/auth/login');
+        return;
       }
-      return;
-    }
 
-    if (profileStatus === 'DISABLED') {
-      if (segments[0] !== 'account-disabled') {
-        router.replace('/account-disabled');
+      // If unauthenticated but in auth group, only allow login and otp-verify
+      if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify') {
+        router.replace('/auth/login');
+        return;
       }
-      return;
-    }
 
-    // Role-based onboarding checks (only if not already Ready or Enforcement)
-    if (isAuthenticated && profileStatus !== 'READY' && profileStatus !== 'ACTIVE') {
+      if (isAuthenticated && inAuthGroup && role && (profileStatus === 'READY' || profileStatus === 'ACTIVE')) {
+        if (role === 'VENDOR') router.replace('/(vendor)');
+        return;
+      }
 
-      if (profileStatus === 'PENDING') {
-        const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
-        const currentPath = segments.join('/');
-        if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
-          if (role === 'VENDOR') router.replace('/auth/vendor-register');
+      // Global Status Enforcement
+      if (profileStatus === 'SUSPENDED') {
+        if (segments[0] !== 'account-suspended') {
+          router.replace('/account-suspended');
         }
-      } else if (profileStatus === 'UNDER_REVIEW') {
-        const currentPath = segments.join('/');
-        if (!currentPath.includes('kyc')) {
-          router.replace('/kyc/status');
+        return;
+      }
+
+      if (profileStatus === 'DISABLED') {
+        if (segments[0] !== 'account-disabled') {
+          router.replace('/account-disabled');
+        }
+        return;
+      }
+
+      // Role-based onboarding checks (only if not already Ready or Enforcement)
+      if (isAuthenticated && profileStatus !== 'READY' && profileStatus !== 'ACTIVE') {
+        if (profileStatus === 'PENDING') {
+          const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
+          const currentPath = segments.join('/');
+          if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
+            if (role === 'VENDOR') router.replace('/auth/vendor-register');
+          }
+        } else if (profileStatus === 'UNDER_REVIEW') {
+          const currentPath = segments.join('/');
+          if (!currentPath.includes('kyc')) {
+            router.replace('/kyc/status');
+          }
         }
       }
-    }
+    }, 150);
 
-  }, [isAuthenticated, role, profileStatus, segments, isMounted]);
+    return () => clearTimeout(redirectTimeout);
+  }, [isAuthenticated, role, profileStatus, segments, isMounted, navigationState?.key]);
 
   if (!isMounted) return null;
 
   return (
-    <ErrorBoundary>
-    <SafeAreaProvider>
-    <View style={{ flex: 1 }}>
-      <NetworkBanner />
-      <NotificationBanner 
-        notification={activeNotification}
-        onDismiss={clearNotification}
-        onPress={(msg) => notificationService.handleRouting(router, msg)}
-      />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
-        <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+      <SafeAreaProvider>
+      <View style={{ flex: 1 }}>
+        <NetworkBanner />
+        <NotificationBanner 
+          notification={activeNotification}
+          onDismiss={clearNotification}
+          onPress={(msg) => notificationService.handleRouting(router, msg)}
+        />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="auth/login" options={{ title: 'Login' }} />
+          <Stack.Screen name="auth/otp-verify" options={{ title: 'Verify OTP' }} />
 
-      </Stack>
-    </View>
-    </SafeAreaProvider>
-    </ErrorBoundary>
+        </Stack>
+      </View>
+      </SafeAreaProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }

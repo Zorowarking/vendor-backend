@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text, Switch, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, Switch, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import { useVendorStore } from '../store/vendorStore';
 import { vendorApi } from '../services/vendorApi';
 import Colors from '../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { notificationService } from '../services/notificationService';
+import { systemBubbleService } from '../services/systemBubbleService';
 
 export default function VendorHeaderToggle() {
   const onlineStatus = useVendorStore((state) => state.onlineStatus);
@@ -47,6 +48,32 @@ export default function VendorHeaderToggle() {
     } else {
       // User wants to go online
       await updateStatus(true);
+
+      // Contextual prompt: Ask for overlay permission on Android if not granted
+      if (Platform.OS === 'android') {
+        setTimeout(async () => {
+          try {
+            const hasBubblePerm = await systemBubbleService.hasPermission();
+            if (!hasBubblePerm) {
+              Alert.alert(
+                'Enable Floating Shortcut?',
+                'Would you like to enable the floating shortcut? This shows a floating bubble over other apps so you can instantly return when receiving new orders.',
+                [
+                  { text: 'Later', style: 'cancel' },
+                  { 
+                    text: 'Enable', 
+                    onPress: async () => {
+                      await systemBubbleService.requestPermission();
+                    } 
+                  }
+                ]
+              );
+            }
+          } catch (err) {
+            console.warn('[BUBBLE] Failed checking permission on online toggle:', err);
+          }
+        }, 1000);
+      }
     }
   };
 

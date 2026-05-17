@@ -73,18 +73,38 @@ export const useVendorStore = create()(
 
       setVendorStats: (stats) => set({ vendorStats: stats }),
 
-      clearStore: () => set({
-        onlineStatus: 'offline',
-        incomingOrders: [],
-        activeOrders: [],
-        orderHistory: [],
-        vendorStats: null,
-        products: []
-      })
-    }),
-    {
-      name: 'vendor-storage',
-      storage: createJSONStorage(() => AsyncStorage),
-    }
-  )
-);
+        clearStore: () => set({
+          onlineStatus: 'offline',
+          incomingOrders: [],
+          activeOrders: [],
+          orderHistory: [],
+          vendorStats: null,
+          products: []
+        })
+      }),
+      {
+        name: 'vendor-storage',
+        storage: createJSONStorage(() => AsyncStorage),
+        version: 1,
+        migrate: (persistedState, version) => {
+          const defaultState = {
+            onlineStatus: 'offline',
+            appState: 'active',
+            hasUnreadActivity: false,
+            incomingOrders: [],
+            activeOrders: [],
+            orderHistory: [],
+            vendorStats: null,
+            products: [],
+            lastSynced: null,
+          };
+          return { ...defaultState, ...persistedState };
+        },
+        onRehydrateStorage: () => (state, error) => {
+          if (error) {
+            console.error('[STORE] vendorStore Hydration failed:', error);
+          }
+        }
+      }
+    )
+  );

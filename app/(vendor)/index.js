@@ -581,13 +581,34 @@ export default function VendorOrdersDashboard() {
         }
 
         try {
+          // Unload previous sound if it exists to prevent memory leaks
+          if (soundRef.current) {
+            try {
+              await soundRef.current.unloadAsync();
+            } catch (soundErr) {}
+            soundRef.current = null;
+          }
+
           const { sound } = await Audio.Sound.createAsync(
             { uri: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg' }
           );
           soundRef.current = sound;
+
+          // Register listener to automatically unload sound when done playing
+          sound.setOnPlaybackStatusUpdate(async (status) => {
+            if (status.didJustFinish) {
+              try {
+                await sound.unloadAsync();
+              } catch (unloadErr) {}
+              if (soundRef.current === sound) {
+                soundRef.current = null;
+              }
+            }
+          });
+
           await sound.playAsync();
         } catch (error) {
-          console.log('Failed to play sound', error);
+          console.log('Failed to play sound safely', error);
         }
         
         addIncomingOrder(orderData);

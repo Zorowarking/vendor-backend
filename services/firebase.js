@@ -27,9 +27,21 @@ if (getApps().length === 0) {
   app = getApp();
 }
 
-// Initialize Auth with Persistence using AsyncStorage
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
-});
+// Initialize Auth with Persistence using AsyncStorage, with robust crash protection
+let auth;
+try {
+  // Check if already initialized first to avoid duplicate initialization error
+  auth = getAuth(app);
+} catch (e) {
+  try {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+  } catch (initErr) {
+    console.warn('[FIREBASE] Failed to initializeAuth with persistence, falling back to standard getAuth:', initErr.message);
+    auth = getAuth(app);
+  }
+}
 
 export { app, auth };
+

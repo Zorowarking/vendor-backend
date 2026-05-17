@@ -17,6 +17,17 @@ try {
 
 const FCM_TOKEN_KEY = 'fcm_token_v1';
 
+// Safe helper to obtain Firebase Messaging instance without native crashing
+const getMessaging = () => {
+  if (!messaging) return null;
+  try {
+    return messaging();
+  } catch (e) {
+    console.warn('[NOTIF] Failed to get FCM messaging instance safely:', e.message);
+    return null;
+  }
+};
+
 export const notificationService = {
   /**
    * Initialize Global Notification Listeners
@@ -24,40 +35,67 @@ export const notificationService = {
    * @param {Function} onForegroundMessage - Callback for in-app banner
    */
   init: async (router, onForegroundMessage) => {
-    if (!messaging) return;
+    // Create default notification channel on Android 8.0+ for premium sound/vibration delivery
+    if (Platform.OS === 'android') {
+      try {
+        const Notifications = require('expo-notifications');
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Orders & Updates',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          enableVibrate: true,
+          showBadge: true,
+        });
+        console.log('[NOTIF] Android notification channel "default" verified/created successfully.');
+      } catch (err) {
+        console.warn('[NOTIF] Failed to create default Android notification channel:', err.message);
+      }
+    }
 
-    // Handle Background/Quit state notifications
-    messaging().onNotificationOpenedApp(remoteMessage => {
-      console.log('Notification caused app to open from background:', remoteMessage);
-      notificationService.handleRouting(router, remoteMessage);
-    });
+    const fcm = getMessaging();
+    if (!fcm) {
+      console.log('[NOTIF] FCM is unavailable or failed to load. Listeners skipped.');
+      return () => {};
+    }
 
-    messaging().getInitialNotification().then(remoteMessage => {
-      if (remoteMessage) {
-        console.log('Notification caused app to open from quit state:', remoteMessage);
+    try {
+      // Handle Background/Quit state notifications
+      fcm.onNotificationOpenedApp(remoteMessage => {
+        console.log('Notification caused app to open from background:', remoteMessage);
         notificationService.handleRouting(router, remoteMessage);
-      }
-    });
+      });
 
-    // Handle Foreground notifications
-    const unsubscribeMessage = messaging().onMessage(async remoteMessage => {
-      console.log('Foreground message received:', remoteMessage);
-      useNotificationStore.getState().setActiveNotification(remoteMessage);
-      if (onForegroundMessage) {
-        onForegroundMessage(remoteMessage);
-      }
-    });
+      fcm.getInitialNotification().then(remoteMessage => {
+        if (remoteMessage) {
+          console.log('Notification caused app to open from quit state:', remoteMessage);
+          notificationService.handleRouting(router, remoteMessage);
+        }
+      });
 
-    // Handle Token Refresh
-    const unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
-      console.log('FCM Token refreshed:', token);
-      notificationService.syncTokenWithBackend(token);
-    });
+      // Handle Foreground notifications
+      const unsubscribeMessage = fcm.onMessage(async remoteMessage => {
+        console.log('Foreground message received:', remoteMessage);
+        useNotificationStore.getState().setActiveNotification(remoteMessage);
+        if (onForegroundMessage) {
+          onForegroundMessage(remoteMessage);
+        }
+      });
 
-    return () => {
-      unsubscribeMessage();
-      unsubscribeTokenRefresh();
-    };
+      // Handle Token Refresh
+      const unsubscribeTokenRefresh = fcm.onTokenRefresh(token => {
+        console.log('FCM Token refreshed:', token);
+        notificationService.syncTokenWithBackend(token);
+      });
+
+      return () => {
+        unsubscribeMessage();
+        unsubscribeTokenRefresh();
+      };
+    } catch (err) {
+      console.warn('[NOTIF] Error setting up FCM listeners:', err.message);
+      return () => {};
+    }
   },
 
   /**
@@ -99,20 +137,21 @@ export const notificationService = {
       }
     }
 
-    if (!messaging) {
+    const fcm = getMessaging();
+    if (!fcm) {
       console.log('[MOCK FCM] Permission Requested. Using Mock Token.');
       return 'mock_fcm_token_' + Date.now();
     }
 
     try {
-      const authStatus = await messaging().requestPermission();
+      const authStatus = await fcm.requestPermission();
       const enabled =
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
       if (enabled) {
         console.log('[NOTIF] Permission granted. Fetching token...');
-        const token = await messaging().getToken();
+        const token = await fcm.getToken();
         await notificationService.syncTokenWithBackend(token);
         return token;
       } else {
@@ -121,6 +160,7 @@ export const notificationService = {
     } catch (error) {
       console.error('[NOTIF] Failed to get FCM permission/token:', error);
     }
+    return null;
   },
 
   /**
@@ -186,3 +226,4 @@ export const notificationService = {
     if (onMessage) onMessage(mockPayload);
   }
 };
+
