@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from '../services/firebase';
 
 export const useAuthStore = create((set) => ({
   user: null,
@@ -62,10 +63,33 @@ export const useAuthStore = create((set) => ({
 
   logout: async () => {
     try {
+      // 1. Sign out from Firebase Auth
+      await auth.signOut();
+      console.log('[STORE] Firebase Auth Sign-Out Success');
+    } catch (firebaseErr) {
+      console.warn('[STORE] Firebase Auth Sign-Out failed:', firebaseErr.message);
+    }
+
+    try {
+      // 2. Clear native Google Sign-In session if module is available
+      const GoogleModule = require('@react-native-google-signin/google-signin');
+      const GoogleSignin = GoogleModule.GoogleSignin;
+      if (await GoogleSignin.isSignedIn()) {
+        await GoogleSignin.signOut();
+        console.log('[STORE] Google Sign-In Session Cleared');
+      }
+    } catch (googleErr) {
+      console.log('[STORE] Native Google Sign-Out not available or skipped:', googleErr.message);
+    }
+
+    try {
+      // 3. Clear Async Storage
       await AsyncStorage.removeItem('auth_session');
     } catch (e) {
-      console.warn('Failed to remove session', e);
+      console.warn('[STORE] Failed to remove session from AsyncStorage', e);
     }
+
+    // 4. Reset state
     set({
       user: null,
       role: null,
