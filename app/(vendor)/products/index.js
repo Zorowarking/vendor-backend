@@ -19,6 +19,7 @@ import { Dimensions } from 'react-native';
 import Colors from '../../../constants/Colors';
 import { vendorApi } from '../../../services/vendorApi';
 import { useVendorStore } from '../../../store/vendorStore';
+import { useAuthStore } from '../../../store/authStore';
 import { SkeletonLoader } from '../../../components/SkeletonLoader';
 import EmptyState from '../../../components/EmptyState';
 import ErrorState from '../../../components/ErrorState';
@@ -37,6 +38,14 @@ export default function ProductsList() {
   const [error, setError] = useState(null);
 
   const fetchProducts = useCallback(async (isManualRefresh = false) => {
+    // Prevent background fetches if user is not authenticated
+    const { isAuthenticated } = useAuthStore.getState();
+    if (!isAuthenticated) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     setError(null);
     try {
       console.log('Fetching products...');

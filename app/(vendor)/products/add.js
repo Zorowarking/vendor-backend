@@ -20,6 +20,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Colors from '../../../constants/Colors';
 import { vendorApi } from '../../../services/vendorApi';
 import { useVendorStore } from '../../../store/vendorStore';
+import { useAuthStore } from '../../../store/authStore';
 
 export default function AddProduct() {
   const router = useRouter();
@@ -61,6 +62,10 @@ export default function AddProduct() {
   const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
   useEffect(() => {
+    // Prevent background fetches if user is not authenticated
+    const { isAuthenticated } = useAuthStore.getState();
+    if (!isAuthenticated) return;
+
     const fetchData = async () => {
       const [templatesResult, categoriesResult, assignedByoResult] = await Promise.allSettled([
         vendorApi.getTemplates(),
