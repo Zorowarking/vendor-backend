@@ -49,7 +49,11 @@ export default function VendorBankScreen() {
       router.push('/kyc');
     } catch (error) {
       console.error('Vendor registration error:', error);
-      Alert.alert('Error', 'Could not save details to server. Please try again.');
+      const serverMessage = error.response?.data?.error || error.response?.data?.details || error.message;
+      Alert.alert(
+        'Submission Failed',
+        serverMessage ? `${serverMessage}` : 'Could not save details to server. Please try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }

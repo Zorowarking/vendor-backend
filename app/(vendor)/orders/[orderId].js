@@ -1,8 +1,23 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Linking, Platform, Dimensions } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
+import { WebView } from 'react-native-webview';
+
+// Lazy-load MapView to avoid crashes in Expo Go or Web environments
+let MapView = null;
+let Marker = null;
+let PROVIDER_GOOGLE = null;
+
+try {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+} catch (e) {
+  // Silent catch
+}
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVendorStore } from '../../../store/vendorStore';
@@ -27,16 +42,6 @@ export default function OrderDetailScreen() {
     Linking.openURL(`tel:${number}`);
   };
 
-  const openInMaps = () => {
-    const addr = order?.addressSnapshot;
-    if (!addr) return;
-    const query = encodeURIComponent(`${addr.addressLine1 || ''}, ${addr.city || ''}, ${addr.state || ''}`);
-    const url = Platform.select({
-      ios: `maps:0,0?q=${query}`,
-      android: `geo:0,0?q=${query}`
-    });
-    Linking.openURL(url);
-  };
 
   const contactSupport = () => {
     const message = `Support Request for Order #${orderId.substring(0,8)}. Vendor: ${order?.vendorName || 'Vantyrn Vendor'}`;
@@ -47,6 +52,91 @@ export default function OrderDetailScreen() {
   // ✅ ALL hooks must be declared before any early return
   const [trackingData, setTrackingData] = React.useState(null);
   const [vendorProfile, setVendorProfile] = React.useState(null);
+
+  const isNative = Constants.appOwnership !== 'expo';
+  const canShowNativeMap = isNative && MapView;
+
+  const vendorCoordinates = React.useMemo(() => {
+    if (!vendorProfile?.location) return null;
+    try {
+      const loc = JSON.parse(vendorProfile.location);
+      if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+        return { latitude: loc.lat, longitude: loc.lng };
+      }
+    } catch (e) {}
+    return null;
+  }, [vendorProfile?.location]);
+
+  const mapHtml = React.useMemo(() => {
+    const lat = vendorCoordinates?.latitude || 17.3850;
+    const lng = vendorCoordinates?.longitude || 78.4867;
+    const riderLat = trackingData?.latitude;
+    const riderLng = trackingData?.longitude;
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+          <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+          <style>
+            body { margin: 0; padding: 0; }
+            #map { height: 100vh; width: 100vw; }
+            .leaflet-control-attribution { display: none; }
+            .restaurant-icon { 
+              background-color: #FF3D00; 
+              border: 2px solid white; 
+              border-radius: 50%; 
+              width: 16px; 
+              height: 16px; 
+              box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            }
+            .rider-icon { 
+              background-color: #4CAF50; 
+              border: 2px solid white; 
+              border-radius: 50%; 
+              width: 16px; 
+              height: 16px; 
+              box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+            }
+          </style>
+        </head>
+        <body>
+          <div id="map"></div>
+          <script>
+            var map = L.map('map', { zoomControl: false });
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 19,
+            }).addTo(map);
+
+            var restaurantMarker = null;
+            var riderMarker = null;
+            var group = L.featureGroup();
+
+            restaurantMarker = L.marker([${lat}, ${lng}], {
+              icon: L.divIcon({ className: 'restaurant-icon', iconSize: [16, 16] })
+            }).addTo(map).bindPopup('Restaurant');
+            group.addLayer(restaurantMarker);
+
+            ${riderLat && riderLng ? `
+              riderMarker = L.marker([${riderLat}, ${riderLng}], {
+                icon: L.divIcon({ className: 'rider-icon', iconSize: [16, 16] })
+              }).addTo(map).bindPopup('Rider');
+              group.addLayer(riderMarker);
+            ` : ''}
+
+            if (group.getLayers().length > 0) {
+              map.fitBounds(group.getBounds().pad(0.2));
+            } else {
+              map.setView([${lat}, ${lng}], 15);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+  }, [vendorCoordinates, trackingData]);
 
   React.useEffect(() => {
     vendorApi.getProfile().then(setVendorProfile).catch(() => {});
@@ -151,10 +241,6 @@ export default function OrderDetailScreen() {
                   'Address not available'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.mapBtn} onPress={openInMaps}>
-              <Text style={styles.mapBtnText}>Open Maps</Text>
-              <Ionicons name="map-outline" size={14} color={Colors.primary} />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -166,11 +252,13 @@ export default function OrderDetailScreen() {
       </View>
 
       {/* Shadowfax Delivery Tracking Section */}
-      {(order.status?.toLowerCase() === 'ready_for_pickup' || order.status?.toLowerCase() === 'out_for_delivery' || order.rider || trackingData) && (
+      {['accepted', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'pending_vendor_response'].includes(order.status?.toLowerCase()) && (
         <View style={styles.trackingCard}>
           <View style={styles.trackingHeader}>
              <Ionicons name="bicycle" size={20} color={Colors.primary} />
-             <Text style={styles.trackingTitle}>Rider Assigned</Text>
+             <Text style={styles.trackingTitle}>
+               {order.rider ? 'Rider Assigned' : 'Awaiting Rider Assignment'}
+             </Text>
           </View>
 
           {order.rider ? (
@@ -187,18 +275,18 @@ export default function OrderDetailScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <Text style={styles.trackingWaitText}>Rider is heading to the restaurant</Text>
+            <Text style={styles.trackingWaitText}>Rider will be assigned as soon as the order is prepared</Text>
           )}
 
           {/* Map Tracking Section */}
-          {(trackingData || (vendorProfile?.location && order.rider)) && (
-            <View style={styles.mapContainer}>
+          <View style={styles.mapContainer}>
+            {canShowNativeMap ? (
               <MapView
                 provider={PROVIDER_GOOGLE}
                 style={styles.miniMap}
                 initialRegion={{
-                  latitude: trackingData?.latitude || 28.6139,
-                  longitude: trackingData?.longitude || 77.2090,
+                  latitude: trackingData?.latitude || vendorCoordinates?.latitude || 17.3850,
+                  longitude: trackingData?.longitude || vendorCoordinates?.longitude || 78.4867,
                   latitudeDelta: 0.02,
                   longitudeDelta: 0.02,
                 }}
@@ -207,15 +295,17 @@ export default function OrderDetailScreen() {
                   longitude: trackingData.longitude,
                   latitudeDelta: 0.01,
                   longitudeDelta: 0.01,
-                } : undefined}
+                } : (vendorCoordinates ? {
+                  latitude: vendorCoordinates.latitude,
+                  longitude: vendorCoordinates.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                } : undefined)}
               >
                 {/* Vendor Marker */}
-                {vendorProfile?.location && (
+                {vendorCoordinates && (
                   <Marker
-                    coordinate={{
-                      latitude: JSON.parse(vendorProfile.location).lat,
-                      longitude: JSON.parse(vendorProfile.location).lng,
-                    }}
+                    coordinate={vendorCoordinates}
                     title="Restaurant"
                   >
                     <View style={styles.restaurantMarker}>
@@ -239,13 +329,20 @@ export default function OrderDetailScreen() {
                   </Marker>
                 )}
               </MapView>
-              <View style={styles.mapOverlay}>
-                <Text style={styles.mapOverlayText}>
-                  {trackingData ? 'Live Tracking' : 'Waiting for rider signal...'}
-                </Text>
-              </View>
+            ) : (
+              <WebView
+                style={styles.miniMap}
+                originWhitelist={['*']}
+                source={{ html: mapHtml }}
+                scrollEnabled={false}
+              />
+            )}
+            <View style={styles.mapOverlay}>
+              <Text style={styles.mapOverlayText}>
+                {trackingData ? 'Live Tracking' : (order.rider ? 'Waiting for rider signal...' : 'Awaiting Rider Assignment')}
+              </Text>
             </View>
-          )}
+          </View>
 
           {trackingData && (
             <View style={styles.trackingBody}>

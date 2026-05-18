@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "889299912788-o3fm9gb1k15khaahthlsf4isq4tkt7ph.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vantyrn.com",
+            "certificate_hash": "7c01649ee8a46f884bd763808c82081e8cffeef8"
+          }
+        },
+        {
           "client_id": "889299912788-rngeht9it5kfsqbmrc6949f1244f1hhk.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -65,6 +73,14 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "889299912788-km3gp209apl6r0eqj9mhekman69vcjt6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vantyrn.vendor",
+            "certificate_hash": "bf89164207d2ae1134a05213711d628d61159a3d"
+          }
+        },
         {
           "client_id": "889299912788-p5ijf0bgrgjgpupdv3a0l89n4iaeir2p.apps.googleusercontent.com",
           "client_type": 1,

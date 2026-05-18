@@ -45,7 +45,7 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   const [isSearching, setIsSearching] = useState(false);
   const [searchTimeout, setSearchTimeout] = useState(null);
 
-  const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyDEUqPA15poXPNybxUcDYiM3XdfoiJ_suk";
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -69,6 +69,8 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
         const data = await response.json();
         if (data.status === 'OK') {
           setSearchResults(data.predictions);
+        } else {
+          console.warn('Place autocomplete status not OK:', data.status, data.error_message);
         }
       } catch (error) {
         console.error('Search error:', error);

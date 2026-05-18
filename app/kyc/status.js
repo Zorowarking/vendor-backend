@@ -25,7 +25,7 @@ import { vendorApi } from '../../services/vendorApi';
 
 export default function KYCStatus() {
   const router = useRouter();
-  const { profileStatus, setProfileStatus, logout, user } = useAuthStore();
+  const { profileStatus, setProfileStatus, logout, user, phoneVerified } = useAuthStore();
   const [kycStatus, setKycStatus] = useState(profileStatus?.toUpperCase() || 'UNDER_REVIEW');
 
   useEffect(() => {
@@ -33,11 +33,15 @@ export default function KYCStatus() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // Give the user a moment to see the success state before redirecting
       const timer = setTimeout(() => {
-        router.replace('/(vendor)');
+        if (!phoneVerified) {
+          router.replace('/auth/verify-phone');
+        } else {
+          router.replace('/(vendor)');
+        }
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [kycStatus]);
+  }, [kycStatus, phoneVerified]);
 
   useEffect(() => {
     // Real-time status updates via Socket.IO

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import Colors from '../../constants/Colors';
 import { authService } from '../../services/auth';
 import { vendorApi } from '../../services/vendorApi';
@@ -16,6 +18,7 @@ export default function VerifyPhoneScreen() {
   
   const router = useRouter();
   const verifyPhoneSuccess = useAuthStore((state) => state.verifyPhoneSuccess);
+  const user = useAuthStore((state) => state.user);
 
   useEffect(() => {
     const fetchRegisteredPhone = async () => {
@@ -199,9 +202,35 @@ export default function VerifyPhoneScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={loading}>
-          <Text style={styles.logoutButtonText}>Sign Out / Change Account</Text>
-        </TouchableOpacity>
+        <View style={styles.footer}>
+          <TouchableOpacity 
+            style={styles.supportLink}
+            onPress={async () => {
+              const message = `Hello Foodie Support, I am Vendor: ${user?.fullName || 'New Vendor'} (ID: ${user?.uid || 'N/A'}). My approved phone number is ${phone || 'N/A'}. I need to change my registered phone number. Here is my valid reason: `;
+              const whatsappUrl = `whatsapp://send?phone=919063851105&text=${encodeURIComponent(message)}`;
+              const browserUrl = `https://wa.me/919063851105?text=${encodeURIComponent(message)}`;
+              
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                const supported = await Linking.canOpenURL(whatsappUrl);
+                if (supported) {
+                  await Linking.openURL(whatsappUrl);
+                } else {
+                  await Linking.openURL(browserUrl);
+                }
+              } catch (err) {
+                await Linking.openURL(browserUrl);
+              }
+            }}
+          >
+            <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+            <Text style={styles.supportLinkText}>Request Phone Number Change</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={loading}>
+            <Text style={styles.logoutButtonText}>Sign Out / Change Account</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -321,9 +350,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  footer: {
+    alignItems: 'center',
+    marginTop: 30,
+    width: '100%',
+  },
+  supportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    width: '100%',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: 10,
+  },
+  supportLinkText: {
+    fontSize: 15,
+    color: '#2E7D32',
+    fontWeight: '700',
+    marginLeft: 8,
+  },
   logoutButton: {
     alignSelf: 'center',
-    marginTop: 40,
+    marginTop: 16,
     paddingVertical: 10,
     paddingHorizontal: 20,
   },
