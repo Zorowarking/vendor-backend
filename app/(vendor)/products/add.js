@@ -72,8 +72,7 @@ export default function AddProduct() {
   }, []);
 
   useEffect(() => {
-    const { isHydrated: hyd, isAuthenticated: auth } = useAuthStore.getState();
-    if (!hyd || !auth) return;
+    if (!isHydrated || !isAuthenticated) return;
 
     const fetchData = async () => {
       const [templatesResult, categoriesResult, assignedByoResult] = await Promise.allSettled([
@@ -102,7 +101,7 @@ export default function AddProduct() {
       }
     };
     fetchData();
-  }, []);
+  }, [isHydrated, isAuthenticated]);
 
   if (!isHydrated) {
     return (

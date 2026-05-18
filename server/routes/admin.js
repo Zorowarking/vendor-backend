@@ -89,6 +89,18 @@ router.put('/vendors/:id/approve', requireAdmin, async (req, res) => {
     // Trigger real-time update
     emitAccountStatusUpdate(updatedVendor.id, 'APPROVED');
 
+    // Send push notification
+    try {
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(updatedVendor.id, {
+        title: 'KYC Approved',
+        body: 'Your business profile has been verified. Welcome to Vantyrn!',
+        type: 'KYC_APPROVED'
+      });
+    } catch (err) {
+      console.warn('Failed to send KYC approval notification:', err.message);
+    }
+
     res.json({ success: true, message: 'Vendor approved successfully', vendor: updatedVendor });
   } catch (error) {
     res.status(500).json({ error: 'Approval failed', details: error.message });

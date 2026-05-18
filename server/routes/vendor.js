@@ -25,6 +25,27 @@ router.get('/health-check', (req, res) => {
   });
 });
 
+// Save vendor push notification token
+router.post('/push-token', firebaseAuth, async (req, res) => {
+  const { pushToken } = req.body;
+  const uid = req.user.uid;
+
+  if (!pushToken) {
+    return res.status(400).json({ error: 'Push token is required' });
+  }
+
+  try {
+    await prisma.profile.update({
+      where: { firebaseUid: uid },
+      data: { pushToken: pushToken },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to save push token:', error);
+    res.status(500).json({ error: 'Failed to save push token' });
+  }
+});
+
 // ==========================================
 // HIGH PRIORITY: Taxonomy & Static Routes
 // ==========================================

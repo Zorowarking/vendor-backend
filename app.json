@@ -15,6 +15,7 @@
     "android": {
       "package": "com.vantyrn.vendor",
       "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true,
       "versionCode": 2,
       "config": {
         "googleMaps": {
@@ -48,16 +49,42 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries.",
-        "NSLocationAlwaysUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries."
+        "NSLocationAlwaysUsageDescription": "This app needs access to your location even when in the background to provide real-time tracking for active deliveries.",
+        "NSCameraUsageDescription": "Allow Vantyrn Vendor to access your camera to capture product pictures and KYC documents.",
+        "NSPhotoLibraryUsageDescription": "Allow Vantyrn Vendor to access your photos to select documents and product assets.",
+        "NSPhotoLibraryAddUsageDescription": "Allow Vantyrn Vendor to save captured photos to your library.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.889299912788-45cn9lq0fo8t48tsq4srap76b7ipro0o"
+            ]
+          }
+        ]
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyDEUqPA15poXPNybxUcDYiM3XdfoiJ_suk"
       }
     },
     "plugins": [
       "expo-router",
       "expo-document-picker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FF6B35",
+          "sounds": [],
+          "iosDisplayInForeground": true
+        }
+      ],
       "expo-image-picker",
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "@react-native-firebase/messaging",
+      "./plugins/withNotificationFix",
       "expo-splash-screen",
       [
         "expo-location",
@@ -78,18 +105,17 @@
       "typedRoutes": false
     },
     "updates": {
-      "enabled": true,
-      "url": "https://u.expo.dev/e16f9710-34c6-4a45-b5fc-73cbf7e83e3a"
+      "enabled": true
     },
     "extra": {
       "router": {
         "origin": false
       },
       "eas": {
-        "projectId": "e16f9710-34c6-4a45-b5fc-73cbf7e83e3a"
+        "projectId": "f8b2b82e-ce2f-4c4f-9f69-58ad39637f5a"
       }
     },
-    "owner": "zaid073",
+    "owner": "zaidhere",
     "runtimeVersion": {
       "policy": "appVersion"
     }

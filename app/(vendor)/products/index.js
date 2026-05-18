@@ -80,11 +80,20 @@ export default function ProductsList() {
     }
   }, [setProducts]);
 
+  // Safely trigger initial fetch once hydrated and authenticated
+  useEffect(() => {
+    if (isHydrated && isAuthenticated) {
+      fetchProducts();
+    }
+  }, [isHydrated, isAuthenticated, fetchProducts]);
+
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      fetchProducts();
-    }, [fetchProducts])
+      if (isHydrated && isAuthenticated) {
+        fetchProducts();
+      }
+    }, [isHydrated, isAuthenticated, fetchProducts])
   );
 
   // Real-time updates via Socket.IO

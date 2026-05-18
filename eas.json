@@ -11,6 +11,9 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "simulator": true
+      },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vendor-backend-production-c171.up.railway.app",
         "EXPO_PUBLIC_SOCKET_URL": "https://vendor-backend-production-c171.up.railway.app",
@@ -29,6 +32,10 @@
     "production": {
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false,
+        "image": "latest"
       },
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://vendor-backend-production-c171.up.railway.app",

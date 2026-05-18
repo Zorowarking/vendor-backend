@@ -74,6 +74,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "889299912788-7bhgbdacq7fajuuf186ndhaq48d5r2ar.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vantyrn.vendor",
+            "certificate_hash": "dd6cca5759db0d7d7c0bf2525589c7a7eedb7e8a"
+          }
+        },
+        {
           "client_id": "889299912788-km3gp209apl6r0eqj9mhekman69vcjt6.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

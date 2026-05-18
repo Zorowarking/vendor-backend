@@ -1,4 +1,32 @@
 const admin = require('firebase-admin');
+const axios = require('axios');
+
+/**
+ * Sends a push notification via Expo Push API
+ */
+const sendExpoPushNotification = async (pushToken, title, body, dataPayload = {}) => {
+  if (!pushToken) return;
+
+  try {
+    const response = await axios.post('https://exp.host/--/api/v2/push/send', {
+      to: pushToken,
+      sound: 'default',
+      title: title,
+      body: body,
+      data: dataPayload,
+      channelId: dataPayload.channelId || 'default',
+    }, {
+      headers: {
+        'Accept': 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      }
+    });
+    console.log(`[EXPO-PUSH] Notification sent successfully to ${pushToken}:`, response.data);
+  } catch (error) {
+    console.error(`[EXPO-PUSH] Error sending message:`, error.response?.data || error.message);
+  }
+};
 
 /**
  * Sends a standard push notification via FCM
@@ -59,16 +87,24 @@ const updateFloatingBubble = async (vendorId, isActive, activeOrderCount = 0) =>
  * Convenience helper to send to a Vendor
  */
 const sendToVendor = async (vendorId, payload) => {
-  if (!admin.apps.length) return;
-
   try {
     const vendor = await require('./prisma').prisma.vendor.findUnique({
       where: { id: vendorId },
-      include: { profile: { select: { fcmToken: true } } }
+      include: { profile: { select: { fcmToken: true, pushToken: true } } }
     });
     
     const fcmToken = vendor?.profile?.fcmToken || vendor?.fcmToken;
-    if (fcmToken) {
+    const pushToken = vendor?.profile?.pushToken || vendor?.pushToken;
+
+    if (pushToken) {
+      await sendExpoPushNotification(
+        pushToken,
+        payload.title,
+        payload.body,
+        { ...payload, type: payload.type || 'new_order', channelId: 'orders' }
+      );
+    }
+    if (fcmToken && admin.apps.length) {
       await sendPushNotification(
         fcmToken, 
         payload.title, 
@@ -85,15 +121,21 @@ const sendToVendor = async (vendorId, payload) => {
  * Convenience helper to send to a Customer
  */
 const sendToCustomer = async (firebaseUid, payload) => {
-  if (!admin.apps.length) return;
-
   try {
     const profile = await require('./prisma').prisma.profile.findUnique({
       where: { firebaseUid },
-      select: { fcmToken: true }
+      select: { fcmToken: true, pushToken: true }
     });
     
-    if (profile?.fcmToken) {
+    if (profile?.pushToken) {
+      await sendExpoPushNotification(
+        profile.pushToken,
+        payload.title,
+        payload.body,
+        { ...payload, type: payload.type || 'order_update', channelId: 'default' }
+      );
+    }
+    if (profile?.fcmToken && admin.apps.length) {
       await sendPushNotification(
         profile.fcmToken, 
         payload.title, 

@@ -16,7 +16,13 @@ import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-rout
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../services/auth';
-import { notificationService } from '../services/notificationService';
+import { 
+  registerForPushNotificationsAsync, 
+  savePushTokenToBackend,
+  setupNotificationListeners 
+} from '../services/notificationService';
+import * as Notifications from 'expo-notifications';
+import apiClient from '../services/api';
 import NotificationBanner from '../components/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
 import { socketService } from '../services/socketService';
@@ -34,6 +40,8 @@ export default function Layout() {
   const { isAuthenticated, role, profileStatus, phoneVerified, user } = useAuthStore();
   const { activeNotification, setActiveNotification, clearNotification } = useNotificationStore();
   const segments = useSegments();
+  const notificationListener = useRef();
+  const responseListener = useRef();
   const router = useRouter();
   const navigationState = useRootNavigationState();
   const [isMounted, setIsMounted] = useState(false);
@@ -220,34 +228,39 @@ export default function Layout() {
   useEffect(() => {
     if (!isMounted) return;
 
-    let unsubscribe;
-    const setupNotifications = async () => {
-      unsubscribe = await notificationService.init(router, (remoteMessage) => {
-        // Show in-app banner for foreground messages
-        setActiveNotification(remoteMessage);
-      });
+    // Only register notifications when vendor is authenticated
+    const { isAuthenticated } = useAuthStore.getState();
+    if (!isAuthenticated) return;
 
-      // Production Hardening: Delay permission request slightly to avoid race conditions 
-      // with the splash screen hiding animation, ensuring the system permission dialog is never suppressed.
-      setTimeout(async () => {
-        try {
-          const token = await notificationService.requestPermissionAndToken();
-          
-          // 2. If already logged in, ensure token is synced (double-check)
-          // Pull state dynamically from store to avoid stale closures during the async delay
-          const currentAuth = useAuthStore.getState();
-          if (currentAuth.isAuthenticated && currentAuth.role === 'VENDOR' && token) {
-            await notificationService.syncTokenWithBackend(token);
-          }
-        } catch (err) {
-          console.warn('[NOTIF] Failed in delayed permission flow:', err);
+    // Register and save token
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        savePushTokenToBackend(token, apiClient);
+      }
+    });
+
+    // Setup listeners
+    const cleanup = setupNotificationListeners(
+      // When notification arrives while app is open
+      (notification) => {
+        console.log('Notification received:', notification);
+        setActiveNotification(notification);
+      },
+      // When user taps notification
+      (response) => {
+        const data = response.notification.request.content.data;
+        
+        // Navigate based on notification type
+        if (data?.type === 'NEW_ORDER') {
+          router.push('/(vendor)/orders');
+        } else if (data?.type === 'KYC_APPROVED') {
+          router.push('/auth/verify-phone');
         }
-      }, 1500);
-    };
+      }
+    );
 
-    setupNotifications();
-    return () => unsubscribe && unsubscribe();
-  }, [isMounted]);
+    return cleanup;
+  }, [isAuthenticated, isMounted]);
 
   // Socket Connection Management
   useEffect(() => {
@@ -405,7 +418,14 @@ export default function Layout() {
         <NotificationBanner 
           notification={activeNotification}
           onDismiss={clearNotification}
-          onPress={(msg) => notificationService.handleRouting(router, msg)}
+          onPress={(msg) => {
+            const data = msg?.request?.content?.data || msg?.data;
+            if (data?.type === 'NEW_ORDER') {
+              router.push('/(vendor)/orders');
+            } else if (data?.type === 'KYC_APPROVED') {
+              router.push('/auth/verify-phone');
+            }
+          }}
         />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="auth/login" options={{ title: 'Login' }} />

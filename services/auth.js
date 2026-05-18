@@ -183,7 +183,26 @@ export const authService = {
 
       // 2. Fallback to Web SDK
       console.log('--- FALLBACK: CALLING WEB signInWithPhoneNumber ---');
-      throw new Error('Native Firebase Auth is not available in Expo Go and the Web SDK requires Recaptcha. Please use the developer test number (+919999999999) for testing, or build the app (development build/APK) to test real phone numbers.');
+      // Web SDK fallback requires RecaptchaVerifier on iOS
+      // Since we are in React Native (not web), use a workaround:
+      // Force use of native Firebase if available, 
+      // otherwise show a clear error instead of silent crash
+
+      if (!nativeAuth) {
+        // Web SDK phone auth requires browser reCAPTCHA
+        // which is not available in React Native
+        throw new Error(
+          'Phone verification requires the standalone app. ' +
+          'Please use the installed APK/IPA instead of Expo Go.'
+        );
+      }
+
+      // Native Firebase handles reCAPTCHA automatically on iOS
+      // via APNs silent push — no extra code needed
+      const confirmationResult = await nativeAuth().signInWithPhoneNumber(
+        cleanPhone
+      );
+      return confirmationResult;
 
     } catch (error) {
       console.error('--- SEND_OTP ERROR ---', error);
