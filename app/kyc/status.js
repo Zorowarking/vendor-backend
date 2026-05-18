@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import apiClient from '../../services/api';
 import { 
   View, 
@@ -13,7 +13,7 @@ import {
   AppState
 } from 'react-native';
 
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -77,28 +77,29 @@ export default function KYCStatus() {
     }
   };
 
+  // Re-fetch and poll when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      checkStatus(); // Immediate check on focus
+
+      // Poll every 5 seconds for status changes while active
+      const interval = setInterval(() => {
+        checkStatus();
+      }, 5000);
+
+      return () => clearInterval(interval);
+    }, [kycStatus])
+  );
+
+  // Re-fetch when app comes back to foreground
   useEffect(() => {
-    // Initial fetch on mount
-    checkStatus();
-
-    // Polling fallback while under review (every 3 seconds) for lightning-fast updates
-    let pollInterval = null;
-    if (kycStatus === 'UNDER_REVIEW') {
-      pollInterval = setInterval(checkStatus, 3000);
-    }
-
-    // Foreground listener for instant sync when returning to app
-    const subscription = AppState.addEventListener('change', nextAppState => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         console.log('[KYC-SYNC] App foregrounded, checking status...');
         checkStatus();
       }
     });
-
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, [kycStatus]);
 
   const renderStatusIcon = () => {

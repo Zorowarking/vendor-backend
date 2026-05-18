@@ -89,7 +89,24 @@ export const useAuthStore = create((set) => ({
       console.warn('[STORE] Failed to remove session from AsyncStorage', e);
     }
 
-    // 4. Reset state
+    // 4. Clear vendor and notification stores dynamically to prevent stale lifecycle deadlock
+    try {
+      const { useVendorStore } = require('./vendorStore');
+      useVendorStore.getState().clearStore();
+      console.log('[STORE] Vendor Store State Cleared');
+    } catch (vendorErr) {
+      console.warn('[STORE] Failed to clear vendor store:', vendorErr.message);
+    }
+
+    try {
+      const { useNotificationStore } = require('./notificationStore');
+      useNotificationStore.getState().clearNotification();
+      console.log('[STORE] Notification Store State Cleared');
+    } catch (notifErr) {
+      console.warn('[STORE] Failed to clear notification store:', notifErr.message);
+    }
+
+    // 5. Reset state
     set({
       user: null,
       role: null,

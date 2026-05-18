@@ -69,7 +69,7 @@ export default function KYCIndex() {
       await vendorApi.submitKyc(kycPayload);
       
       setProfileStatus('UNDER_REVIEW');
-      router.push('/auth/verify-phone');
+      router.push('/kyc/status');
     } catch (err) {
       console.error('KYC Submission Error:', err);
       Alert.alert('Error', 'Failed to submit KYC. Please try again.');

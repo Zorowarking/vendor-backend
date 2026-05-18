@@ -26,6 +26,7 @@ const MOCK_OTP = '123456';
 
 export const authService = {
   _confirmationResult: null,
+  _syncInProgress: false,
 
   /**
    * Google Login Implementation (Expo Go / Web Redirect compatible)
@@ -49,9 +50,9 @@ export const authService = {
       const sessionToken = await user.getIdToken();
 
       // Sync and Update Store
-      const { role, profileStatus } = await authService._syncUser(user, sessionToken);
+      const { role, profileStatus, phoneVerified } = await authService._syncUser(user, sessionToken);
       
-      return { role, profileStatus };
+      return { role, profileStatus, phoneVerified };
     } catch (error) {
       console.error('--- GOOGLE_LOGIN ERROR ---', error);
       Alert.alert('Login Error', 'Unable to sign in with Google. Please try again or use Phone login.');
@@ -63,9 +64,17 @@ export const authService = {
    * Internal helper to sync user data with the backend
    */
   _syncUser: async (user, sessionToken) => {
+    if (authService._syncInProgress) {
+      console.log('[AUTH] Sync already in progress, skipping duplicate call.');
+      const currentAuth = useAuthStore.getState();
+      return { role: currentAuth.role, profileStatus: currentAuth.profileStatus, phoneVerified: currentAuth.phoneVerified };
+    }
+    
+    authService._syncInProgress = true;
     console.log('--- SYNCING WITH BACKEND ---');
     let role = null;
     let profileStatus = 'PENDING';
+    let phoneVerified = false;
 
     try {
       const syncResponse = await axios.post(`${API_BASE_URL}/api/auth/sync`, {}, {
@@ -75,7 +84,8 @@ export const authService = {
       if (syncResponse.data.success) {
         role = syncResponse.data.user.role;
         profileStatus = syncResponse.data.user.profileStatus;
-        console.log('--- BACKEND SYNC SUCCESS ---', { role, profileStatus });
+        phoneVerified = syncResponse.data.user.phoneVerified || false;
+        console.log('--- BACKEND SYNC SUCCESS ---', { role, profileStatus, phoneVerified });
       }
       
       // AUTO-ASSIGN VENDOR ROLE: If the user has no role, assign VENDOR automatically
@@ -88,6 +98,7 @@ export const authService = {
           if (roleResponse.data.success) {
             role = 'VENDOR';
             profileStatus = roleResponse.data.user.profileStatus || 'PENDING';
+            phoneVerified = roleResponse.data.user.phoneVerified || false;
           }
         } catch (roleErr) {
           console.error('Auto-role assignment failed:', roleErr.message);
@@ -99,6 +110,8 @@ export const authService = {
       console.warn('Backend sync failed, falling back to PENDING status:', err.message);
       // Fallback: Default to VENDOR role if everything else fails in development
       if (!role) role = 'VENDOR';
+    } finally {
+      authService._syncInProgress = false;
     }
 
     useAuthStore.getState().login({
@@ -106,9 +119,10 @@ export const authService = {
       role,
       profileStatus,
       sessionToken,
+      phoneVerified,
     });
 
-    return { role, profileStatus };
+    return { role, profileStatus, phoneVerified };
   },
 
   /**

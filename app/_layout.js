@@ -15,6 +15,7 @@ import { View, DeviceEventEmitter, Platform, Alert, AppState } from 'react-nativ
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
+import { authService } from '../services/auth';
 import { notificationService } from '../services/notificationService';
 import NotificationBanner from '../components/NotificationBanner';
 import NetworkBanner from '../components/NetworkBanner';
@@ -91,6 +92,36 @@ export default function Layout() {
     return () => {
       clearTimeout(timeout);
     };
+  }, []);
+
+  // Dynamic Firebase Auth State Listener to sync store on Google/OTP Login and Logout
+  useEffect(() => {
+    const { onAuthStateChanged } = require('firebase/auth');
+    const { auth } = require('../services/firebase');
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const authStore = useAuthStore.getState();
+      if (firebaseUser) {
+        // Sync if not already authenticated locally and not currently syncing
+        if (!authStore.isAuthenticated && !authService._syncInProgress) {
+          console.log('[LAYOUT] onAuthStateChanged: User detected, syncing session...');
+          try {
+            const token = await firebaseUser.getIdToken();
+            await authService._syncUser(firebaseUser, token);
+          } catch (e) {
+            console.error('[LAYOUT] onAuthStateChanged sync error:', e);
+          }
+        }
+      } else {
+        // Log out locally if store thinks we're authenticated
+        if (authStore.isAuthenticated) {
+          console.log('[LAYOUT] onAuthStateChanged: No user, logging out locally...');
+          await authStore.logout();
+        }
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Track AppState for background/foreground badge notifications
@@ -310,7 +341,7 @@ export default function Layout() {
           if (!currentPath.includes('kyc')) {
             router.replace('/kyc/status');
           }
-        } else if (profileStatus === 'APPROVED' && !phoneVerified) {
+        } else if ((profileStatus === 'APPROVED' || profileStatus === 'ACTIVE' || profileStatus === 'READY') && !phoneVerified) {
           const currentPath = segments.join('/');
           if (!currentPath.includes('verify-phone')) {
             router.replace('/auth/verify-phone');
