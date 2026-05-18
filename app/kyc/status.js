@@ -81,6 +81,12 @@ export default function KYCStatus() {
     // Initial fetch on mount
     checkStatus();
 
+    // Polling fallback while under review (every 3 seconds) for lightning-fast updates
+    let pollInterval = null;
+    if (kycStatus === 'UNDER_REVIEW') {
+      pollInterval = setInterval(checkStatus, 3000);
+    }
+
     // Foreground listener for instant sync when returning to app
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (nextAppState === 'active') {
@@ -89,7 +95,10 @@ export default function KYCStatus() {
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+      subscription.remove();
+    };
   }, [kycStatus]);
 
   const renderStatusIcon = () => {

@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import { AppState } from 'react-native';
 import { useAuthStore } from '../store/authStore';
+import { auth } from './firebase';
 
 const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'https://vendor-backend-production-c171.up.railway.app';
 
@@ -12,7 +13,7 @@ class SocketService {
     this.appStateSubscription = null;
   }
 
-  connect(userId, role = 'VENDOR') {
+  async connect(userId, role = 'VENDOR') {
     if (this.socket) {
       if (this.userId === userId && this.role === role) return;
       this.disconnect();
@@ -21,7 +22,21 @@ class SocketService {
     this.userId = userId;
     this.role = role;
     
-    const token = useAuthStore.getState().sessionToken;
+    // Obtain a fresh, verified Firebase ID token to bypass authorization issues and prevent socket connection drop loops
+    let token = useAuthStore.getState().sessionToken;
+    try {
+      if (auth && auth.currentUser) {
+        console.log('[SOCKET] Requesting fresh Firebase ID Token...');
+        const freshToken = await auth.currentUser.getIdToken(true);
+        if (freshToken) {
+          token = freshToken;
+          useAuthStore.setState({ sessionToken: freshToken });
+          console.log('[SOCKET] Fresh token retrieved successfully.');
+        }
+      }
+    } catch (tokenErr) {
+      console.warn('[SOCKET] Failed to fetch a fresh token at startup:', tokenErr.message);
+    }
     
     const namespaceUrl = role === 'VENDOR' ? `${SOCKET_URL}/vendor` : `${SOCKET_URL}/rider`;
     console.log(`[SOCKET] Connecting to ${namespaceUrl}...`);
@@ -53,18 +68,45 @@ class SocketService {
       this._joinRoom();
     });
 
-    this.socket.on('disconnect', (reason) => {
+    this.socket.on('disconnect', async (reason) => {
       console.warn(`${role} Socket disconnected:`, reason);
       if (reason === 'io server disconnect' || reason === 'transport close') {
+        // Automatically fetch a fresh ID token before attempting reconnection to prevent loops
+        try {
+          if (auth && auth.currentUser) {
+            console.log('[SOCKET] Refreshing token prior to reconnection...');
+            const freshToken = await auth.currentUser.getIdToken(true);
+            if (freshToken) {
+              this.socket.auth.token = freshToken;
+              useAuthStore.setState({ sessionToken: freshToken });
+            }
+          }
+        } catch (tokenErr) {
+          console.warn('[SOCKET] Reconnection token refresh failed:', tokenErr.message);
+        }
         this.socket.connect();
       }
     });
 
-    this.socket.on('connect_error', (err) => {
+    this.socket.on('connect_error', async (err) => {
       if (err.message.includes('timeout') || err.message.includes('xhr poll error')) {
         console.warn(`[SOCKET] Offline Mode: Could not reach ${SOCKET_URL}.`);
       } else {
         console.error('[SOCKET] Connection error details:', err.message);
+        // Refresh token on error and retry to bypass authorization errors instantly
+        try {
+          if (auth && auth.currentUser) {
+            console.log('[SOCKET] Refreshing token on connect_error...');
+            const freshToken = await auth.currentUser.getIdToken(true);
+            if (freshToken) {
+              this.socket.auth.token = freshToken;
+              useAuthStore.setState({ sessionToken: freshToken });
+              this.socket.connect();
+            }
+          }
+        } catch (tokenErr) {
+          console.warn('[SOCKET] Error-based token refresh failed:', tokenErr.message);
+        }
       }
     });
 
@@ -72,9 +114,20 @@ class SocketService {
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
     }
-    this.appStateSubscription = AppState.addEventListener('change', nextAppState => {
+    this.appStateSubscription = AppState.addEventListener('change', async (nextAppState) => {
       if (nextAppState === 'active') {
-        console.log('[SOCKET] App returned to foreground. Ensuring connection...');
+        console.log('[SOCKET] App returned to foreground. Refreshing token and ensuring connection...');
+        try {
+          if (auth && auth.currentUser) {
+            const freshToken = await auth.currentUser.getIdToken(true);
+            if (freshToken && this.socket) {
+              this.socket.auth.token = freshToken;
+              useAuthStore.setState({ sessionToken: freshToken });
+            }
+          }
+        } catch (tokenErr) {
+          console.warn('[SOCKET] Foreground token refresh failed:', tokenErr.message);
+        }
         if (this.socket && !this.socket.connected) {
           this.socket.connect();
         }

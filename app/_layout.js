@@ -36,6 +36,18 @@ export default function Layout() {
   const router = useRouter();
   const navigationState = useRootNavigationState();
   const [isMounted, setIsMounted] = useState(false);
+  const [navTick, setNavTick] = useState(0);
+
+  // Dynamic Navigation Polling (solves buggy Expo Router navigationState mounting)
+  useEffect(() => {
+    if (isMounted && navigationState?.key) return;
+    
+    const interval = setInterval(() => {
+      setNavTick((t) => t + 1);
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [isMounted, navigationState?.key]);
 
   useEffect(() => {
     const init = async () => {
@@ -43,14 +55,20 @@ export default function Layout() {
         const authStore = useAuthStore.getState();
         await authStore.initialize();
         
-        // Fetch fresh profile status on launch if authenticated
+        // INSTANT INITIALIZATION: Mount immediately after session is restored to avoid blocking on API requests
+        setIsMounted(true);
+        
+        // Fetch fresh profile status in background to prevent slow startup
         if (authStore.isAuthenticated && authStore.role === 'VENDOR') {
-          try {
-            const profile = await vendorApi.getProfile();
-            if (profile && profile.profileStatus) {
-              authStore.setProfileStatus(profile.profileStatus);
-            }
-          } catch (_) {}
+          vendorApi.getProfile()
+            .then((profile) => {
+              if (profile && profile.profileStatus) {
+                authStore.setProfileStatus(profile.profileStatus);
+              }
+            })
+            .catch((e) => {
+              console.warn('[LAYOUT] Background profile status check failed:', e.message);
+            });
         }
         
         // Initialize bubble service for Android vendors
@@ -59,7 +77,6 @@ export default function Layout() {
         }
       } catch (err) {
         console.error('[LAYOUT] Init Error:', err);
-      } finally {
         setIsMounted(true);
       }
     };
@@ -303,7 +320,7 @@ export default function Layout() {
     }, 150);
 
     return () => clearTimeout(redirectTimeout);
-  }, [isAuthenticated, role, profileStatus, phoneVerified, segments, isMounted, navigationState?.key]);
+  }, [isAuthenticated, role, profileStatus, phoneVerified, segments, isMounted, navigationState?.key, navTick]);
 
   if (!isMounted) return null;
 
