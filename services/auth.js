@@ -12,7 +12,7 @@ import { Alert, NativeModules } from 'react-native';
 let nativeAuth = null;
 try {
   // Defensive check for the presence of the native module to prevent startup crashes in Expo Go
-  if (NativeModules.RNFBAuthModule && NativeModules.RNFBAppModule) {
+  if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
     nativeAuth = require('@react-native-firebase/auth').default;
   }
 } catch (e) {
@@ -193,6 +193,10 @@ export const authService = {
         message = 'Too many attempts. Please try again later or use the test number +919999999999 (OTP: 123456) for development.';
       } else if (error.code === 'auth/invalid-phone-number') {
         message = 'Invalid phone number format.';
+      } else if (error.code) {
+        message += `\n\n[Firebase Error: ${error.code}]`;
+      } else if (error.message) {
+        message += `\n\n[Details: ${error.message}]`;
       }
       
       Alert.alert('Security Notice', message);
@@ -261,6 +265,10 @@ export const authService = {
         message = 'Invalid phone number format.';
       } else if (error.code === 'auth/credential-already-in-use' || error.code === 'auth/phone-number-already-exists') {
         message = 'This phone number is already linked to another Firebase account.';
+      } else if (error.code) {
+        message += `\n\n[Firebase Error: ${error.code}]`;
+      } else if (error.message) {
+        message += `\n\n[Details: ${error.message}]`;
       }
       
       Alert.alert('Security Notice', message);

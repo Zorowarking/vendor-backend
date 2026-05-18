@@ -25,7 +25,7 @@ import { NativeModules } from 'react-native';
 // Safely require native firebase auth
 let nativeAuth = null;
 try {
-  if (NativeModules.RNFBAppModule) {
+  if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
     nativeAuth = require('@react-native-firebase/auth').default;
   }
 } catch (e) {}
