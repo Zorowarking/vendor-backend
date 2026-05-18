@@ -17,10 +17,12 @@ router.post('/sync', firebaseAuth, async (req, res) => {
     // Upsert the profile (create if doesn't exist, update if it does)
     const profile = await withRetry(() => prisma.profile.upsert({
       where: { firebaseUid: uid },
-      update: { phoneNumber: safePhone }, // Keep phone updated
+      update: { 
+        phoneNumber: safePhone ? safePhone : undefined 
+      }, // Keep phone updated
       create: {
         firebaseUid: uid,
-        phoneNumber: safePhone,
+        phoneNumber: safePhone || `none_${uid}`,  // safe placeholder, never null
         role: null,
         profileStatus: 'PENDING'
       },
@@ -163,6 +165,7 @@ router.post('/status-dev', firebaseAuth, async (req, res) => {
 router.post('/verify-phone-payout', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
+    const { phoneNumber } = req.body;
     
     // 1. Fetch Profile
     const profile = await prisma.profile.findUnique({
@@ -189,18 +192,19 @@ router.post('/verify-phone-payout', firebaseAuth, async (req, res) => {
         }
       });
 
-      // Keep Profile table synchronized
+      // Keep Profile table synchronized and update phoneNumber if passed
       await tx.profile.update({
         where: { id: profile.id },
         data: { 
-          profileStatus: 'READY' 
+          profileStatus: 'READY',
+          phoneNumber: phoneNumber ? phoneNumber : undefined
         }
       });
 
       return v;
     });
 
-    console.log(`[AUTH] Phone payout verification successful for Vendor: ${profile.vendor.id}, Phone: ${profile.phoneNumber}`);
+    console.log(`[AUTH] Phone payout verification successful for Vendor: ${profile.vendor.id}, Phone: ${phoneNumber || profile.phoneNumber}`);
 
     res.json({
       success: true,

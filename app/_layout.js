@@ -334,68 +334,64 @@ export default function Layout() {
     const inAuthGroup = segments[0] === 'auth';
     const currentScreen = segments[1];
 
-    // Wrap redirects in a small timeout to let the navigation layer settle safely
-    const redirectTimeout = setTimeout(() => {
-      if (!isAuthenticated && !inAuthGroup) {
-        router.replace('/auth/login');
-        return;
+    if (!isAuthenticated && !inAuthGroup) {
+      router.replace('/auth/login');
+      return;
+    }
+
+    // If unauthenticated but in auth group, only allow login and otp-verify
+    if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify' && segments[1] !== 'verify-phone') {
+      router.replace('/auth/login');
+      return;
+    }
+
+    const isReadyOrActive = (profileStatus === 'READY' || profileStatus === 'ACTIVE' || profileStatus === 'APPROVED') && phoneVerified === true;
+    if (isAuthenticated && inAuthGroup && role && isReadyOrActive) {
+      if (role === 'VENDOR') router.replace('/(vendor)');
+      return;
+    }
+
+    // Global Status Enforcement
+    const isSuspended = profileStatus === 'SUSPENDED';
+    const isDisabledTemp = profileStatus && profileStatus.startsWith('DISABLED:');
+
+    if (isSuspended) {
+      // Suspended maps to permanent termination screen
+      if (segments[0] !== 'account-disabled') {
+        router.replace('/account-disabled');
       }
+      return;
+    }
 
-      // If unauthenticated but in auth group, only allow login and otp-verify
-      if (!isAuthenticated && inAuthGroup && segments[1] !== 'login' && segments[1] !== 'otp-verify' && segments[1] !== 'verify-phone') {
-        router.replace('/auth/login');
-        return;
+    if (isDisabledTemp) {
+      // Temporarily disabled maps to account-suspended screen with ticking countdown timer
+      if (segments[0] !== 'account-suspended') {
+        router.replace('/account-suspended');
       }
+      return;
+    }
 
-      const isReadyOrActive = (profileStatus === 'READY' || profileStatus === 'ACTIVE' || profileStatus === 'APPROVED') && phoneVerified === true;
-      if (isAuthenticated && inAuthGroup && role && isReadyOrActive) {
-        if (role === 'VENDOR') router.replace('/(vendor)');
-        return;
-      }
-
-      // Global Status Enforcement
-      const isSuspended = profileStatus === 'SUSPENDED';
-      const isDisabledTemp = profileStatus && profileStatus.startsWith('DISABLED:');
-
-      if (isSuspended) {
-        // Suspended maps to permanent termination screen
-        if (segments[0] !== 'account-disabled') {
-          router.replace('/account-disabled');
+    // Role-based onboarding checks (only if not already Ready or Enforcement)
+    if (isAuthenticated && !isReadyOrActive && !isSuspended && !isDisabledTemp) {
+      if (profileStatus === 'PENDING') {
+        const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
+        const currentPath = segments.join('/');
+        if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
+          if (role === 'VENDOR') router.replace('/auth/vendor-register');
+        }
+      } else if (profileStatus === 'UNDER_REVIEW') {
+        const currentPath = segments.join('/');
+        if (!currentPath.includes('kyc')) {
+          router.replace('/kyc/status');
+        }
+      } else if ((profileStatus === 'APPROVED' || profileStatus === 'ACTIVE' || profileStatus === 'READY') && !phoneVerified) {
+        const currentPath = segments.join('/');
+        if (!currentPath.includes('verify-phone')) {
+          router.replace('/auth/verify-phone');
         }
         return;
       }
-
-      if (isDisabledTemp) {
-        // Temporarily disabled maps to account-suspended screen with ticking countdown timer
-        if (segments[0] !== 'account-suspended') {
-          router.replace('/account-suspended');
-        }
-        return;
-      }
-
-      // Role-based onboarding checks (only if not already Ready or Enforcement)
-      if (isAuthenticated && !isReadyOrActive && !isSuspended && !isDisabledTemp) {
-        if (profileStatus === 'PENDING') {
-          const onboardingScreens = ['vendor-register', 'vendor-bank', 'kyc'];
-          const currentPath = segments.join('/');
-          if (!onboardingScreens.some(screen => currentPath.includes(screen))) {
-            if (role === 'VENDOR') router.replace('/auth/vendor-register');
-          }
-        } else if (profileStatus === 'UNDER_REVIEW') {
-          const currentPath = segments.join('/');
-          if (!currentPath.includes('kyc')) {
-            router.replace('/kyc/status');
-          }
-        } else if ((profileStatus === 'APPROVED' || profileStatus === 'ACTIVE' || profileStatus === 'READY') && !phoneVerified) {
-          const currentPath = segments.join('/');
-          if (!currentPath.includes('verify-phone')) {
-            router.replace('/auth/verify-phone');
-          }
-        }
-      }
-    }, 150);
-
-    return () => clearTimeout(redirectTimeout);
+    }
   }, [isAuthenticated, role, profileStatus, phoneVerified, segments, isMounted, navigationState?.key, navTick]);
 
   if (!isMounted) return null;

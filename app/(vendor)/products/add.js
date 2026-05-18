@@ -61,10 +61,19 @@ export default function AddProduct() {
   const [allTemplates, setAllTemplates] = useState([]);
   const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
+  const { isHydrated, isAuthenticated } = useAuthStore();
+  const isMounted = React.useRef(true);
+
   useEffect(() => {
-    // Prevent background fetches if user is not authenticated
-    const { isAuthenticated } = useAuthStore.getState();
-    if (!isAuthenticated) return;
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const { isHydrated: hyd, isAuthenticated: auth } = useAuthStore.getState();
+    if (!hyd || !auth) return;
 
     const fetchData = async () => {
       const [templatesResult, categoriesResult, assignedByoResult] = await Promise.allSettled([
@@ -72,6 +81,8 @@ export default function AddProduct() {
         vendorApi.getCategoryList(),
         vendorApi.getByoAssigned()
       ]);
+
+      if (!isMounted.current) return;
 
       if (templatesResult.status === 'fulfilled') {
         const data = templatesResult.value;
@@ -92,6 +103,14 @@ export default function AddProduct() {
     };
     fetchData();
   }, []);
+
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.grey }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);

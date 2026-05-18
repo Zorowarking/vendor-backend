@@ -34,33 +34,49 @@ export default function ProductsList() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
-
   const [error, setError] = useState(null);
+  
+  const { isHydrated, isAuthenticated } = useAuthStore();
+  const isMounted = React.useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const fetchProducts = useCallback(async (isManualRefresh = false) => {
-    // Prevent background fetches if user is not authenticated
-    const { isAuthenticated } = useAuthStore.getState();
-    if (!isAuthenticated) {
-      setLoading(false);
-      setRefreshing(false);
+    const { isHydrated: hyd, isAuthenticated: auth } = useAuthStore.getState();
+    if (!hyd) return;
+    if (!auth) {
+      if (isMounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
       return;
     }
 
-    setError(null);
+    if (isMounted.current) {
+      setError(null);
+    }
     try {
       console.log('Fetching products...');
       const data = await vendorApi.getProducts();
       
-      // Always sync to ensure Fresh Data from the database on every tab focus
-      console.log('Syncing products to store:', data?.length);
-      setProducts(data);
-
+      if (isMounted.current) {
+        console.log('Syncing products to store:', data?.length);
+        setProducts(data);
+      }
     } catch (err) {
-      setError("Failed to load products. Please check your connection.");
+      if (isMounted.current) {
+        setError("Failed to load products. Please check your connection.");
+      }
     } finally {
-
-      setLoading(false);
-      setRefreshing(false);
+      if (isMounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [setProducts]);
 
@@ -179,6 +195,18 @@ export default function ProductsList() {
       </View>
     </TouchableOpacity>
   );
+
+  if (!isHydrated) {
+    return (
+      <View style={styles.container}>
+        <View style={{ padding: 16 }}>
+          {[1, 2, 3, 4].map(i => (
+            <SkeletonLoader key={i} width={width - 32} height={100} style={{ marginBottom: 16, borderRadius: 12 }} />
+          ))}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

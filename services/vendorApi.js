@@ -97,8 +97,8 @@ export const vendorApi = {
     return response.data;
   },
 
-  verifyPhonePayout: async () => {
-    const response = await apiClient.post('/api/auth/verify-phone-payout');
+  verifyPhonePayout: async (phoneNumber) => {
+    const response = await apiClient.post('/api/auth/verify-phone-payout', { phoneNumber });
     return response.data;
   },
 

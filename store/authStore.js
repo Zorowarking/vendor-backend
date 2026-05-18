@@ -12,6 +12,7 @@ export const useAuthStore = create((set) => ({
   suspensionReason: null,
   kycDocs: {},
   vendorRegistrationData: null, // Holds data between Vendor Details and Bank Details screens
+  isHydrated: false,
 
   setVendorRegistrationData: (data) => set({ vendorRegistrationData: data }),
 
@@ -25,6 +26,7 @@ export const useAuthStore = create((set) => ({
       phoneVerified: userData.phoneVerified || false,
       suspensionReason: userData.suspensionReason || null,
       kycDocs: {},
+      isHydrated: true,
     });
     // Persist session
     try {
@@ -47,6 +49,7 @@ export const useAuthStore = create((set) => ({
           profileStatus: userData?.profileStatus ?? null,
           phoneVerified: userData?.phoneVerified ?? false,
           suspensionReason: userData?.suspensionReason || null,
+          isHydrated: true,
         });
         return userData;
       }
@@ -57,6 +60,8 @@ export const useAuthStore = create((set) => ({
       } catch (rmErr) {
         console.warn('Failed to clear corrupt session:', rmErr.message);
       }
+    } finally {
+      set({ isHydrated: true });
     }
     return null;
   },
@@ -151,6 +156,7 @@ export const useAuthStore = create((set) => ({
       phoneVerified: false,
       suspensionReason: null,
       kycDocs: {},
+      isHydrated: true,
     });
   },
 

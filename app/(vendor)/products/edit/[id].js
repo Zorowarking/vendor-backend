@@ -70,10 +70,19 @@ export default function EditProduct() {
   const [allTemplates, setAllTemplates] = useState([]);
   const [assignedByoTemplate, setAssignedByoTemplate] = useState(null);
 
+  const { isHydrated, isAuthenticated } = useAuthStore();
+  const isMounted = React.useRef(true);
+
   useEffect(() => {
-    // Prevent background fetches if user is not authenticated
-    const { isAuthenticated } = useAuthStore.getState();
-    if (!isAuthenticated) return;
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const { isHydrated: hyd, isAuthenticated: auth } = useAuthStore.getState();
+    if (!hyd || !auth) return;
 
     const fetchData = async () => {
       const [productsResult, templatesResult, catsResult, assignedByoResult] = await Promise.allSettled([
@@ -82,6 +91,8 @@ export default function EditProduct() {
         vendorApi.getCategoryList(),
         vendorApi.getByoAssigned()
       ]);
+
+      if (!isMounted.current) return;
 
       if (catsResult.status === 'fulfilled') {
         const data = catsResult.value;
@@ -132,6 +143,14 @@ export default function EditProduct() {
     };
     fetchData();
   }, [id, availableCategories.length]);
+
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.grey }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   const handleTemplateSelect = (template) => {
     setName(template.templateName);

@@ -9,13 +9,16 @@ import { vendorApi } from '../../services/vendorApi';
 import { useAuthStore } from '../../store/authStore';
 
 export default function VerifyPhoneScreen() {
-  const [phone, setPhone] = useState('');
+  const [registeredPhone, setRegisteredPhone] = useState(null);
+  const [isPhoneEditable, setIsPhoneEditable] = useState(false);
+  const [manualPhone, setManualPhone] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetchingProfile, setFetchingProfile] = useState(true);
   
+  const phone = isPhoneEditable ? manualPhone : registeredPhone;
   const router = useRouter();
   const verifyPhoneSuccess = useAuthStore((state) => state.verifyPhoneSuccess);
   const user = useAuthStore((state) => state.user);
@@ -25,14 +28,18 @@ export default function VerifyPhoneScreen() {
       try {
         setFetchingProfile(true);
         const profile = await vendorApi.getProfile();
-        if (profile && profile.phone) {
-          setPhone(profile.phone);
+        const phoneVal = profile?.phone || profile?.phoneNumber;
+        
+        if (!phoneVal || phoneVal.startsWith('none_')) {
+          setIsPhoneEditable(true);
+          setRegisteredPhone(null);
         } else {
-          Alert.alert('Registration Error', 'Unable to retrieve your pre-registered phone number. Please contact support.');
+          setIsPhoneEditable(false);
+          setRegisteredPhone(phoneVal);
         }
       } catch (err) {
         console.error('[VERIFY-PHONE] Fetch phone error:', err);
-        Alert.alert('Error', 'Unable to load pre-registered phone number. Please try again.');
+        setIsPhoneEditable(true); // fallback to manual entry on any error
       } finally {
         setFetchingProfile(false);
       }
@@ -41,15 +48,17 @@ export default function VerifyPhoneScreen() {
   }, []);
 
   const handleSendOTP = async () => {
-    if (!phone) {
-      Alert.alert('Error', 'Phone number is missing. Please contact support.');
+    const phoneToVerify = isPhoneEditable ? manualPhone : registeredPhone;
+    
+    if (!phoneToVerify || phoneToVerify.length < 10) {
+      Alert.alert('Invalid Phone', 'Please enter a valid phone number');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('[VERIFY-PHONE] Requesting OTP for pre-registered number:', phone);
-      const result = await authService.sendOTPForLinking(phone);
+      console.log('[VERIFY-PHONE] Requesting OTP for number:', phoneToVerify);
+      const result = await authService.sendOTPForLinking(phoneToVerify);
       setConfirmationResult(result);
       setOtpSent(true);
       Alert.alert('OTP Sent', 'A verification code has been sent to your registered phone number.');
@@ -79,7 +88,7 @@ export default function VerifyPhoneScreen() {
       console.log('[VERIFY-PHONE] Firebase confirmation success. Updating database...');
 
       // Notify backend that OTP verification succeeded and activate payout
-      const response = await vendorApi.verifyPhonePayout();
+      const response = await vendorApi.verifyPhonePayout(phone);
       
       if (response && response.success) {
         // Sync Zustand store state
@@ -150,9 +159,27 @@ export default function VerifyPhoneScreen() {
           <View style={styles.content}>
             <View style={styles.numberCard}>
               <Text style={styles.cardLabel}>Registered Payout Number</Text>
-              <Text style={styles.cardNumber}>{phone || 'Not Available'}</Text>
+              {isPhoneEditable ? (
+                <View>
+                  <Text style={{ fontSize: 13, color: Colors.subText, marginBottom: 8 }}>
+                    Your registered phone number was not found. Please enter your payout phone number:
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { fontSize: 18, fontWeight: 'bold', marginTop: 5, marginBottom: 10 }]}
+                    placeholder="+91XXXXXXXXXX"
+                    placeholderTextColor={Colors.subText}
+                    keyboardType="phone-pad"
+                    value={manualPhone}
+                    onChangeText={setManualPhone}
+                  />
+                </View>
+              ) : (
+                <Text style={styles.cardNumber}>{registeredPhone || 'Not Available'}</Text>
+              )}
               <Text style={styles.cardDesc}>
-                This number was submitted during Step 2. You will receive an SMS containing your verification code here.
+                {isPhoneEditable
+                  ? "Please enter your active phone number. You will receive an SMS containing your verification code here."
+                  : "This number was submitted during Step 2. You will receive an SMS containing your verification code here."}
               </Text>
             </View>
 
