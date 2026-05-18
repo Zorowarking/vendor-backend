@@ -49,7 +49,7 @@ export default function VerifyPhoneScreen() {
     setLoading(true);
     try {
       console.log('[VERIFY-PHONE] Requesting OTP for pre-registered number:', phone);
-      const result = await authService.sendOTP(phone);
+      const result = await authService.sendOTPForLinking(phone);
       setConfirmationResult(result);
       setOtpSent(true);
       Alert.alert('OTP Sent', 'A verification code has been sent to your registered phone number.');
@@ -84,6 +84,9 @@ export default function VerifyPhoneScreen() {
       if (response && response.success) {
         // Sync Zustand store state
         verifyPhoneSuccess();
+        if (response.profileStatus) {
+          useAuthStore.getState().setProfileStatus(response.profileStatus);
+        }
         
         Alert.alert(
           'Verification Successful',

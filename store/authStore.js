@@ -62,29 +62,64 @@ export const useAuthStore = create((set) => ({
   },
 
   logout: async () => {
+    // 1. Sign out from Firebase Auth (Web & Native)
     try {
-      // 1. Sign out from Firebase Auth
       await auth.signOut();
-      console.log('[STORE] Firebase Auth Sign-Out Success');
+      console.log('[STORE] Firebase Auth Web Sign-Out Success');
     } catch (firebaseErr) {
-      console.warn('[STORE] Firebase Auth Sign-Out failed:', firebaseErr.message);
+      console.warn('[STORE] Firebase Auth Web Sign-Out failed:', firebaseErr.message);
     }
 
     try {
-      // 2. Clear native Google Sign-In session if module is available
-      const GoogleModule = require('@react-native-google-signin/google-signin');
-      const GoogleSignin = GoogleModule.GoogleSignin;
-      if (await GoogleSignin.isSignedIn()) {
-        await GoogleSignin.signOut();
-        console.log('[STORE] Google Sign-In Session Cleared');
+      const { NativeModules } = require('react-native');
+      if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
+        const nativeAuth = require('@react-native-firebase/auth').default;
+        await nativeAuth().signOut();
+        console.log('[STORE] Firebase Auth Native Sign-Out Success');
+      }
+    } catch (nativeFbErr) {
+      console.warn('[STORE] Firebase Auth Native Sign-Out failed:', nativeFbErr.message);
+    }
+
+    // 2. Clear native Google Sign-In session (configure + signOut + revokeAccess)
+    try {
+      const { NativeModules } = require('react-native');
+      if (NativeModules.RNGoogleSignin) {
+        const GoogleModule = require('@react-native-google-signin/google-signin');
+        const GoogleSignin = GoogleModule.GoogleSignin;
+        
+        // Dynamically configure it to be absolutely safe
+        try {
+          await GoogleSignin.configure({
+            webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+            offlineAccess: false,
+          });
+        } catch (configErr) {
+          console.log('[STORE] Google Sign-In already configured or config failed:', configErr.message);
+        }
+
+        try {
+          await GoogleSignin.signOut();
+          console.log('[STORE] Google Sign-Out Success');
+        } catch (signOutErr) {
+          console.log('[STORE] Google Sign-Out error:', signOutErr.message);
+        }
+
+        try {
+          await GoogleSignin.revokeAccess();
+          console.log('[STORE] Google Revoke Access Success');
+        } catch (revokeErr) {
+          console.log('[STORE] Google Revoke Access error (safe to ignore if not signed in):', revokeErr.message);
+        }
       }
     } catch (googleErr) {
       console.log('[STORE] Native Google Sign-Out not available or skipped:', googleErr.message);
     }
 
+    // 3. Clear Async Storage
     try {
-      // 3. Clear Async Storage
       await AsyncStorage.removeItem('auth_session');
+      console.log('[STORE] Session cleared from AsyncStorage');
     } catch (e) {
       console.warn('[STORE] Failed to remove session from AsyncStorage', e);
     }

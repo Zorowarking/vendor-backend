@@ -312,7 +312,7 @@ router.get('/:id/tracking', firebaseAuth, requireCustomer, async (req, res) => {
     const { id } = req.params;
     const order = await prisma.order.findUnique({
       where: { id, customerId: req.customer.id },
-      include: { rider: true }
+      include: { rider: { include: { profile: true } } }
     });
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -323,7 +323,7 @@ router.get('/:id/tracking', firebaseAuth, requireCustomer, async (req, res) => {
       status: order.status,
       rider: {
         name: order.rider.fullName,
-        phone: order.rider.phone,
+        phone: order.rider.profile?.phoneNumber || '',
         location: {
           lat: Number(order.rider.latitude),
           lng: Number(order.rider.longitude)

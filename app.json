@@ -78,7 +78,8 @@
       "typedRoutes": false
     },
     "updates": {
-      "enabled": false
+      "enabled": true,
+      "url": "https://u.expo.dev/e16f9710-34c6-4a45-b5fc-73cbf7e83e3a"
     },
     "extra": {
       "router": {
@@ -88,6 +89,9 @@
         "projectId": "e16f9710-34c6-4a45-b5fc-73cbf7e83e3a"
       }
     },
-    "owner": "zaid073"
+    "owner": "zaid073",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }

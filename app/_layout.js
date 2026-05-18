@@ -99,29 +99,74 @@ export default function Layout() {
     const { onAuthStateChanged } = require('firebase/auth');
     const { auth } = require('../services/firebase');
 
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    // 1. Web Auth Listener
+    const unsubscribeWeb = onAuthStateChanged(auth, async (firebaseUser) => {
       const authStore = useAuthStore.getState();
       if (firebaseUser) {
-        // Sync if not already authenticated locally and not currently syncing
         if (!authStore.isAuthenticated && !authService._syncInProgress) {
-          console.log('[LAYOUT] onAuthStateChanged: User detected, syncing session...');
+          console.log('[LAYOUT] Web onAuthStateChanged: User detected, syncing session...');
           try {
             const token = await firebaseUser.getIdToken();
             await authService._syncUser(firebaseUser, token);
           } catch (e) {
-            console.error('[LAYOUT] onAuthStateChanged sync error:', e);
+            console.error('[LAYOUT] Web onAuthStateChanged sync error:', e);
           }
         }
       } else {
-        // Log out locally if store thinks we're authenticated
         if (authStore.isAuthenticated) {
-          console.log('[LAYOUT] onAuthStateChanged: No user, logging out locally...');
-          await authStore.logout();
+          const { NativeModules } = require('react-native');
+          let hasActiveNativeSession = false;
+          if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
+            try {
+              const nativeAuth = require('@react-native-firebase/auth').default;
+              if (nativeAuth().currentUser) {
+                hasActiveNativeSession = true;
+              }
+            } catch (err) {}
+          }
+          
+          if (!hasActiveNativeSession) {
+            console.log('[LAYOUT] Web onAuthStateChanged: No user, logging out locally...');
+            await authStore.logout();
+          }
         }
       }
     });
 
-    return () => unsubscribe();
+    // 2. Native Auth Listener (if available)
+    let unsubscribeNative = null;
+    try {
+      const { NativeModules } = require('react-native');
+      if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
+        const nativeAuth = require('@react-native-firebase/auth').default;
+        unsubscribeNative = nativeAuth().onAuthStateChanged(async (firebaseUser) => {
+          const authStore = useAuthStore.getState();
+          if (firebaseUser) {
+            if (!authStore.isAuthenticated && !authService._syncInProgress) {
+              console.log('[LAYOUT] Native onAuthStateChanged: User detected, syncing session...');
+              try {
+                const token = await firebaseUser.getIdToken();
+                await authService._syncUser(firebaseUser, token);
+              } catch (e) {
+                console.error('[LAYOUT] Native onAuthStateChanged sync error:', e);
+              }
+            }
+          } else {
+            if (authStore.isAuthenticated && !auth.currentUser) {
+              console.log('[LAYOUT] Native onAuthStateChanged: No user, logging out locally...');
+              await authStore.logout();
+            }
+          }
+        });
+      }
+    } catch (nativeErr) {
+      console.warn('[LAYOUT] Native Auth Listener failed to setup:', nativeErr.message);
+    }
+
+    return () => {
+      if (unsubscribeWeb) unsubscribeWeb();
+      if (unsubscribeNative) unsubscribeNative();
+    };
   }, []);
 
   // Track AppState for background/foreground badge notifications

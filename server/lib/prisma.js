@@ -129,13 +129,7 @@ async function withRetry(operation, maxRetries = 3, delay = 1000) {
 async function getOrCreateCustomerProfile(user) {
   const { uid, phoneNumber, name } = user;
   
-  // Use a unique placeholder for missing phone numbers to avoid constraint violations
-  // Max length is 20 chars due to Customer.phone @db.VarChar(20). 
-  // 'g-' + 18 chars of uid = 20 chars.
-  const normalizedPhone = phoneNumber || `g-${uid.substring(0, 18)}`;
-  const isPlaceholder = !phoneNumber;
-  
-  console.log(`[PRISMA] Syncing profile for UID: ${uid}, Phone: ${normalizedPhone}`);
+  console.log(`[PRISMA] Syncing profile for UID: ${uid}, Phone: ${phoneNumber}`);
 
   // 1. Ensure Profile exists (Self-Healing Lookup)
   let profile = await withRetry(async () => {
@@ -148,15 +142,14 @@ async function getOrCreateCustomerProfile(user) {
     if (p) return p;
 
     // B. Check by Phone Number if UID didn't match (Identity Adoption)
-    // Only do this if it's a REAL phone number, not our placeholder
-    if (!isPlaceholder) {
+    if (phoneNumber) {
       p = await prisma.profile.findFirst({
-        where: { phoneNumber: normalizedPhone },
+        where: { phoneNumber },
         include: { customer: { include: { ageVerification: true } } }
       });
 
       if (p) {
-        console.log(`[PRISMA] Identity adopt: Link phone ${normalizedPhone} to new UID ${uid}`);
+        console.log(`[PRISMA] Identity adopt: Link phone ${phoneNumber} to new UID ${uid}`);
         return await prisma.profile.update({
           where: { id: p.id },
           data: { firebaseUid: uid, role: 'CUSTOMER' },
@@ -171,7 +164,7 @@ async function getOrCreateCustomerProfile(user) {
       return await prisma.profile.create({
         data: {
           firebaseUid: uid,
-          phoneNumber: normalizedPhone,
+          phoneNumber: phoneNumber || null,
           role: 'CUSTOMER',
           profileStatus: 'ACTIVE'
         },
@@ -181,7 +174,7 @@ async function getOrCreateCustomerProfile(user) {
       if (createError.code === 'P2002') {
         console.log('[PRISMA] Profile creation race-condition, re-fetching...');
         return await prisma.profile.findFirst({
-          where: { OR: [{ firebaseUid: uid }, { phoneNumber: normalizedPhone }] },
+          where: { OR: [{ firebaseUid: uid }, ...(phoneNumber ? [{ phoneNumber }] : [])] },
           include: { customer: { include: { ageVerification: true } } }
         });
       }
@@ -192,28 +185,26 @@ async function getOrCreateCustomerProfile(user) {
   // 2. Ensure Customer record exists
   if (!profile.customer) {
     console.log(`[PRISMA] Creating missing customer record for UID: ${uid}`);
-    // Check if customer exists by phone but no profileId
     let customer = await prisma.customer.findUnique({
-        where: { phone: normalizedPhone }
+        where: { profileId: profile.id },
+        include: { ageVerification: true }
     });
 
-    if (customer) {
-        customer = await prisma.customer.update({
-            where: { id: customer.id },
-            data: { 
-              profileId: profile.id,
-              email: user.email || undefined,
-              fullName: user.name || undefined
+    if (!customer) {
+        customer = await prisma.customer.create({
+            data: {
+                profileId: profile.id,
+                fullName: user.name || 'Customer',
+                email: user.email
             },
             include: { ageVerification: true }
         });
     } else {
-        customer = await prisma.customer.create({
-            data: {
-                profileId: profile.id,
-                phone: normalizedPhone,
-                fullName: user.name || 'Customer',
-                email: user.email
+        customer = await prisma.customer.update({
+            where: { id: customer.id },
+            data: { 
+              email: user.email || undefined,
+              fullName: user.name || undefined
             },
             include: { ageVerification: true }
         });
@@ -221,14 +212,14 @@ async function getOrCreateCustomerProfile(user) {
     profile.customer = customer;
   } else {
     // 3. Sync if needed (e.g. email or name updated in Google/Firebase)
-    const needsSync = (profile.phoneNumber !== normalizedPhone && !isPlaceholder) || 
+    const needsSync = (phoneNumber && profile.phoneNumber !== phoneNumber) || 
                       (user.email && profile.customer.email !== user.email);
     
     if (needsSync) {
         profile = await prisma.profile.update({
             where: { id: profile.id },
             data: { 
-              phoneNumber: normalizedPhone,
+              phoneNumber: phoneNumber || undefined,
               customer: {
                 update: {
                   email: user.email || undefined,

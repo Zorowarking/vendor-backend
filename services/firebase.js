@@ -12,7 +12,7 @@ const firebaseConfig = {
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "vantyrn-e20f0.firebasestorage.app",
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "889299912788",
   appId: Platform.select({
-    android: process.env.EXPO_PUBLIC_FIREBASE_APP_ID_ANDROID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:889299912788:android:e6a50ef9a2df3c207445c1",
+    android: process.env.EXPO_PUBLIC_FIREBASE_APP_ID_ANDROID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:889299912788:android:b33817fbea8a04157445c1",
     ios: process.env.EXPO_PUBLIC_FIREBASE_APP_ID_IOS || process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:889299912788:ios:56885699478855447445c1",
     default: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:889299912788:web:f2b9726779152d917445c1"
   })

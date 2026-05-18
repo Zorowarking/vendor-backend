@@ -205,4 +205,87 @@ router.get('/vendors/:id/reviews', guestSession, async (req, res) => {
   }
 });
 
+// GET /search — search both vendors and products in the database
+router.get('/search', guestSession, async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || !q.trim()) {
+      return res.json({ success: true, vendors: [], products: [] });
+    }
+
+    const queryStr = q.trim();
+
+    // 1. Search Vendors
+    const vendors = await prisma.vendor.findMany({
+      where: {
+        onlineStatus: 'online',
+        accountStatus: { in: ['APPROVED', 'ACTIVE'] },
+        OR: [
+          { businessName: { contains: queryStr, mode: 'insensitive' } },
+          { businessCategory: { contains: queryStr, mode: 'insensitive' } },
+          { storeDescription: { contains: queryStr, mode: 'insensitive' } }
+        ]
+      },
+      select: {
+        id: true,
+        businessName: true,
+        businessCategory: true,
+        logoUrl: true,
+        bannerUrl: true,
+        businessAddress: true,
+        ratingsSummary: true
+      }
+    });
+
+    const mappedVendors = vendors.map(v => ({
+      ...v,
+      name: v.businessName,
+      rating: v.ratingsSummary?.avgRating ? Number(v.ratingsSummary.avgRating).toFixed(1) : '4.5'
+    }));
+
+    // 2. Search Products
+    const products = await prisma.product.findMany({
+      where: {
+        isActive: true,
+        reviewStatus: { equals: 'APPROVED', mode: 'insensitive' },
+        vendor: {
+          onlineStatus: 'online',
+          accountStatus: { in: ['APPROVED', 'ACTIVE'] }
+        },
+        OR: [
+          { name: { contains: queryStr, mode: 'insensitive' } },
+          { description: { contains: queryStr, mode: 'insensitive' } },
+          { category: { contains: queryStr, mode: 'insensitive' } }
+        ]
+      },
+      include: {
+        images: true,
+        vendor: {
+          select: {
+            businessName: true
+          }
+        }
+      },
+      take: 20
+    });
+
+    const mappedProducts = products.map(p => ({
+      ...p,
+      image: p.images && p.images.length > 0 ? p.images[0].url : null,
+      imageUrl: p.images && p.images.length > 0 ? p.images[0].url : null,
+      price: Number(p.basePrice),
+      vendorName: p.vendor?.businessName || 'Partner Restaurant'
+    }));
+
+    res.json({
+      success: true,
+      vendors: mappedVendors,
+      products: mappedProducts
+    });
+  } catch (error) {
+    console.error('[BROWSING-SEARCH] Error:', error);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
 module.exports = router;

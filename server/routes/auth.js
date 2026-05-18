@@ -12,7 +12,7 @@ router.post('/sync', firebaseAuth, async (req, res) => {
     const { uid, phoneNumber } = req.user;
     
     // Handle cases where social login has no phone number
-    const safePhone = phoneNumber || `none_${uid.substring(0, 10)}`;
+    const safePhone = phoneNumber || null;
 
     // Upsert the profile (create if doesn't exist, update if it does)
     const profile = await withRetry(() => prisma.profile.upsert({
@@ -100,11 +100,10 @@ router.post('/role', firebaseAuth, async (req, res) => {
     let vendorRecord = null;
     if (role === 'VENDOR') {
       vendorRecord = await withRetry(() => prisma.vendor.upsert({
-        where: { phone: profile.phoneNumber },
-        update: { profileId: profile.id },
+        where: { profileId: profile.id },
+        update: {},
         create: {
           profileId: profile.id,
-          phone: profile.phoneNumber,
           businessName: 'My Store', // Placeholder
           ownerName: 'Vendor Owner', // Placeholder
           businessAddress: 'Address Pending', // Placeholder
@@ -113,11 +112,10 @@ router.post('/role', firebaseAuth, async (req, res) => {
       }));
     } else if (role === 'RIDER') {
       await withRetry(() => prisma.rider.upsert({
-        where: { phone: profile.phoneNumber },
-        update: { profileId: profile.id },
+        where: { profileId: profile.id },
+        update: {},
         create: {
           profileId: profile.id,
-          phone: profile.phoneNumber,
           fullName: 'Rider Name' // Placeholder
         }
       }));
@@ -202,7 +200,7 @@ router.post('/verify-phone-payout', firebaseAuth, async (req, res) => {
       return v;
     });
 
-    console.log(`[AUTH] Phone payout verification successful for Vendor: ${profile.vendor.id}, Phone: ${updatedVendor.phone}`);
+    console.log(`[AUTH] Phone payout verification successful for Vendor: ${profile.vendor.id}, Phone: ${profile.phoneNumber}`);
 
     res.json({
       success: true,

@@ -147,7 +147,7 @@ model Product {
 model Profile {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   firebaseUid   String    @unique @map("firebase_uid")
-  phoneNumber   String    @unique @map("phone_number")
+  phoneNumber   String?   @unique @map("phone_number")
   role          String?   @db.VarChar(20)
   profileStatus String    @default("PENDING") @map("profile_status") @db.VarChar(30)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -179,7 +179,6 @@ model Rider {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   profileId     String?   @unique @map("profile_id") @db.Uuid
   fullName      String    @map("name") @db.VarChar(255)
-  phone         String    @unique @db.VarChar(20)
   vehicleType   String?   @map("vehicle_type") @db.VarChar(50)
   accountStatus String    @default("pending") @map("account_status") @db.VarChar(50)
   onlineStatus  String?   @default("offline") @map("online_status") @db.VarChar(30)
@@ -337,7 +336,6 @@ model Vendor {
   id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   businessName              String                      @map("business_name") @db.VarChar(255)
   ownerName                 String                      @map("owner_name") @db.VarChar(255)
-  phone                     String                      @unique @db.VarChar(20)
   email                     String?                     @unique @db.VarChar(255)
   businessAddress           String                      @map("business_address")
   latitude                  Decimal?                    @db.Decimal(10, 7)
@@ -358,7 +356,6 @@ model Vendor {
   profileId                 String?                     @unique @map("profile_id") @db.Uuid
   fcmToken                  String?                     @map("fcm_token")
   accountStatus             AccountStatus               @default(PENDING) @map("account_status")
-  phoneVerified             Boolean                     @default(false) @map("phone_verified")
   commissionModel           CommissionModel?            @map("commission_model")
   commissionRate            Decimal                     @default(5.0) @map("commission_rate") @db.Decimal(5, 2)
   sfxStoreCode              String?                     @map("sfx_store_code") @db.VarChar(100)
@@ -366,6 +363,7 @@ model Vendor {
   pincode                   String?                     @db.VarChar(10)
   delivery_provider         String                      @default("SHADOWFAX") @db.VarChar(50)
   shadowfax_linked          Boolean                     @default(false)
+  phoneVerified             Boolean                     @default(false) @map("phone_verified")
   orders                    Order[]
   categories                Category[]
   productReviewSubmissions  ProductReviewSubmission[]
@@ -476,7 +474,6 @@ model CartItem {
 
 model Customer {
   id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone            String            @unique @db.VarChar(20)
   email            String?           @unique @db.VarChar(255)
   fullName         String?           @map("full_name") @db.VarChar(255)
   isGuest          Boolean           @default(false) @map("is_guest")

@@ -39,15 +39,26 @@ export const authService = {
         throw new Error('No Google idToken provided');
       }
 
-      // Create a Firebase credential with the token
-      const credential = GoogleAuthProvider.credential(idToken);
-      
-      // Sign in to Firebase with the credential
-      const result = await signInWithCredential(auth, credential);
-      console.log('--- FIREBASE GOOGLE SIGN-IN SUCCESS ---');
-      
-      const user = result.user;
-      const sessionToken = await user.getIdToken();
+      let user;
+      let sessionToken;
+
+      if (nativeAuth) {
+        console.log('--- NATIVE GOOGLE LOGIN VIA FIREBASE NATIVE ---');
+        // Native Firebase sign in
+        const credential = nativeAuth.GoogleAuthProvider.credential(idToken);
+        const result = await nativeAuth().signInWithCredential(credential);
+        console.log('--- FIREBASE NATIVE GOOGLE SIGN-IN SUCCESS ---');
+        user = result.user;
+        sessionToken = await user.getIdToken();
+      } else {
+        console.log('--- WEB GOOGLE LOGIN VIA FIREBASE WEB SDK ---');
+        // Web SDK sign in fallback (e.g. in Expo Go)
+        const credential = GoogleAuthProvider.credential(idToken);
+        const result = await signInWithCredential(auth, credential);
+        console.log('--- FIREBASE WEB GOOGLE SIGN-IN SUCCESS ---');
+        user = result.user;
+        sessionToken = await user.getIdToken();
+      }
 
       // Sync and Update Store
       const { role, profileStatus, phoneVerified } = await authService._syncUser(user, sessionToken);
@@ -140,11 +151,10 @@ export const authService = {
         '+917777777777': '123456',
         '+918888888888': '123456',
         '+911111111111': '222222',
-        '+910000000000': '123456',
-        '+919063851105': '123456'
+        '+910000000000': '123456'
       };
-      if (__DEV__ && cleanPhone in mockOtpMap) {
-        console.log('--- DEV MOCK MODE TRIGGERED ---');
+      if (cleanPhone in mockOtpMap) {
+        console.log('--- MOCK MODE TRIGGERED ---');
         const expectedOtp = mockOtpMap[cleanPhone];
         return { 
           isMock: true, 
@@ -183,6 +193,74 @@ export const authService = {
         message = 'Too many attempts. Please try again later or use the test number +919999999999 (OTP: 123456) for development.';
       } else if (error.code === 'auth/invalid-phone-number') {
         message = 'Invalid phone number format.';
+      }
+      
+      Alert.alert('Security Notice', message);
+      throw error;
+    }
+  },
+
+  /**
+   * Sends an OTP for linking/verifying a phone number to the current logged-in user
+   */
+  sendOTPForLinking: async (phoneNumber) => {
+    try {
+      console.log('--- STARTING SEND_OTP_FOR_LINKING ---');
+      const cleanPhone = phoneNumber.trim();
+      console.log('Cleaned Phone for linking:', cleanPhone);
+      
+      // Developer Bypass: If using a test number, don't call Firebase
+      const mockOtpMap = {
+        [MOCK_TEST_NUMBER]: '123456',
+        '+917777777777': '123456',
+        '+918888888888': '123456',
+        '+911111111111': '222222',
+        '+910000000000': '123456'
+      };
+      if (cleanPhone in mockOtpMap) {
+        console.log('--- MOCK MODE TRIGGERED FOR LINKING ---');
+        const expectedOtp = mockOtpMap[cleanPhone];
+        return { 
+          isMock: true, 
+          confirm: (code) => {
+            if (code === expectedOtp) {
+              return Promise.resolve({ 
+                user: { 
+                  uid: useAuthStore.getState().user?.uid || 'mock-uid-linking', 
+                  phoneNumber: cleanPhone, 
+                } 
+              });
+            }
+            return Promise.reject(new Error('Invalid OTP'));
+          } 
+        };
+      }
+
+      // 1. Try Native Auth (linkWithPhoneNumber) if available
+      if (nativeAuth) {
+        const user = nativeAuth().currentUser;
+        if (!user) throw new Error('No user is currently authenticated in Firebase.');
+        
+        console.log('--- CALLING NATIVE linkWithPhoneNumber ---');
+        const confirmationResult = await user.linkWithPhoneNumber(cleanPhone);
+        console.log('--- OTP SENT SUCCESSFULLY FOR LINKING (NATIVE) ---');
+        return confirmationResult;
+      }
+
+      // 2. Fallback to Web SDK
+      console.log('--- FALLBACK: CALLING WEB LINKING ---');
+      throw new Error('Native Firebase Auth is not available in Expo Go. Please use the developer test number for testing.');
+
+    } catch (error) {
+      console.error('--- SEND_OTP_FOR_LINKING ERROR ---', error);
+      let message = 'Failed to send OTP for linking. Please try again.';
+      
+      if (error.code === 'auth/too-many-requests') {
+        message = 'Too many attempts. Please try again later or use the test number +919999999999 (OTP: 123456) for development.';
+      } else if (error.code === 'auth/invalid-phone-number') {
+        message = 'Invalid phone number format.';
+      } else if (error.code === 'auth/credential-already-in-use' || error.code === 'auth/phone-number-already-exists') {
+        message = 'This phone number is already linked to another Firebase account.';
       }
       
       Alert.alert('Security Notice', message);

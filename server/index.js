@@ -7,6 +7,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const app = express();
+app.set('etag', false); // Disable ETags to prevent React Native 304 caching bugs
 const server = http.createServer(app);
 
 // GLOBAL TRAFFIC LOGGER (Highest Priority)

@@ -310,7 +310,6 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       await withRetry(() => prisma.vendor.create({
         data: {
           profileId: profile.id,
-          phone: profile.phoneNumber,
           businessName: 'My Store',
           ownerName: 'Vendor Owner',
           businessAddress: 'Address Pending'
@@ -376,7 +375,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       ownerName: v.ownerName,
       description: v.storeDescription,
       category: v.businessCategory,
-      phone: v.phone,
+      phone: finalProfile.phoneNumber,
       email: v.email,
       deliveryRadius: parseFloat(v.deliveryRadius) || 0,
       logo: addCacheBuster(v.logoUrl) || 'https://via.placeholder.com/150',
@@ -444,7 +443,6 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       vendor = await withRetry(() => prisma.vendor.create({
         data: {
           profileId: profile.id,
-          phone: profile.phoneNumber,
           businessName: businessName || 'New Vendor',
           ownerName: ownerName || 'Pending Registration',
           businessAddress: address || 'Pending',
@@ -473,7 +471,7 @@ router.put('/profile', firebaseAuth, async (req, res) => {
     };
 
     let phoneUpdated = false;
-    if (phone && phone !== vendor.phone) {
+    if (phone && phone !== profile.phoneNumber) {
       // Check if another profile already uses this phone number
       const duplicatePhone = await prisma.profile.findFirst({
         where: { 
@@ -485,7 +483,6 @@ router.put('/profile', firebaseAuth, async (req, res) => {
         return res.status(400).json({ error: 'This phone number is already registered under another account.' });
       }
       
-      updateData.phone = phone;
       updateData.phoneVerified = false; // Reset phoneVerified if number changes
       phoneUpdated = true;
     }
@@ -507,9 +504,10 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       data: updateData
     }));
 
+    let updatedProfile = profile;
     if (phoneUpdated) {
       // Keep Profile table's phoneNumber and firebaseUid in sync
-      await withRetry(() => prisma.profile.update({
+      updatedProfile = await withRetry(() => prisma.profile.update({
         where: { id: profile.id },
         data: { phoneNumber: phone }
       }));
@@ -572,7 +570,7 @@ router.put('/profile', firebaseAuth, async (req, res) => {
       ownerName: updatedV.ownerName,
       description: updatedV.storeDescription,
       category: updatedV.businessCategory,
-      phone: updatedV.phone,
+      phone: updatedProfile.phoneNumber,
       email: updatedV.email,
       deliveryRadius: parseFloat(updatedV.deliveryRadius) || 0,
       logo: updatedV.logoUrl ? `${updatedV.logoUrl}?t=${Date.now()}` : 'https://via.placeholder.com/150',
@@ -887,6 +885,14 @@ const formatOrdersForVendorAsync = async (orders) => {
   return orders.map(o => ({
     ...o,
     customerName: o.customer?.fullName || 'Customer',
+    customer: o.customer ? {
+      fullName: o.customer.fullName,
+      phone: o.customer.profile?.phoneNumber || ''
+    } : null,
+    rider: o.rider ? {
+      fullName: o.rider.fullName,
+      phone: o.rider.profile?.phoneNumber || ''
+    } : null,
     total: parseFloat(o.totalAmount),
     items: o.items.map(i => {
       const details = [];
@@ -936,8 +942,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
       where: { vendorId: profile.vendor.id },
       include: { 
         items: true,
-        customer: { select: { fullName: true, phone: true } },
-        rider: { select: { fullName: true, phone: true } }
+        customer: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
+        rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -997,7 +1003,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
         where: { vendorId: profile.vendor.id },
         include: { 
           items: true,
-          customer: { select: { fullName: true, phone: true } }
+          customer: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
+          rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } }
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -1631,7 +1638,10 @@ router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) 
     const { emitAccountStatusUpdate } = require('../lib/socket');
 
     // Fetch vendor for SFX automation
-    const vendorData = await prisma.vendor.findUnique({ where: { id } });
+    const vendorData = await prisma.vendor.findUnique({ 
+      where: { id },
+      include: { profile: true }
+    });
     if (!vendorData) return res.status(404).json({ error: 'Vendor not found' });
 
     let sfxStoreCode = vendorData.sfxStoreCode;
@@ -1641,7 +1651,7 @@ router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) 
         const sfxResult = await shadowfaxService.createStore({
           name: vendorData.businessName,
           contactName: vendorData.ownerName,
-          contactNumber: vendorData.phone,
+          contactNumber: vendorData.profile?.phoneNumber || '',
           address: vendorData.businessAddress,
           pincode: vendorData.pincode || '110001',
           city: vendorData.city || 'Default',

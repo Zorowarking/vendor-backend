@@ -41,7 +41,10 @@ router.put('/vendors/:id/approve', requireAdmin, async (req, res) => {
     const { id } = req.params;
     
     // 1. Fetch vendor details for SFX registration
-    const vendorData = await prisma.vendor.findUnique({ where: { id } });
+    const vendorData = await prisma.vendor.findUnique({ 
+      where: { id },
+      include: { profile: true }
+    });
     if (!vendorData) return res.status(404).json({ error: 'Vendor not found' });
 
     // 2. Automated Shadowfax Store Creation (if not already created)
@@ -52,7 +55,7 @@ router.put('/vendors/:id/approve', requireAdmin, async (req, res) => {
         const sfxResult = await shadowfaxService.createStore({
           name: vendorData.businessName,
           contactName: vendorData.ownerName,
-          contactNumber: vendorData.phone,
+          contactNumber: vendorData.profile?.phoneNumber || '',
           address: vendorData.businessAddress,
           pincode: vendorData.pincode || '110001',
           city: vendorData.city || 'Default',
