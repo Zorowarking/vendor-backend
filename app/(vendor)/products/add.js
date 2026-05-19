@@ -318,7 +318,7 @@ export default function AddProduct() {
         isCustomizable,
         customizationType: isCustomizable ? 'BUILD_YOUR_OWN' : 'NORMAL',
         customizationGroups: isCustomizable ? customizationGroups : [],
-        addOns: addOns.map(a => ({
+        addOns: showByoTemplates ? [] : addOns.map(a => ({
           name: a.name,
           price: a.price,
           freeLimit: a.freeLimit
@@ -715,73 +715,77 @@ export default function AddProduct() {
           />
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Add-ons</Text>
-          <TouchableOpacity onPress={() => setShowAddOnForm(true)} style={styles.addButton}>
-            <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
-            <Text style={styles.addButtonText}>Add Add-on</Text>
-          </TouchableOpacity>
-        </View>
+        {!showByoTemplates && (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Add-ons</Text>
+              <TouchableOpacity onPress={() => setShowAddOnForm(true)} style={styles.addButton}>
+                <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
+                <Text style={styles.addButtonText}>Add Add-on</Text>
+              </TouchableOpacity>
+            </View>
 
-        {showAddOnForm && (
-          <View style={styles.addOnForm}>
-            <View style={{ flex: 1 }}>
-              <TextInput 
-                style={[styles.input, { marginBottom: 8 }]} 
-                placeholder="Add-on Name" 
-                value={addOnName} 
-                onChangeText={setAddOnName} 
-              />
-              <View style={{ flexDirection: 'row' }}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Price (₹)</Text>
-                  <TextInput 
-                    style={styles.input} 
-                    placeholder="Price" 
-                    keyboardType="numeric"
-                    value={addOnPrice} 
-                    onChangeText={setAddOnPrice} 
-                  />
-                </View>
+            {showAddOnForm && (
+              <View style={styles.addOnForm}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Free Qty Limit</Text>
                   <TextInput 
-                    style={styles.input} 
-                    placeholder="Limit" 
-                    keyboardType="numeric"
-                    value={addOnFreeLimit} 
-                    onChangeText={setAddOnFreeLimit} 
+                    style={[styles.input, { marginBottom: 8 }]} 
+                    placeholder="Add-on Name" 
+                    value={addOnName} 
+                    onChangeText={setAddOnName} 
                   />
+                  <View style={{ flexDirection: 'row' }}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Price (₹)</Text>
+                      <TextInput 
+                        style={styles.input} 
+                        placeholder="Price" 
+                        keyboardType="numeric"
+                        value={addOnPrice} 
+                        onChangeText={setAddOnPrice} 
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 10, color: Colors.subText, marginBottom: 2 }}>Free Qty Limit</Text>
+                      <TextInput 
+                        style={styles.input} 
+                        placeholder="Limit" 
+                        keyboardType="numeric"
+                        value={addOnFreeLimit} 
+                        onChangeText={setAddOnFreeLimit} 
+                      />
+                    </View>
+                  </View>
+                </View>
+                <View style={{ marginLeft: 8 }}>
+                  <TouchableOpacity onPress={addAddOn} style={[styles.saveAddOnButton, { marginBottom: 8 }]}>
+                    <Ionicons name="checkmark" size={24} color={Colors.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
+                    <Ionicons name="close" size={24} color={Colors.white} />
+                  </TouchableOpacity>
                 </View>
               </View>
-            </View>
-            <View style={{ marginLeft: 8 }}>
-              <TouchableOpacity onPress={addAddOn} style={[styles.saveAddOnButton, { marginBottom: 8 }]}>
-                <Ionicons name="checkmark" size={24} color={Colors.white} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowAddOnForm(false)} style={styles.cancelAddOnButton}>
-                <Ionicons name="close" size={24} color={Colors.white} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+            )}
 
-        {addOns.map(item => (
-          <View key={item.id} style={styles.addOnListItem}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.addOnName}>{item.name}</Text>
-              {item.freeLimit > 0 && (
-                <Text style={{ fontSize: 11, color: Colors.success, fontWeight: '500' }}>
-                  First {item.freeLimit} units free
-                </Text>
-              )}
-            </View>
-            <Text style={styles.addOnPrice}>+₹{item.price.toFixed(2)}</Text>
-            <TouchableOpacity onPress={() => removeAddOn(item.id)}>
-              <Ionicons name="trash-outline" size={20} color={Colors.error} />
-            </TouchableOpacity>
-          </View>
-        ))}
+            {addOns.map(item => (
+              <View key={item.id} style={styles.addOnListItem}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.addOnName}>{item.name}</Text>
+                  {item.freeLimit > 0 && (
+                    <Text style={{ fontSize: 11, color: Colors.success, fontWeight: '500' }}>
+                      First {item.freeLimit} units free
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.addOnPrice}>+₹{item.price.toFixed(2)}</Text>
+                <TouchableOpacity onPress={() => removeAddOn(item.id)}>
+                  <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
+        )}
 
         {/* Advanced Customization Section */}
         <View style={[styles.toggleRow, { marginTop: 20, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 20 }]}>
