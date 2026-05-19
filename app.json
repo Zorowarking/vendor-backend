@@ -15,7 +15,6 @@
     "android": {
       "package": "com.vantyrn.vendor",
       "googleServicesFile": "./google-services.json",
-      "useNextNotificationsApi": true,
       "versionCode": 2,
       "config": {
         "googleMaps": {
