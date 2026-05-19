@@ -10,6 +10,17 @@ import MapModal from '../../components/MapModal';
 const CATEGORIES = ['Food', 'Grocery', 'Pharmacy', 'Other'];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const formatTo12Hour = (timeStr) => {
+  if (!timeStr) return '';
+  const [hoursStr, minutesStr] = timeStr.split(':');
+  let hours = parseInt(hoursStr, 10);
+  const minutes = minutesStr;
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+};
+
 export default function VendorRegisterScreen() {
   const { user } = useAuthStore();
   const [formData, setFormData] = useState({
@@ -320,14 +331,14 @@ export default function VendorRegisterScreen() {
                       onPress={() => { setActiveDay(day); setTimeMode('open'); setShowTimePicker(true); }}
                       style={styles.timeBox}
                     >
-                      <Text style={styles.timeText}>{formData.operatingHours[day].open}</Text>
+                      <Text style={styles.timeText}>{formatTo12Hour(formData.operatingHours[day].open)}</Text>
                     </TouchableOpacity>
                     <Text style={styles.timeSeparator}>-</Text>
                     <TouchableOpacity 
                       onPress={() => { setActiveDay(day); setTimeMode('close'); setShowTimePicker(true); }}
                       style={styles.timeBox}
                     >
-                      <Text style={styles.timeText}>{formData.operatingHours[day].close}</Text>
+                      <Text style={styles.timeText}>{formatTo12Hour(formData.operatingHours[day].close)}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -344,7 +355,7 @@ export default function VendorRegisterScreen() {
         <DateTimePicker
           value={new Date()}
           mode="time"
-          is24Hour={true}
+          is24Hour={false}
           display="default"
           onChange={handleTimeChange}
         />

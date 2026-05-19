@@ -4,7 +4,10 @@ import { auth } from './firebase';
 import { 
   signInWithPhoneNumber, 
   GoogleAuthProvider, 
-  signInWithCredential 
+  signInWithCredential,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { Alert, NativeModules } from 'react-native';
 
@@ -285,11 +288,15 @@ export const authService = {
               if (
                 err.code === 'auth/credential-already-in-use' ||
                 err.code === 'auth/phone-number-already-exists' ||
+                err.code === 'auth/provider-already-linked' ||
                 err.message?.includes('credential-already-in-use') ||
                 err.message?.includes('already associated') ||
-                err.message?.includes('already-in-use')
+                err.message?.includes('already-in-use') ||
+                err.message?.includes('already been linked') ||
+                err.message?.includes('provider-already-linked') ||
+                err.message?.includes('already-linked')
               ) {
-                console.log('--- BYPASSING credential-already-in-use (OTP is verified and correct) ---');
+                console.log('--- BYPASSING credential-already-in-use or provider-already-linked (OTP is verified and correct) ---');
                 return { user: { uid: user.uid, phoneNumber: cleanPhone } };
               }
               throw err;
@@ -344,6 +351,75 @@ export const authService = {
     } catch (error) {
       console.error('--- VERIFY_OTP ERROR ---', error);
       Alert.alert('Error', 'Invalid OTP code. Please check and try again.');
+      throw error;
+    }
+  },
+
+  /**
+   * Email Sign-In
+   */
+  loginWithEmail: async (email, password) => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      let user = null;
+      let sessionToken = null;
+
+      if (nativeAuth) {
+        console.log('--- CALLING NATIVE signInWithEmailAndPassword ---');
+        const result = await nativeAuth().signInWithEmailAndPassword(cleanEmail, password);
+        user = result.user;
+        sessionToken = await user.getIdToken();
+      } else {
+        console.log('--- FALLBACK: CALLING WEB signInWithEmailAndPassword ---');
+        const result = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        user = result.user;
+        sessionToken = await user.getIdToken();
+      }
+
+      console.log('Vendor Auth: Email Login successful for', user.email);
+
+      // Sync and Update Store
+      const { role, profileStatus, phoneVerified } = await authService._syncUser(user, sessionToken);
+
+      return { role, profileStatus, phoneVerified };
+    } catch (error) {
+      console.error('Vendor Email Login Error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Email Sign-Up
+   */
+  signUpWithEmail: async (email, password, fullName) => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = fullName.trim();
+      let user = null;
+      let sessionToken = null;
+
+      if (nativeAuth) {
+        console.log('--- CALLING NATIVE createUserWithEmailAndPassword ---');
+        const result = await nativeAuth().createUserWithEmailAndPassword(cleanEmail, password);
+        user = result.user;
+        await user.updateProfile({ displayName: cleanName });
+        sessionToken = await user.getIdToken();
+      } else {
+        console.log('--- FALLBACK: CALLING WEB createUserWithEmailAndPassword ---');
+        const result = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        user = result.user;
+        await updateProfile(user, { displayName: cleanName });
+        sessionToken = await user.getIdToken();
+      }
+
+      console.log('Vendor Auth: Email Sign-up successful for', user.email);
+
+      // Sync and Update Store
+      const { role, profileStatus, phoneVerified } = await authService._syncUser(user, sessionToken);
+
+      return { role, profileStatus, phoneVerified };
+    } catch (error) {
+      console.error('Vendor Email Sign-Up Error:', error);
       throw error;
     }
   },

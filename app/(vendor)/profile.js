@@ -35,6 +35,17 @@ import MapModal from '../../components/MapModal';
 const { width } = Dimensions.get('window');
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const formatTo12Hour = (timeStr) => {
+  if (!timeStr) return '';
+  const [hoursStr, minutesStr] = timeStr.split(':');
+  let hours = parseInt(hoursStr, 10);
+  const minutes = minutesStr;
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+};
+
 export default function VendorProfile() {
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
@@ -311,7 +322,7 @@ export default function VendorProfile() {
         const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
         const todayHours = val[today];
         if (todayHours) {
-          return `${today}: ${todayHours.isClosed ? 'Closed' : `${todayHours.open} - ${todayHours.close}`}`;
+          return `${today}: ${todayHours.isClosed ? 'Closed' : `${formatTo12Hour(todayHours.open)} - ${formatTo12Hour(todayHours.close)}`}`;
         }
         return 'Schedule Configured';
       }
@@ -868,14 +879,14 @@ export default function VendorProfile() {
                       onPress={() => { setActiveDay(day); setTimeMode('open'); setShowTimePicker(true); }}
                       style={styles.timeBox}
                     >
-                      <Text style={styles.timeText}>{editForm.operatingHours?.[day]?.open || '09:00'}</Text>
+                      <Text style={styles.timeText}>{formatTo12Hour(editForm.operatingHours?.[day]?.open || '09:00')}</Text>
                     </TouchableOpacity>
                     <Text style={styles.timeSeparator}>-</Text>
                     <TouchableOpacity 
                       onPress={() => { setActiveDay(day); setTimeMode('close'); setShowTimePicker(true); }}
                       style={styles.timeBox}
                     >
-                      <Text style={styles.timeText}>{editForm.operatingHours?.[day]?.close || '22:00'}</Text>
+                      <Text style={styles.timeText}>{formatTo12Hour(editForm.operatingHours?.[day]?.close || '22:00')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -892,7 +903,7 @@ export default function VendorProfile() {
         <DateTimePicker
           value={new Date()}
           mode="time"
-          is24Hour={true}
+          is24Hour={false}
           display="default"
           onChange={handleTimeChange}
         />

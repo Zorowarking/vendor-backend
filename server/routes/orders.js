@@ -267,7 +267,15 @@ router.post('/:id/cancel', firebaseAuth, requireCustomer, async (req, res) => {
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
     
-    const cancellableStatuses = ['pending_vendor', 'accepted'];
+    const cancellableStatuses = [
+      'pending_vendor', 
+      'accepted', 
+      'preparing', 
+      'ready', 
+      'ready_for_pickup', 
+      'on_the_way_to_pickup', 
+      'arrived_at_pickup'
+    ];
     if (!cancellableStatuses.includes(order.status)) {
         return res.status(400).json({ error: 'Order cannot be cancelled at this stage' });
     }
