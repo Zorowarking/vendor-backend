@@ -333,7 +333,8 @@ router.get('/profile', firebaseAuth, async (req, res) => {
           profileId: profile.id,
           businessName: 'My Store',
           ownerName: 'Vendor Owner',
-          businessAddress: 'Address Pending'
+          businessAddress: 'Address Pending',
+          email: req.user.email || null
         }
       }));
       // Re-fetch with the new vendor record
@@ -350,6 +351,67 @@ router.get('/profile', firebaseAuth, async (req, res) => {
       }
     } else {
       var finalProfile = profile;
+    }
+
+    // Sync missing vendor email if logged in via Google Auth
+    if (finalProfile.vendor && !finalProfile.vendor.email && req.user.email) {
+      console.log(`[VENDOR] Syncing vendor email to ${req.user.email}`);
+      await prisma.vendor.update({
+        where: { id: finalProfile.vendor.id },
+        data: { email: req.user.email }
+      });
+      finalProfile.vendor.email = req.user.email;
+    }
+
+    // AUTO-ADOPT PHONE FROM OTHER PROFILES WITH THE SAME EMAIL
+    const userEmail = req.user.email;
+    if (userEmail && (!finalProfile.phoneNumber || finalProfile.phoneNumber.startsWith('none_'))) {
+      const otherVendor = await prisma.vendor.findFirst({
+        where: {
+          email: userEmail,
+          profile: {
+            phoneNumber: {
+              not: null,
+              not: { startsWith: 'none_' }
+            }
+          }
+        },
+        include: { profile: true }
+      });
+
+      if (otherVendor && otherVendor.profile?.phoneNumber) {
+        const matchingPhone = otherVendor.profile.phoneNumber;
+        console.log(`[VENDOR-PROFILE] Found existing phone number ${matchingPhone} under same email ${userEmail}. Merging phone!`);
+
+        // Check and release duplicate phone profile
+        const duplicateProfile = await prisma.profile.findFirst({
+          where: { phoneNumber: matchingPhone, NOT: { id: finalProfile.id } }
+        });
+
+        if (duplicateProfile) {
+          await prisma.profile.update({
+            where: { id: duplicateProfile.id },
+            data: { phoneNumber: `old_${duplicateProfile.id.substring(0, 10)}` }
+          });
+        }
+
+        // Set it on the current profile
+        const mergedProfile = await prisma.profile.update({
+          where: { id: finalProfile.id },
+          data: { phoneNumber: matchingPhone },
+          include: { 
+            vendor: { 
+              include: { 
+                bankDetails: true,
+                complianceFlags: true,
+                operatingHoursList: true,
+                ratingsSummary: true
+              } 
+            } 
+          }
+        });
+        finalProfile = mergedProfile;
+      }
     }
 
     // Sync profileStatus based on vendor accountStatus to prevent client routing loops

@@ -658,10 +658,11 @@ export default function VendorProfile() {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>Email</Text>
+                <Text style={styles.inputLabel}>Email (Locked)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={[styles.textInput, editForm.email ? { backgroundColor: '#F0F0F0', color: '#888' } : {}]}
                   value={editForm.email}
+                  editable={!editForm.email}
                   onChangeText={(val) => setEditForm(prev => ({ ...prev, email: val }))}
                   keyboardType="email-address"
                 />

@@ -160,10 +160,11 @@ export default function VendorRegisterScreen() {
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Email Address</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, formData.email ? { backgroundColor: '#F0F0F0', color: '#888' } : {}]}
                 placeholder="email@example.com"
                 keyboardType="email-address"
                 value={formData.email}
+                editable={!formData.email}
                 onChangeText={(text) => handleInputChange('email', text)}
               />
             </View>
