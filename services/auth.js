@@ -259,15 +259,28 @@ export const authService = {
         };
       }
 
-      // 1. Try Native Auth (linkWithPhoneNumber) if available
+      // 1. Try Native Auth (linkWithPhoneNumber workaround) if available
       if (nativeAuth) {
         const user = nativeAuth().currentUser;
         if (!user) throw new Error('No user is currently authenticated in Firebase.');
         
-        console.log('--- CALLING NATIVE linkWithPhoneNumber ---');
-        const confirmationResult = await user.linkWithPhoneNumber(cleanPhone);
+        console.log('--- CALLING NATIVE signInWithPhoneNumber for linking ---');
+        const confirmationResult = await nativeAuth().signInWithPhoneNumber(cleanPhone);
         console.log('--- OTP SENT SUCCESSFULLY FOR LINKING (NATIVE) ---');
-        return confirmationResult;
+        
+        return {
+          isNativeLinking: true,
+          verificationId: confirmationResult.verificationId,
+          confirm: async (code) => {
+            console.log('--- LINKING NATIVE CREDENTIAL ---');
+            const credential = nativeAuth.PhoneAuthProvider.credential(
+              confirmationResult.verificationId,
+              code
+            );
+            const linkResult = await user.linkWithCredential(credential);
+            return linkResult;
+          }
+        };
       }
 
       // 2. Fallback to Web SDK
