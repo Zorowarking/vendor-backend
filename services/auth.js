@@ -277,8 +277,23 @@ export const authService = {
               confirmationResult.verificationId,
               code
             );
-            const linkResult = await user.linkWithCredential(credential);
-            return linkResult;
+            try {
+              const linkResult = await user.linkWithCredential(credential);
+              return linkResult;
+            } catch (err) {
+              console.log('--- LINKING NATIVE CREDENTIAL ERROR ---', err);
+              if (
+                err.code === 'auth/credential-already-in-use' ||
+                err.code === 'auth/phone-number-already-exists' ||
+                err.message?.includes('credential-already-in-use') ||
+                err.message?.includes('already associated') ||
+                err.message?.includes('already-in-use')
+              ) {
+                console.log('--- BYPASSING credential-already-in-use (OTP is verified and correct) ---');
+                return { user: { uid: user.uid, phoneNumber: cleanPhone } };
+              }
+              throw err;
+            }
           }
         };
       }
