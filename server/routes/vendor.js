@@ -753,19 +753,8 @@ router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
       return res.status(400).json({ error: 'Order already processed' });
     }
 
-    await prisma.order.update({
-      where: { id },
-      data: { 
-        status: 'accepted',
-        statusHistory: {
-          create: {
-            status: 'accepted',
-            changedBy: 'VENDOR',
-            notes: 'Order accepted by vendor'
-          }
-        }
-      }
-    });
+    const OrderService = require('../services/orderService');
+    await OrderService.updateOrderStatus(id, 'accepted', 'VENDOR');
 
     // Update SLA Metric for successful acceptance
     await prisma.vendorSlaMetric.upsert({
@@ -777,7 +766,6 @@ router.put('/orders/:id/accept', firebaseAuth, requireKyc, async (req, res) => {
     // Schedule 15-second auto-transition to "Preparing Order"
     await orderSlaQueue.add('autoPrepare', { orderId: id, type: 'auto_prepare' }, { delay: 15 * 1000 });
 
-    emitOrderStatusUpdate(id, 'accepted', 'VENDOR');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Error accepting order' });
@@ -1134,17 +1122,8 @@ router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
     const { status } = req.body; // accepted, preparing, ready_for_pickup
     if (!['accepted', 'preparing', 'ready_for_pickup'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    const updateData = { status };
-    if (status === 'preparing') {
-      updateData.preparingAt = new Date();
-    } else if (status === 'ready_for_pickup') {
-      updateData.readyAt = new Date();
-    }
-
-    const order = await prisma.order.update({
-      where: { id },
-      data: updateData
-    });
+    const OrderService = require('../services/orderService');
+    const order = await OrderService.updateOrderStatus(id, status, 'VENDOR');
 
     // Notify Shadowfax if ready
     if (status === 'ready_for_pickup') {
@@ -1186,7 +1165,6 @@ router.put('/orders/:id/status', firebaseAuth, requireKyc, async (req, res) => {
       }
     }
 
-    emitOrderStatusUpdate(id, status, 'VENDOR');
     res.json({ success: true, order });
   } catch (error) {
     console.error('[VENDOR] Status update error:', error);

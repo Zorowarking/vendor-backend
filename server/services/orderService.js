@@ -252,6 +252,10 @@ class OrderService {
             changedBy: actorRole
           }
         },
+        // Automatically track preparingAt and readyAt timestamps
+        ...(newStatus === 'preparing' ? { preparingAt: new Date() } : {}),
+        ...(newStatus === 'ready_for_pickup' ? { readyAt: new Date() } : {}),
+        
         // Refund Logic: Trigger if cancelled and payment exists (Payment Agnostic)
         ...(terminalStatuses.includes(newStatus.toUpperCase()) && orderToUpdate.paymentGatewayRef ? {
           refundStatus: 'PENDING',
@@ -268,9 +272,27 @@ class OrderService {
     emitOrderStatusUpdate(orderId, newStatus, actorRole, order.vendorId);
     
     if (order.customer?.profile?.firebaseUid) {
+      let title = `Order Update: ${newStatus}`;
+      let body = `Your order status has changed to ${newStatus}.`;
+      
+      const cleanStatus = newStatus.toLowerCase();
+      if (cleanStatus === 'accepted') {
+        title = 'Order Accepted!';
+        body = 'Your order has been accepted and is now being prepared.';
+      } else if (cleanStatus === 'preparing') {
+        title = 'Preparing your Order';
+        body = 'The kitchen is busy preparing your delicious food!';
+      } else if (cleanStatus === 'ready_for_pickup') {
+        title = 'Order Ready!';
+        body = 'Your order is ready for pickup or rider assignment.';
+      } else if (cleanStatus === 'cancelled_by_vendor' || cleanStatus === 'cancelled') {
+        title = 'Order Cancelled';
+        body = 'We are sorry, your order was cancelled by the store.';
+      }
+
       await fcm.sendToCustomer(order.customer.profile.firebaseUid, {
-        title: `Order Update: ${newStatus}`,
-        body: `Your order status has changed to ${newStatus}.`,
+        title,
+        body,
         orderId: order.id
       });
     }
