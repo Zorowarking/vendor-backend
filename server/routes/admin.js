@@ -78,6 +78,12 @@ router.put('/vendors/:id/approve', requireAdmin, async (req, res) => {
       }
     });
 
+    // Update VendorKyc record status
+    await prisma.vendorKyc.updateMany({
+      where: { vendorId: id, status: 'submitted' },
+      data: { status: 'approved', reviewedAt: new Date() }
+    }).catch(e => console.warn('VendorKyc status update failed:', e.message));
+
     // Sync profile status if it exists
     if (updatedVendor.profileId) {
       await prisma.profile.update({
@@ -121,8 +127,34 @@ router.put('/vendors/:id/reject', requireAdmin, async (req, res) => {
       data: { accountStatus: 'REJECTED' }
     });
 
+    // Update VendorKyc record status
+    await prisma.vendorKyc.updateMany({
+      where: { vendorId: id, status: 'submitted' },
+      data: { status: 'rejected', reviewedAt: new Date() }
+    }).catch(e => console.warn('VendorKyc status update failed:', e.message));
+
+    // Sync profile status if it exists
+    if (vendor.profileId) {
+      await prisma.profile.update({
+        where: { id: vendor.profileId },
+        data: { profileStatus: 'REJECTED' }
+      }).catch(e => console.warn('Profile status sync failed:', e.message));
+    }
+
     // Trigger real-time update
     emitAccountStatusUpdate(vendor.id, 'REJECTED');
+
+    // Send push notification for rejection
+    try {
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(vendor.id, {
+        title: 'KYC Rejected',
+        body: `Your business profile verification was rejected. Reason: ${reason || 'Invalid documents.'}`,
+        type: 'KYC_REJECTED'
+      });
+    } catch (err) {
+      console.warn('Failed to send KYC rejection notification:', err.message);
+    }
 
     res.json({ success: true, message: 'Vendor rejected', reason });
   } catch (error) {

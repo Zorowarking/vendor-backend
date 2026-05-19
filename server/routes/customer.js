@@ -114,7 +114,7 @@ router.get('/profile', firebaseAuth, async (req, res) => {
 
 router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    const { fullName, email, profilePicUrl, fcmToken } = req.body;
+    const { fullName, email, profilePicUrl, fcmToken, pushToken } = req.body;
     
     // Update Customer record
     const updated = await prisma.customer.update({
@@ -126,16 +126,22 @@ router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
       }
     });
 
-    // Sync FCM Token to Profile if provided
-    if (fcmToken) {
+    // Sync FCM or Expo Push Token to Profile
+    const activeToken = fcmToken || pushToken;
+    if (activeToken) {
+      const isExpo = activeToken.startsWith('ExponentPushToken[');
       await prisma.profile.update({
         where: { id: req.customer.profileId },
-        data: { fcmToken }
+        data: {
+          fcmToken: isExpo ? null : activeToken,
+          pushToken: isExpo ? activeToken : null
+        }
       });
-      console.log(`[CUSTOMER] FCM Token updated for ${req.customer.id}`);
+      console.log(`[CUSTOMER] Notification tokens updated for ${req.customer.id}. isExpo: ${isExpo}`);
     }
     res.json({ success: true, customer: updated });
   } catch (error) {
+    console.error('[CUSTOMER-UPDATE] Failed to update customer profile:', error);
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });

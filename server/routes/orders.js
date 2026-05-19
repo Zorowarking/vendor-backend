@@ -195,24 +195,10 @@ router.post('/validate-delivery', firebaseAuth, requireCustomer, async (req, res
 });
 
 // GET /orders — customer order history
-router.get('/', firebaseAuth, async (req, res) => {
+router.get('/', firebaseAuth, requireCustomer, async (req, res) => {
   try {
-    // If not authenticated via Firebase, or no customer record exists, return empty list
-    if (!req.user?.uid) {
-      return res.json({ success: true, orders: [] });
-    }
-
-    const profile = await prisma.profile.findUnique({
-      where: { firebaseUid: req.user.uid },
-      include: { customer: true }
-    });
-
-    if (!profile || profile.role !== 'CUSTOMER' || !profile.customer) {
-      return res.json({ success: true, orders: [] });
-    }
-
     const orders = await prisma.order.findMany({
-      where: { customerId: profile.customer.id },
+      where: { customerId: req.customer.id },
       include: { 
         vendor: {
             select: { businessName: true, logoUrl: true }
