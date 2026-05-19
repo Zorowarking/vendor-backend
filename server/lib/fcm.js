@@ -35,15 +35,19 @@ const sendPushNotification = async (fcmToken, title, body, dataPayload = {}) => 
   if (!admin.apps.length || !fcmToken) return;
 
   try {
+    const channelId = dataPayload.channelId || 'default';
     await admin.messaging().send({
       token: fcmToken,
       notification: { title, body },
       data: dataPayload,
       android: {
-        priority: 'high'
+        priority: 'high',
+        notification: {
+          channelId: channelId
+        }
       }
     });
-    console.log(`[FCM] Notification sent to ${fcmToken.substring(0, 10)}...`);
+    console.log(`[FCM] Notification sent to ${fcmToken.substring(0, 10)}... with channel ${channelId}`);
   } catch (error) {
     console.error(`[FCM] Error sending message:`, error.message);
   }
@@ -96,12 +100,15 @@ const sendToVendor = async (vendorId, payload) => {
     const fcmToken = vendor?.profile?.fcmToken || vendor?.fcmToken;
     const pushToken = vendor?.profile?.pushToken || vendor?.pushToken;
 
+    const isKyc = payload.type && payload.type.toUpperCase().startsWith('KYC');
+    const channelId = isKyc ? 'kyc' : 'orders';
+
     if (pushToken) {
       await sendExpoPushNotification(
         pushToken,
         payload.title,
         payload.body,
-        { ...payload, type: payload.type || 'new_order', channelId: 'orders' }
+        { ...payload, type: payload.type || 'new_order', channelId }
       );
     }
     if (fcmToken && admin.apps.length) {
@@ -109,7 +116,7 @@ const sendToVendor = async (vendorId, payload) => {
         fcmToken, 
         payload.title, 
         payload.body, 
-        { ...payload, type: payload.type || 'new_order' }
+        { ...payload, type: payload.type || 'new_order', channelId }
       );
     }
   } catch (error) {
@@ -140,7 +147,7 @@ const sendToCustomer = async (firebaseUid, payload) => {
         profile.fcmToken, 
         payload.title, 
         payload.body, 
-        { ...payload, type: payload.type || 'order_update' }
+        { ...payload, type: payload.type || 'order_update', channelId: 'default' }
       );
     }
   } catch (error) {
@@ -154,57 +161,108 @@ const sendToCustomer = async (firebaseUid, payload) => {
  * @param {object} payload - { title, body, data }
  */
 const broadcastToUsers = async (targetAudience, payload) => {
-  if (!admin.apps.length) return;
-
   try {
-    let tokens = [];
+    let fcmTokens = [];
+    let expoTokens = [];
     const prisma = require('./prisma').prisma;
 
     if (targetAudience === 'VENDORS' || targetAudience === 'ALL') {
       const vendors = await prisma.profile.findMany({
-        where: { fcmToken: { not: null }, role: 'VENDOR' },
-        select: { fcmToken: true }
+        where: {
+          role: 'VENDOR',
+          OR: [
+            { fcmToken: { not: null } },
+            { pushToken: { not: null } }
+          ]
+        },
+        select: { fcmToken: true, pushToken: true }
       });
-      tokens = tokens.concat(vendors.map(v => v.fcmToken));
+      vendors.forEach(v => {
+        if (v.fcmToken) fcmTokens.push(v.fcmToken);
+        if (v.pushToken) expoTokens.push(v.pushToken);
+      });
     }
 
     if (targetAudience === 'CUSTOMERS' || targetAudience === 'ALL') {
       const customers = await prisma.profile.findMany({
-        where: { fcmToken: { not: null }, role: 'CUSTOMER' },
-        select: { fcmToken: true }
+        where: {
+          role: 'CUSTOMER',
+          OR: [
+            { fcmToken: { not: null } },
+            { pushToken: { not: null } }
+          ]
+        },
+        select: { fcmToken: true, pushToken: true }
       });
-      tokens = tokens.concat(customers.map(c => c.fcmToken));
+      customers.forEach(c => {
+        if (c.fcmToken) fcmTokens.push(c.fcmToken);
+        if (c.pushToken) expoTokens.push(c.pushToken);
+      });
     }
 
-    // Filter out mock tokens or nulls
-    tokens = [...new Set(tokens.filter(t => t && t.length > 20 && !t.startsWith('mock_')))];
+    // Filter out mock tokens, short/null tokens
+    fcmTokens = [...new Set(fcmTokens.filter(t => t && t.length > 20 && !t.startsWith('mock_')))];
+    expoTokens = [...new Set(expoTokens.filter(t => t && t.length > 20 && !t.startsWith('mock_')))];
 
-    if (tokens.length === 0) {
-      console.log(`[FCM] No valid tokens found for broadcast to ${targetAudience}`);
-      return { success: 0, failure: 0 };
-    }
+    console.log(`[BROADCAST] FCM tokens found: ${fcmTokens.length}`);
+    console.log(`[BROADCAST] Expo tokens found: ${expoTokens.length}`);
 
-    // Firebase multicast allows up to 500 tokens per batch
-    const BATCH_SIZE = 500;
     let successCount = 0;
     let failureCount = 0;
 
-    for (let i = 0; i < tokens.length; i += BATCH_SIZE) {
-      const batchTokens = tokens.slice(i, i + BATCH_SIZE);
-      const message = {
-        tokens: batchTokens,
-        notification: { title: payload.title, body: payload.body },
-        data: { ...payload.data, type: payload.type || 'admin_broadcast' },
-        android: { priority: 'high' }
-      };
+    // Send FCM Notifications
+    if (fcmTokens.length > 0 && admin.apps.length) {
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < fcmTokens.length; i += BATCH_SIZE) {
+        const batchTokens = fcmTokens.slice(i, i + BATCH_SIZE);
+        const message = {
+          tokens: batchTokens,
+          notification: { title: payload.title, body: payload.body },
+          data: { ...payload.data, type: payload.type || 'admin_broadcast' },
+          android: { priority: 'high' }
+        };
+        const response = await admin.messaging().sendEachForMulticast(message);
+        successCount += response.successCount;
+        failureCount += response.failureCount;
+      }
+    }
 
-      const response = await admin.messaging().sendEachForMulticast(message);
-      successCount += response.successCount;
-      failureCount += response.failureCount;
+    // Send Expo Notifications
+    if (expoTokens.length > 0) {
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < expoTokens.length; i += BATCH_SIZE) {
+        const batchTokens = expoTokens.slice(i, i + BATCH_SIZE);
+        const pushMessages = batchTokens.map(token => ({
+          to: token,
+          sound: 'default',
+          title: payload.title,
+          body: payload.body,
+          data: { ...payload.data, type: payload.type || 'admin_broadcast' },
+          channelId: 'default'
+        }));
+        
+        try {
+          const response = await axios.post('https://exp.host/--/api/v2/push/send', pushMessages, {
+            headers: {
+              'Accept': 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            }
+          });
+          const tickets = response.data?.data || [];
+          tickets.forEach(ticket => {
+            if (ticket.status === 'ok') successCount++;
+            else failureCount++;
+          });
+        } catch (error) {
+          console.error(`[EXPO-BROADCAST] Error sending batch:`, error.response?.data || error.message);
+          failureCount += batchTokens.length;
+        }
+      }
     }
 
     console.log(`[FCM] Broadcast to ${targetAudience}: ${successCount} successes, ${failureCount} failures.`);
-    return { success: successCount, failure: failureCount };
+    return { success: successCount, failure: failureCount, fcmCount: fcmTokens.length, expoCount: expoTokens.length };
   } catch (error) {
     console.error(`[FCM] Broadcast error:`, error.message);
     throw error;

@@ -173,7 +173,10 @@ class OrderService {
         if (summary.selectedAddons) {
           summary.selectedAddons.forEach(a => {
             const name = (typeof a === 'object' && a.name) ? a.name : nameMap.get(typeof a === 'object' ? a.id : a);
-            if (name && !isUuid(name)) details.push(name);
+            const qty = (typeof a === 'object' && typeof a.quantity === 'number') ? a.quantity : 1;
+            if (name && !isUuid(name)) {
+              details.push(qty > 1 ? `${qty}x ${name}` : name);
+            }
           });
         }
         if (summary.customizations) {
@@ -181,7 +184,10 @@ class OrderService {
             if (c.selectedOptions) {
               c.selectedOptions.forEach(opt => {
                 const name = (typeof opt === 'object' && opt.name) ? opt.name : nameMap.get(typeof opt === 'object' ? opt.id : opt);
-                if (name && !isUuid(name)) details.push(name);
+                const qty = (typeof opt === 'object' && typeof opt.quantity === 'number') ? opt.quantity : 1;
+                if (name && !isUuid(name)) {
+                  details.push(qty > 1 ? `${qty}x ${name}` : name);
+                }
               });
             }
           });

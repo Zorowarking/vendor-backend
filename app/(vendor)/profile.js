@@ -120,6 +120,10 @@ export default function VendorProfile() {
 
 
   const handleSaveDetails = async () => {
+    if (editForm.phone && editForm.phone.length !== 13) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number starting with +91.');
+      return;
+    }
     setLoading(true);
     try {
       const updatedProfile = { ...profile, ...editForm };
@@ -147,8 +151,12 @@ export default function VendorProfile() {
   };
 
   const handleSaveBank = async () => {
-    if (!bankForm.accountNumber || !bankForm.holderName) {
-      Alert.alert('Error', 'Account number and holder name are required to update bank details.');
+    if (!bankForm.accountNumber || !bankForm.holderName || !bankForm.ifscCode) {
+      Alert.alert('Error', 'Account number, holder name, and IFSC code are required to update bank details.');
+      return;
+    }
+    if (bankForm.ifscCode.length !== 11) {
+      Alert.alert('Invalid IFSC Code', 'IFSC Code must be exactly 11 alphanumeric characters.');
       return;
     }
     setLoading(true);
@@ -190,6 +198,11 @@ export default function VendorProfile() {
   };
 
   const pickImage = async (type) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to upload images.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -259,6 +272,33 @@ export default function VendorProfile() {
         }
       }));
     }
+  };
+
+  const handlePhoneChange = (value) => {
+    let cleaned = value;
+    if (!cleaned.startsWith('+91')) {
+      const digits = cleaned.replace(/\D/g, '');
+      if (digits.startsWith('91')) {
+        cleaned = '+' + digits;
+      } else {
+        cleaned = '+91' + digits;
+      }
+    } else {
+      const afterPrefix = cleaned.substring(3);
+      const digitsAfter = afterPrefix.replace(/\D/g, '');
+      cleaned = '+91' + digitsAfter;
+    }
+    
+    if (cleaned.length > 13) {
+      cleaned = cleaned.substring(0, 13);
+    }
+    
+    setEditForm(prev => ({ ...prev, phone: cleaned }));
+  };
+
+  const handleIfscChange = (value) => {
+    const cleaned = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 11);
+    setBankForm(prev => ({ ...prev, ifscCode: cleaned }));
   };
 
   const renderValue = (val) => {
@@ -673,7 +713,7 @@ export default function VendorProfile() {
                 <TextInput
                   style={styles.textInput}
                   value={editForm.phone}
-                  onChangeText={(val) => setEditForm(prev => ({ ...prev, phone: val }))}
+                  onChangeText={handlePhoneChange}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -687,6 +727,43 @@ export default function VendorProfile() {
                   keyboardType="numeric"
                   placeholder="e.g. 5"
                 />
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: 10, fontWeight: 'bold', color: Colors.black }]}>Store Images</Text>
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.inputLabel}>Logo Image</Text>
+                  <TouchableOpacity 
+                    style={styles.imageUploadBox} 
+                    onPress={() => pickImage('logo')}
+                  >
+                    {profile?.logo ? (
+                      <Image source={{ uri: profile.logo }} style={styles.uploadPreview} />
+                    ) : (
+                      <View style={styles.uploadPlaceholderBox}>
+                        <Ionicons name="image-outline" size={24} color={Colors.darkGrey} />
+                        <Text style={styles.uploadPlaceholderText}>Upload Logo</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.inputLabel}>Banner Image</Text>
+                  <TouchableOpacity 
+                    style={styles.imageUploadBox} 
+                    onPress={() => pickImage('banner')}
+                  >
+                    {profile?.banner ? (
+                      <Image source={{ uri: profile.banner }} style={styles.uploadPreview} />
+                    ) : (
+                      <View style={styles.uploadPlaceholderBox}>
+                        <Ionicons name="image-outline" size={24} color={Colors.darkGrey} />
+                        <Text style={styles.uploadPlaceholderText}>Upload Banner</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <TouchableOpacity 
@@ -758,9 +835,10 @@ export default function VendorProfile() {
                 <TextInput
                   style={styles.textInput}
                   value={bankForm.ifscCode}
-                  onChangeText={(val) => setBankForm(prev => ({ ...prev, ifscCode: val }))}
+                  onChangeText={handleIfscChange}
                   placeholder="IFSC Code"
                   autoCapitalize="characters"
+                  maxLength={11}
                 />
               </View>
 
@@ -1182,5 +1260,31 @@ const styles = StyleSheet.create({
     color: Colors.subText,
     marginLeft: 6,
     fontStyle: 'italic',
+  },
+  imageUploadBox: {
+    height: 100,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    backgroundColor: Colors.grey,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  uploadPreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  uploadPlaceholderBox: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadPlaceholderText: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginTop: 4,
+    fontWeight: '500',
   }
 });

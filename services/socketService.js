@@ -22,20 +22,22 @@ class SocketService {
     this.userId = userId;
     this.role = role;
     
-    // Obtain a fresh, verified Firebase ID token to bypass authorization issues and prevent socket connection drop loops
+    // Obtain the cached Firebase ID token to bypass authorization issues and prevent socket connection drop loops
     let token = useAuthStore.getState().sessionToken;
-    try {
-      if (auth && auth.currentUser) {
-        console.log('[SOCKET] Requesting fresh Firebase ID Token...');
-        const freshToken = await auth.currentUser.getIdToken(true);
-        if (freshToken) {
-          token = freshToken;
-          useAuthStore.setState({ sessionToken: freshToken });
-          console.log('[SOCKET] Fresh token retrieved successfully.');
+    if (!token) {
+      try {
+        if (auth && auth.currentUser) {
+          console.log('[SOCKET] Requesting cached Firebase ID Token...');
+          const freshToken = await auth.currentUser.getIdToken(false);
+          if (freshToken) {
+            token = freshToken;
+            useAuthStore.setState({ sessionToken: freshToken });
+            console.log('[SOCKET] Token retrieved successfully.');
+          }
         }
+      } catch (tokenErr) {
+        console.warn('[SOCKET] Failed to fetch a token at startup:', tokenErr.message);
       }
-    } catch (tokenErr) {
-      console.warn('[SOCKET] Failed to fetch a fresh token at startup:', tokenErr.message);
     }
     
     const namespaceUrl = role === 'VENDOR' ? `${SOCKET_URL}/vendor` : `${SOCKET_URL}/rider`;

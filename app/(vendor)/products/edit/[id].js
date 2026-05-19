@@ -354,7 +354,7 @@ export default function EditProduct() {
         : 'Product updated successfully.';
 
       Alert.alert(res.reviewTriggered ? 'Under Review' : 'Success', message, [
-        { text: 'OK', onPress: () => router.push('/products/index') }
+        { text: 'OK', onPress: () => router.push('/products') }
       ]);
     } catch (error) {
       const errorMsg = error.response?.data?.details || error.message || 'Unknown error';
@@ -376,7 +376,7 @@ export default function EditProduct() {
           onPress: async () => {
             try {
               await vendorApi.deleteProduct(id);
-              router.push('/products/index');
+              router.push('/products');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete product');
             }

@@ -11,12 +11,33 @@ import { useAuthStore } from '../../store/authStore';
 export default function VerifyPhoneScreen() {
   const [registeredPhone, setRegisteredPhone] = useState(null);
   const [isPhoneEditable, setIsPhoneEditable] = useState(false);
-  const [manualPhone, setManualPhone] = useState('');
+  const [manualPhone, setManualPhone] = useState('+91');
   const [otpSent, setOtpSent] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [confirmationResult, setConfirmationResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetchingProfile, setFetchingProfile] = useState(true);
+
+  const handleManualPhoneChange = (value) => {
+    let cleaned = value;
+    if (!cleaned.startsWith('+91')) {
+      const digits = cleaned.replace(/\D/g, '');
+      if (digits.startsWith('91')) {
+        cleaned = '+' + digits;
+      } else {
+        cleaned = '+91' + digits;
+      }
+    } else {
+      const afterPrefix = cleaned.substring(3);
+      const digitsAfter = afterPrefix.replace(/\D/g, '');
+      cleaned = '+91' + digitsAfter;
+    }
+    
+    if (cleaned.length > 13) {
+      cleaned = cleaned.substring(0, 13);
+    }
+    setManualPhone(cleaned);
+  };
   
   const phone = isPhoneEditable ? manualPhone : registeredPhone;
   const router = useRouter();
@@ -50,8 +71,11 @@ export default function VerifyPhoneScreen() {
   const handleSendOTP = async () => {
     const phoneToVerify = isPhoneEditable ? manualPhone : registeredPhone;
     
-    if (!phoneToVerify || phoneToVerify.length < 10) {
-      Alert.alert('Invalid Phone', 'Please enter a valid phone number');
+    if (isPhoneEditable && (!phoneToVerify || phoneToVerify.length !== 13)) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number starting with +91');
+      return;
+    } else if (!isPhoneEditable && (!phoneToVerify || phoneToVerify.length < 10)) {
+      Alert.alert('Invalid Phone', 'Registered phone number is invalid.');
       return;
     }
 
@@ -170,7 +194,7 @@ export default function VerifyPhoneScreen() {
                     placeholderTextColor={Colors.subText}
                     keyboardType="phone-pad"
                     value={manualPhone}
-                    onChangeText={setManualPhone}
+                    onChangeText={handleManualPhoneChange}
                   />
                 </View>
               ) : (

@@ -20,7 +20,12 @@ export default function VendorBankScreen() {
   const vendorRegistrationData = useAuthStore((state) => state.vendorRegistrationData);
 
   const handleInputChange = (name, value) => {
-    setBankData({ ...bankData, [name]: value });
+    if (name === 'ifscCode') {
+      const cleaned = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 11);
+      setBankData({ ...bankData, [name]: cleaned });
+    } else {
+      setBankData({ ...bankData, [name]: value });
+    }
   };
 
   const handleSubmit = async () => {
@@ -32,6 +37,11 @@ export default function VendorBankScreen() {
 
     if (!bankData.holderName || !bankData.bankName || !bankData.accountNumber || !bankData.ifscCode) {
       Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (bankData.ifscCode.length !== 11) {
+      Alert.alert('Invalid IFSC Code', 'IFSC Code must be exactly 11 alphanumeric characters.');
       return;
     }
 
@@ -115,6 +125,7 @@ export default function VendorBankScreen() {
                 style={styles.input}
                 placeholder="e.g. HDFC0001234"
                 autoCapitalize="characters"
+                maxLength={11}
                 value={bankData.ifscCode}
                 onChangeText={(text) => handleInputChange('ifscCode', text)}
               />

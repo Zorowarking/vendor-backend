@@ -42,6 +42,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// URL Rewrite Middleware for push-token compat with older/mismatched frontend versions
+app.use((req, res, next) => {
+  if (req.url === '/vendor/push-token') {
+    console.log(`[URL-REWRITE] Rewriting ${req.url} to /api/vendor/push-token`);
+    req.url = '/api/vendor/push-token';
+  }
+  next();
+});
+
 app.use(helmet({ contentSecurityPolicy: false }));
 
 // Timeout Middleware (30 seconds)

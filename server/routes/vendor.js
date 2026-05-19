@@ -501,7 +501,7 @@ router.put('/profile', firebaseAuth, async (req, res) => {
     const { uid } = req.user;
     const { 
       businessName, ownerName, phone, address, category, description, location, 
-      operatingHours, bankData, fcmToken, email, deliveryRadius, logo, banner, profilePic,
+      operatingHours, bankData, fcmToken, pushToken, email, deliveryRadius, logo, banner, profilePic,
       commissionModel
     } = req.body;
 
@@ -620,11 +620,14 @@ router.put('/profile', firebaseAuth, async (req, res) => {
     }
 
 
-    // Update Profile FCM Token too
-    if (fcmToken) {
+    // Update Profile FCM Token & Push Token too
+    if (fcmToken || pushToken) {
       await withRetry(() => prisma.profile.update({
         where: { id: profile.id },
-        data: { fcmToken }
+        data: {
+          ...(fcmToken ? { fcmToken } : {}),
+          ...(pushToken ? { pushToken } : {})
+        }
       }));
     }
 
@@ -988,7 +991,10 @@ const formatOrdersForVendorAsync = async (orders) => {
         if (summary.selectedAddons && Array.isArray(summary.selectedAddons)) {
           summary.selectedAddons.forEach(a => {
             const name = (typeof a === 'object' && a.name) ? a.name : nameMap.get(typeof a === 'object' ? a.id : a);
-            if (name && !isUuid(name)) details.push(name);
+            const qty = (typeof a === 'object' && typeof a.quantity === 'number') ? a.quantity : 1;
+            if (name && !isUuid(name)) {
+              details.push(qty > 1 ? `${qty}x ${name}` : name);
+            }
           });
         }
         
@@ -997,7 +1003,10 @@ const formatOrdersForVendorAsync = async (orders) => {
             if (group.selectedOptions && Array.isArray(group.selectedOptions)) {
               group.selectedOptions.forEach(opt => {
                 const name = (typeof opt === 'object' && opt.name) ? opt.name : nameMap.get(typeof opt === 'object' ? opt.id : opt);
-                if (name && !isUuid(name)) details.push(name);
+                const qty = (typeof opt === 'object' && typeof opt.quantity === 'number') ? opt.quantity : 1;
+                if (name && !isUuid(name)) {
+                  details.push(qty > 1 ? `${qty}x ${name}` : name);
+                }
               });
             }
           });

@@ -15,7 +15,7 @@ export default function VendorRegisterScreen() {
   const [formData, setFormData] = useState({
     businessName: '',
     ownerName: '',
-    phone: '',
+    phone: '+91',
     email: user?.email || '',
     address: '',
     category: 'Food',
@@ -38,7 +38,28 @@ export default function VendorRegisterScreen() {
   const router = useRouter();
  
   const handleInputChange = (name, value) => {
-    setFormData({ ...formData, [name]: value });
+    if (name === 'phone') {
+      let cleaned = value;
+      if (!cleaned.startsWith('+91')) {
+        const digits = cleaned.replace(/\D/g, '');
+        if (digits.startsWith('91')) {
+          cleaned = '+' + digits;
+        } else {
+          cleaned = '+91' + digits;
+        }
+      } else {
+        const afterPrefix = cleaned.substring(3);
+        const digitsAfter = afterPrefix.replace(/\D/g, '');
+        cleaned = '+91' + digitsAfter;
+      }
+      
+      if (cleaned.length > 13) {
+        cleaned = cleaned.substring(0, 13);
+      }
+      setFormData({ ...formData, phone: cleaned });
+    } else {
+      setFormData({ ...formData, [name]: value });
+    }
   };
  
   const handlePinLocation = async () => {
@@ -91,6 +112,11 @@ export default function VendorRegisterScreen() {
   const handleNext = () => {
     if (!formData.businessName || !formData.ownerName || !formData.phone || !formData.address || !formData.location) {
       Alert.alert('Required Fields', 'Business Name, Owner Name, Phone Number, Address, and Location Pin are mandatory.');
+      return;
+    }
+
+    if (formData.phone.length !== 13) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number after +91.');
       return;
     }
     

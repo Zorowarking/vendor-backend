@@ -232,6 +232,40 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Title and message are required' });
     }
 
+    // Calculate total targeted users (those with registered tokens)
+    let totalTargeted = 0;
+    if (audience === 'VENDORS' || audience === 'ALL') {
+      const vendorCount = await prisma.profile.count({
+        where: {
+          role: 'VENDOR',
+          OR: [
+            { fcmToken: { not: null, not: { startsWith: 'mock_' } } },
+            { pushToken: { not: null, not: { startsWith: 'mock_' } } }
+          ]
+        }
+      });
+      totalTargeted += vendorCount;
+    }
+    if (audience === 'CUSTOMERS' || audience === 'ALL') {
+      const customerCount = await prisma.profile.count({
+        where: {
+          role: 'CUSTOMER',
+          OR: [
+            { fcmToken: { not: null, not: { startsWith: 'mock_' } } },
+            { pushToken: { not: null, not: { startsWith: 'mock_' } } }
+          ]
+        }
+      });
+      totalTargeted += customerCount;
+    }
+
+    if (totalTargeted === 0) {
+      return res.status(200).json({
+        success: false,
+        message: `No active, registered devices found for target audience: ${audience}. Notifications cannot be sent.`
+      });
+    }
+
     const fcm = require('../lib/fcm');
     const result = await fcm.broadcastToUsers(audience, {
       title,
@@ -240,7 +274,11 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
       data: dataPayload || {}
     });
 
-    res.json({ success: true, result });
+    res.json({
+      success: true,
+      message: `Broadcast sent to ${result.success}/${result.success + result.failure} devices (${result.fcmCount} via FCM, ${result.expoCount} via Expo)`,
+      result
+    });
   } catch (error) {
     console.error('[ADMIN] Broadcast error:', error);
     res.status(500).json({ error: 'Failed to send broadcast notification' });
