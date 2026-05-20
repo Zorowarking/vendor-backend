@@ -56,11 +56,11 @@ export default function Layout() {
         await AsyncStorage.removeItem('@was_bubble_closed_externally');
         
         Alert.alert(
-          "Stay Online?",
-          "You removed the floating shortcut. Would you like to stay online or go offline to stop receiving new orders?",
+          "Bubble Hidden",
+          "You removed the floating bubble. Would you like to go offline as well to stop receiving new orders?",
           [
             { 
-              text: "Stay Online", 
+              text: "STAY ONLINE", 
               style: "default",
               onPress: () => {
                 // Re-show the bubble if active orders exist
@@ -71,7 +71,7 @@ export default function Layout() {
               }
             },
             { 
-              text: "Go Offline", 
+              text: "GO OFFLINE", 
               style: "destructive",
               onPress: async () => {
                 try {
@@ -381,12 +381,16 @@ export default function Layout() {
           return;
         }
 
-        // 2. Closed externally (user dragged to remove zone). Since we are in the background, DO NOT reopen or alert.
-        // Instead, silently save a flag in AsyncStorage so we trigger the Alert when they open the app next time.
-        console.log('[BUBBLE] Bubble closed externally in background. Saving flag to AsyncStorage.');
-        AsyncStorage.setItem('@was_bubble_closed_externally', 'true').catch((err) => {
-          console.error('[BUBBLE] Failed to save external close flag:', err);
-        });
+        // 2. Closed externally (user dragged to remove zone). Since we are in the background,
+        // instantly set the storage flag and call reopen() to bring the app to the foreground.
+        console.log('[BUBBLE] Bubble closed externally. Saving flag and reopening app...');
+        AsyncStorage.setItem('@was_bubble_closed_externally', 'true')
+          .then(() => {
+            systemBubbleService.reopen();
+          })
+          .catch((err) => {
+            console.error('[BUBBLE] Failed to save external close flag:', err);
+          });
       });
 
       return () => {

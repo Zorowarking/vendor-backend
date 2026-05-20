@@ -18,7 +18,17 @@ router.get('/vendors', guestSession, async (req, res) => {
     };
 
     if (category && category !== 'All') {
-      where.businessCategory = category;
+      if (category === 'Food') {
+        where.businessCategory = {
+          notIn: ['Grocery', 'Pharmacy', 'Dairy']
+        };
+      } else if (category === 'Beverage') {
+        where.businessCategory = {
+          in: ['Beverages & Shakes', 'Beverage']
+        };
+      } else {
+        where.businessCategory = category;
+      }
     }
 
     const vendors = await prisma.vendor.findMany({

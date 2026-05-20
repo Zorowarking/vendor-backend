@@ -126,18 +126,32 @@ router.put('/profile', firebaseAuth, requireCustomer, async (req, res) => {
       }
     });
 
-    // Sync FCM or Expo Push Token to Profile
+    // Sync FCM or Expo Push Token to Profile safely without setting the other to null
+    const updateData = {};
+    if (fcmToken !== undefined) {
+      updateData.fcmToken = fcmToken;
+    }
+    if (pushToken !== undefined) {
+      updateData.pushToken = pushToken;
+    }
+    
+    // Fallback: If only a single active token was provided through a generic key, determine what it is
     const activeToken = fcmToken || pushToken;
-    if (activeToken) {
+    if (activeToken && Object.keys(updateData).length === 0) {
       const isExpo = activeToken.startsWith('ExponentPushToken[');
+      if (isExpo) {
+        updateData.pushToken = activeToken;
+      } else {
+        updateData.fcmToken = activeToken;
+      }
+    }
+
+    if (Object.keys(updateData).length > 0) {
       await prisma.profile.update({
         where: { id: req.customer.profileId },
-        data: {
-          fcmToken: isExpo ? null : activeToken,
-          pushToken: isExpo ? activeToken : null
-        }
+        data: updateData
       });
-      console.log(`[CUSTOMER] Notification tokens updated for ${req.customer.id}. isExpo: ${isExpo}`);
+      console.log(`[CUSTOMER] Notification tokens updated for ${req.customer.id}:`, updateData);
     }
     res.json({ success: true, customer: updated });
   } catch (error) {

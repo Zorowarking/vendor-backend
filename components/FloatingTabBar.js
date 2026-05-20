@@ -12,6 +12,9 @@ const { width } = Dimensions.get('window');
  * This supports Ionicons, badges, and the rounded floating design.
  */
 export default function FloatingTabBar({ state, descriptors, navigation }) {
+  const activeRouteName = state.routes[state.index].name;
+  const showTabBar = ['index', 'products/index', 'earnings', 'profile'].includes(activeRouteName);
+  if (!showTabBar) return null;
 
   return (
     <View style={styles.container}>

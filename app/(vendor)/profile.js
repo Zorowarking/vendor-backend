@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { 
@@ -23,7 +23,7 @@ import { useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import CustomTimePickerModal from '../../components/CustomTimePickerModal';
 import Colors from '../../constants/Colors';
 
 import { vendorApi } from '../../services/vendorApi';
@@ -35,6 +35,26 @@ import MapModal from '../../components/MapModal';
 const { width } = Dimensions.get('window');
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const FOOD_CATEGORIES = [
+  'Biryani & Rice',
+  'Burgers & Fast Food',
+  'Pizza & Pasta',
+  'North Indian',
+  'South Indian',
+  'Chinese & Pan-Asian',
+  'Street Food & Snacks',
+  'Mithai & Desserts',
+  'Beverages & Shakes',
+  'Bakery & Cake'
+];
+
+const CATEGORIES = [
+  ...FOOD_CATEGORIES,
+  'Grocery',
+  'Pharmacy',
+  'Dairy'
+];
+
 const formatTo12Hour = (timeStr) => {
   if (!timeStr) return '';
   const [hoursStr, minutesStr] = timeStr.split(':');
@@ -44,6 +64,19 @@ const formatTo12Hour = (timeStr) => {
   hours = hours % 12;
   hours = hours ? hours : 12; // the hour '0' should be '12'
   return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+};
+
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const validateDayHours = (open, close) => {
+  if (timeToMinutes(close) <= timeToMinutes(open)) {
+    return `Closing time must be after opening time.`;
+  }
+  return null;
 };
 
 export default function VendorProfile() {
@@ -81,6 +114,11 @@ export default function VendorProfile() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [timeMode, setTimeMode] = useState('open'); // 'open' or 'close'
 
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoriesList, setCategoriesList] = useState(CATEGORIES);
+  const [showCustomCategoryModal, setShowCustomCategoryModal] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+
   const [isMapModalVisible, setIsMapModalVisible] = useState(false);
 
   const [errorStatus, setErrorStatus] = useState(null);
@@ -97,6 +135,14 @@ export default function VendorProfile() {
       setErrorStatus(null);
       const data = await vendorApi.getProfile();
       setProfile(data);
+      if (data.category && !CATEGORIES.includes(data.category)) {
+        setCategoriesList(prev => {
+          if (!prev.includes(data.category)) {
+            return [...prev, data.category];
+          }
+          return prev;
+        });
+      }
       // Initialize edit form with current data
       setEditForm({
         businessName: data.businessName,
@@ -135,6 +181,20 @@ export default function VendorProfile() {
       Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number starting with +91.');
       return;
     }
+    
+    if (editForm.operatingHours) {
+      for (const day of DAYS) {
+        const hours = editForm.operatingHours[day];
+        if (hours && !hours.isClosed) {
+          const err = validateDayHours(hours.open || '09:00', hours.close || '22:00');
+          if (err) {
+            Alert.alert('Invalid Operating Hours', `${day}: ${err}`);
+            return;
+          }
+        }
+      }
+    }
+
     setLoading(true);
     try {
       const updatedProfile = { ...profile, ...editForm };
@@ -266,13 +326,9 @@ export default function VendorProfile() {
     );
   };
 
-  const handleTimeChange = (event, selectedDate) => {
+  const handleSaveTime = (timeString) => {
     setShowTimePicker(false);
-    if (selectedDate && activeDay) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const timeString = `${hours}:${minutes}`;
-      
+    if (activeDay) {
       setEditForm(prev => ({
         ...prev,
         operatingHours: {
@@ -691,11 +747,13 @@ export default function VendorProfile() {
               <View style={styles.formRow}>
                 <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
                   <Text style={styles.inputLabel}>Category</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={editForm.category}
-                    onChangeText={(val) => setEditForm(prev => ({ ...prev, category: val }))}
-                  />
+                  <TouchableOpacity 
+                    style={styles.selectorInput} 
+                    onPress={() => setShowCategoryModal(true)}
+                  >
+                    <Text style={styles.selectorText} numberOfLines={1}>{editForm.category || 'Select'}</Text>
+                    <Ionicons name="chevron-down" size={16} color={Colors.darkGrey} />
+                  </TouchableOpacity>
                 </View>
                 <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
                   <Text style={styles.inputLabel}>Operating Hours</Text>
@@ -919,15 +977,109 @@ export default function VendorProfile() {
         </View>
       </Modal>
 
-      {showTimePicker && (
-        <DateTimePicker
-          value={new Date()}
-          mode="time"
-          is24Hour={false}
-          display="default"
-          onChange={handleTimeChange}
-        />
-      )}
+      {/* Category Modal */}
+      <Modal visible={showCategoryModal} transparent animationType="slide">
+        <View style={styles.modalBg}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
+            <Text style={styles.modalTitle}>Select Category</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {categoriesList.map(cat => (
+                <TouchableOpacity 
+                  key={cat} 
+                  style={styles.modalItem}
+                  onPress={() => { 
+                    setEditForm(prev => ({ ...prev, category: cat })); 
+                    setShowCategoryModal(false); 
+                  }}
+                >
+                  <Text style={styles.modalItemText}>{cat}</Text>
+                  {editForm.category === cat && <Text style={styles.checkIcon}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+              
+              <TouchableOpacity 
+                style={[styles.modalItem, { borderBottomWidth: 0, justifyContent: 'center', marginTop: 10 }]}
+                onPress={() => {
+                  setShowCustomCategoryModal(true);
+                }}
+              >
+                <Text style={[styles.modalItemText, { color: Colors.primary, fontWeight: 'bold', textAlign: 'center' }]}>
+                  + Add Custom Category
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setShowCategoryModal(false)}>
+              <Text style={styles.closeButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Category Modal */}
+      <Modal visible={showCustomCategoryModal} transparent animationType="fade" onRequestClose={() => setShowCustomCategoryModal(false)}>
+        <View style={styles.modalBg}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%', justifyContent: 'center', alignItems: 'center', flex: 1 }}
+          >
+            <View style={[styles.modalContent, { width: '85%', borderRadius: 20, alignSelf: 'center', maxHeight: '50%', padding: 24 }]}>
+              <Text style={styles.modalTitle}>Add Custom Category</Text>
+              <TextInput
+                style={[styles.textInput, { marginBottom: 20, backgroundColor: Colors.grey }]}
+                placeholder="Enter Category Name"
+                placeholderTextColor={Colors.darkGrey}
+                value={customCategoryInput}
+                onChangeText={setCustomCategoryInput}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <TouchableOpacity 
+                  style={[styles.closeButton, { flex: 1, marginRight: 8, marginTop: 0 }]} 
+                  onPress={() => {
+                    setShowCustomCategoryModal(false);
+                    setCustomCategoryInput('');
+                  }}
+                >
+                  <Text style={styles.closeButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.closeButton, { flex: 1, marginLeft: 8, backgroundColor: Colors.primary, marginTop: 0 }]} 
+                  onPress={() => {
+                    const cleanVal = customCategoryInput.trim();
+                    if (!cleanVal) {
+                      Alert.alert('Error', 'Category name cannot be empty.');
+                      return;
+                    }
+                    if (cleanVal.length < 3) {
+                      Alert.alert('Error', 'Category name must be at least 3 characters.');
+                      return;
+                    }
+                    if (categoriesList.some(c => c.toLowerCase() === cleanVal.toLowerCase())) {
+                      Alert.alert('Error', 'Category already exists.');
+                      return;
+                    }
+                    setCategoriesList(prev => [...prev, cleanVal]);
+                    setEditForm(prev => ({ ...prev, category: cleanVal }));
+                    setCustomCategoryInput('');
+                    setShowCustomCategoryModal(false);
+                    setShowCategoryModal(false);
+                  }}
+                >
+                  <Text style={[styles.closeButtonText, { color: 'white' }]}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <CustomTimePickerModal
+        visible={showTimePicker}
+        title={`Set ${timeMode === 'open' ? 'Opening' : 'Closing'} Time`}
+        initialTime={activeDay ? editForm.operatingHours?.[activeDay]?.[timeMode] : '09:00'}
+        onClose={() => setShowTimePicker(false)}
+        onSave={handleSaveTime}
+      />
     </ScrollView>
   );
 }
@@ -1560,5 +1712,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     marginLeft: 6,
+  },
+  modalItem: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: Colors.black,
+  },
+  checkIcon: {
+    color: Colors.primary,
+    fontWeight: 'bold',
   },
 });

@@ -4,13 +4,31 @@ import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../../store/authStore';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import CustomTimePickerModal from '../../components/CustomTimePickerModal';
 import MapModal from '../../components/MapModal';
 import * as ImagePicker from 'expo-image-picker';
 import { vendorApi } from '../../services/vendorApi';
 import { Ionicons } from '@expo/vector-icons';
 
-const CATEGORIES = ['Food', 'Grocery', 'Pharmacy', 'Other'];
+const FOOD_CATEGORIES = [
+  'Biryani & Rice',
+  'Burgers & Fast Food',
+  'Pizza & Pasta',
+  'North Indian',
+  'South Indian',
+  'Chinese & Pan-Asian',
+  'Street Food & Snacks',
+  'Mithai & Desserts',
+  'Beverages & Shakes',
+  'Bakery & Cake'
+];
+
+const CATEGORIES = [
+  ...FOOD_CATEGORIES,
+  'Grocery',
+  'Pharmacy',
+  'Dairy'
+];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 // ─── Validation Rules ────────────────────────────────────────────────────────
@@ -81,7 +99,7 @@ export default function VendorRegisterScreen() {
     phone: user?.phoneNumber || '+91',
     email: user?.email || '',
     address: '',
-    category: 'Food',
+    category: 'Biryani & Rice',
     description: '',
     location: null,
     logo: '',
@@ -188,6 +206,9 @@ export default function VendorRegisterScreen() {
   
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoriesList, setCategoriesList] = useState(CATEGORIES);
+  const [showCustomCategoryModal, setShowCustomCategoryModal] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [showHoursModal, setShowHoursModal] = useState(false);
   const [activeDay, setActiveDay] = useState(null);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -242,13 +263,9 @@ export default function VendorRegisterScreen() {
     Alert.alert('Location Pinned', 'Map coordinates saved successfully!');
   };
  
-  const handleTimeChange = (event, selectedDate) => {
+  const handleSaveTime = (timeString) => {
     setShowTimePicker(false);
-    if (selectedDate && activeDay) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const timeString = `${hours}:${minutes}`;
-
+    if (activeDay) {
       const updatedDay = {
         ...formData.operatingHours[activeDay],
         [timeMode]: timeString,
@@ -307,7 +324,7 @@ export default function VendorRegisterScreen() {
       return;
     }
 
-    if (formData.category === 'Food' && !formData.logo) {
+    if (FOOD_CATEGORIES.includes(formData.category) && !formData.logo) {
       Alert.alert('Logo Required', 'As a Food category vendor, uploading a store logo is mandatory.');
       return;
     }
@@ -332,7 +349,7 @@ export default function VendorRegisterScreen() {
           <View style={styles.form}>
             {/* Logo Upload Section */}
             <View style={styles.logoUploadSection}>
-              <Text style={styles.label}>Vendor Logo {formData.category === 'Food' && <Text style={styles.required}>*</Text>}</Text>
+              <Text style={styles.label}>Vendor Logo {FOOD_CATEGORIES.includes(formData.category) && <Text style={styles.required}>*</Text>}</Text>
               <TouchableOpacity 
                 style={[styles.logoUploader, formData.logo && styles.logoUploaded]} 
                 onPress={pickAndUploadLogo}
@@ -518,22 +535,93 @@ export default function VendorRegisterScreen() {
       {/* Category Modal */}
       <Modal visible={showCategoryModal} transparent animationType="slide">
         <View style={styles.modalBg}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { maxHeight: '80%' }]}>
             <Text style={styles.modalTitle}>Select Category</Text>
-            {CATEGORIES.map(cat => (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {categoriesList.map(cat => (
+                <TouchableOpacity 
+                  key={cat} 
+                  style={styles.modalItem}
+                  onPress={() => { handleInputChange('category', cat); setShowCategoryModal(false); }}
+                >
+                  <Text style={styles.modalItemText}>{cat}</Text>
+                  {formData.category === cat && <Text style={styles.checkIcon}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+              
               <TouchableOpacity 
-                key={cat} 
-                style={styles.modalItem}
-                onPress={() => { handleInputChange('category', cat); setShowCategoryModal(false); }}
+                style={[styles.modalItem, { borderBottomWidth: 0, justifyContent: 'center', marginTop: 10 }]}
+                onPress={() => {
+                  setShowCustomCategoryModal(true);
+                }}
               >
-                <Text style={styles.modalItemText}>{cat}</Text>
-                {formData.category === cat && <Text style={styles.checkIcon}>✓</Text>}
+                <Text style={[styles.modalItemText, { color: Colors.primary, fontWeight: 'bold', textAlign: 'center' }]}>
+                  + Add Custom Category
+                </Text>
               </TouchableOpacity>
-            ))}
+            </ScrollView>
             <TouchableOpacity style={styles.closeButton} onPress={() => setShowCategoryModal(false)}>
               <Text style={styles.closeButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      {/* Custom Category Modal */}
+      <Modal visible={showCustomCategoryModal} transparent animationType="fade" onRequestClose={() => setShowCustomCategoryModal(false)}>
+        <View style={styles.modalBg}>
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ width: '100%', justifyContent: 'center', alignItems: 'center', flex: 1 }}
+          >
+            <View style={[styles.modalContent, { width: '85%', borderRadius: 20, alignSelf: 'center', maxHeight: '50%', padding: 24 }]}>
+              <Text style={styles.modalTitle}>Add Custom Category</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: 20, backgroundColor: Colors.grey }]}
+                placeholder="Enter Category Name"
+                placeholderTextColor={Colors.darkGrey}
+                value={customCategoryInput}
+                onChangeText={setCustomCategoryInput}
+                autoFocus
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <TouchableOpacity 
+                  style={[styles.closeButton, { flex: 1, marginRight: 8, marginTop: 0 }]} 
+                  onPress={() => {
+                    setShowCustomCategoryModal(false);
+                    setCustomCategoryInput('');
+                  }}
+                >
+                  <Text style={styles.closeButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.closeButton, { flex: 1, marginLeft: 8, backgroundColor: Colors.primary, marginTop: 0 }]} 
+                  onPress={() => {
+                    const cleanVal = customCategoryInput.trim();
+                    if (!cleanVal) {
+                      Alert.alert('Error', 'Category name cannot be empty.');
+                      return;
+                    }
+                    if (cleanVal.length < 3) {
+                      Alert.alert('Error', 'Category name must be at least 3 characters.');
+                      return;
+                    }
+                    if (categoriesList.some(c => c.toLowerCase() === cleanVal.toLowerCase())) {
+                      Alert.alert('Error', 'Category already exists.');
+                      return;
+                    }
+                    setCategoriesList(prev => [...prev, cleanVal]);
+                    handleInputChange('category', cleanVal);
+                    setCustomCategoryInput('');
+                    setShowCustomCategoryModal(false);
+                    setShowCategoryModal(false);
+                  }}
+                >
+                  <Text style={[styles.closeButtonText, { color: 'white' }]}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -580,15 +668,13 @@ export default function VendorRegisterScreen() {
         </View>
       </Modal>
 
-      {showTimePicker && (
-        <DateTimePicker
-          value={new Date()}
-          mode="time"
-          is24Hour={false}
-          display="default"
-          onChange={handleTimeChange}
-        />
-      )}
+      <CustomTimePickerModal
+        visible={showTimePicker}
+        title={`Set ${timeMode === 'open' ? 'Opening' : 'Closing'} Time`}
+        initialTime={activeDay ? formData.operatingHours[activeDay][timeMode] : '09:00'}
+        onClose={() => setShowTimePicker(false)}
+        onSave={handleSaveTime}
+      />
     </View>
   );
 }
