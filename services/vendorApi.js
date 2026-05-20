@@ -97,6 +97,13 @@ export const vendorApi = {
     return response.data;
   },
 
+  // Called after OTP verification to confirm phone number on the backend
+  verifyPhone: async (phoneNumber) => {
+    const response = await apiClient.post('/api/auth/verify-phone-payout', { phoneNumber });
+    return response.data;
+  },
+
+  // Alias kept for backward compatibility with any older references
   verifyPhonePayout: async (phoneNumber) => {
     const response = await apiClient.post('/api/auth/verify-phone-payout', { phoneNumber });
     return response.data;

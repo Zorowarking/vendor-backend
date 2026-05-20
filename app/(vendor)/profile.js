@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 
 import { 
@@ -194,7 +194,8 @@ export default function VendorProfile() {
         location: {
           ...profile.location,
           latitude: coords.latitude,
-          longitude: coords.longitude
+          longitude: coords.longitude,
+          address: coords.address || profile.location.address
         }
       };
       await vendorApi.updateProfile(updatedProfile);
@@ -361,13 +362,8 @@ export default function VendorProfile() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
-      {/* Banner & Logo */}
+      {/* Logo container, banner is completely hidden from UI */}
       <View style={styles.header}>
-        <Image source={{ uri: profile.banner }} style={styles.banner} />
-        <TouchableOpacity style={styles.editBannerBtn} onPress={() => pickImage('banner')}>
-          <Ionicons name="camera" size={20} color={Colors.white} />
-        </TouchableOpacity>
-        
         <View style={styles.logoContainer}>
           <Image source={{ uri: profile.logo }} style={styles.logo} />
           <TouchableOpacity style={styles.editLogoBtn} onPress={() => pickImage('logo')}>
@@ -486,6 +482,7 @@ export default function VendorProfile() {
           <Text style={styles.addressText}>{profile.location.address}</Text>
           <View style={styles.mapContainer}>
             <MapView
+              key={`${profile.location.latitude}-${profile.location.longitude}`}
               style={styles.map}
               initialRegion={{
                 latitude: profile.location.latitude,
@@ -560,13 +557,28 @@ export default function VendorProfile() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>KYC & Compliance</Text>
+          <Text style={styles.sectionTitle}>KYC &amp; Compliance</Text>
           <View style={styles.kycRow}>
             <View style={[styles.badge, styles.badgeApproved]}>
               <Text style={styles.badgeText}>{profile.kycStatus}</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/kyc')}>
-              <Text style={styles.linkText}>Update Docs</Text>
+            {/* During UNDER_REVIEW, disallow editing docs — route to status page instead */}
+            <TouchableOpacity
+              onPress={() => {
+                const status = profile.kycStatus;
+                if (status === 'UNDER_REVIEW' || status === 'KYC_SUBMITTED') {
+                  router.push('/kyc/status');
+                } else {
+                  router.push('/kyc');
+                }
+              }}
+            >
+              <Text style={styles.linkText}>
+                {(profile.kycStatus === 'UNDER_REVIEW' || profile.kycStatus === 'KYC_SUBMITTED')
+                  ? 'View Status'
+                  : 'Update Docs'
+                }
+              </Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.sectionSubtitle}>Identification documents and business licenses.</Text>
@@ -708,14 +720,21 @@ export default function VendorProfile() {
                 />
               </View>
 
+              {/* ── Email: Always locked, auto-populated from Firebase auth ── */}
               <View style={styles.formGroup}>
-                <Text style={styles.inputLabel}>Email (Locked)</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 8, backgroundColor: '#EFF6FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                    <Ionicons name="lock-closed" size={10} color="#1E40AF" />
+                    <Text style={{ fontSize: 10, color: '#1E40AF', marginLeft: 3, fontWeight: '600' }}>Auto-filled from account</Text>
+                  </View>
+                </View>
                 <TextInput
-                  style={[styles.textInput, editForm.email ? { backgroundColor: '#F0F0F0', color: '#888' } : {}]}
-                  value={editForm.email}
-                  editable={!editForm.email}
-                  onChangeText={(val) => setEditForm(prev => ({ ...prev, email: val }))}
+                  style={[styles.textInput, { backgroundColor: '#F3F4F6', color: '#6B7280' }]}
+                  value={editForm.email || profile?.email || ''}
+                  editable={false}
                   keyboardType="email-address"
+                  placeholder="Email auto-populated from account"
                 />
               </View>
 
@@ -740,41 +759,42 @@ export default function VendorProfile() {
                 />
               </View>
 
-              <Text style={[styles.inputLabel, { marginTop: 10, fontWeight: 'bold', color: Colors.black }]}>Store Images</Text>
-              <View style={styles.formRow}>
-                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.inputLabel}>Logo Image</Text>
-                  <TouchableOpacity 
-                    style={styles.imageUploadBox} 
-                    onPress={() => pickImage('logo')}
-                  >
-                    {profile?.logo ? (
-                      <Image source={{ uri: profile.logo }} style={styles.uploadPreview} />
-                    ) : (
-                      <View style={styles.uploadPlaceholderBox}>
-                        <Ionicons name="image-outline" size={24} color={Colors.darkGrey} />
-                        <Text style={styles.uploadPlaceholderText}>Upload Logo</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
+              {/* ── Store Logo: Image picker only, no text editing ─────── */}
+              <View style={styles.formGroup}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>Store Logo</Text>
+                  <Text style={{ fontSize: 11, color: Colors.subText, marginLeft: 8 }}>Tap to change</Text>
                 </View>
-                
-                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.inputLabel}>Banner Image</Text>
-                  <TouchableOpacity 
-                    style={styles.imageUploadBox} 
-                    onPress={() => pickImage('banner')}
-                  >
-                    {profile?.banner ? (
-                      <Image source={{ uri: profile.banner }} style={styles.uploadPreview} />
-                    ) : (
-                      <View style={styles.uploadPlaceholderBox}>
-                        <Ionicons name="image-outline" size={24} color={Colors.darkGrey} />
-                        <Text style={styles.uploadPlaceholderText}>Upload Banner</Text>
+                <TouchableOpacity
+                  style={styles.logoPickerBox}
+                  onPress={() => pickImage('logo')}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <View style={styles.uploadPlaceholderBox}>
+                      <ActivityIndicator color={Colors.primary} />
+                      <Text style={[styles.uploadPlaceholderText, { marginTop: 8 }]}>Uploading...</Text>
+                    </View>
+                  ) : profile?.logo ? (
+                    <View style={{ width: '100%', position: 'relative' }}>
+                      <Image
+                        source={{ uri: profile.logo }}
+                        style={styles.logoPreviewImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.logoEditOverlay}>
+                        <Ionicons name="camera" size={20} color={Colors.white} />
+                        <Text style={styles.logoEditOverlayText}>Change Logo</Text>
                       </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                    </View>
+                  ) : (
+                    <View style={styles.uploadPlaceholderBox}>
+                      <Ionicons name="image-outline" size={32} color={Colors.darkGrey} />
+                      <Text style={styles.uploadPlaceholderText}>Tap to Upload Logo</Text>
+                      <Text style={{ fontSize: 11, color: Colors.subText, marginTop: 2 }}>JPG or PNG · Max 5MB</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity 
@@ -1125,6 +1145,188 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
+  },
+  timeBox: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: Colors.grey,
+  },
+  timeText: {
+    fontSize: 14,
+    color: Colors.black,
+  },
+  timeSeparator: {
+    marginHorizontal: 8,
+    color: Colors.darkGrey,
+  },
+  closeButton: {
+    marginTop: 20,
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: Colors.grey,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  selectorInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.grey,
+  },
+  selectorText: {
+    fontSize: 14,
+    color: Colors.black,
+  },
+  lockedNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  lockedNoteText: {
+    fontSize: 12,
+    color: Colors.subText,
+    marginLeft: 6,
+    fontStyle: 'italic',
+  },
+  infoRow: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 12
+  },
+  infoText: {
+    marginLeft: 12
+  },
+  infoLabel: {
+    fontSize: 12, color: Colors.subText
+  },
+  infoValue: {
+    fontSize: 16, color: Colors.black, fontWeight: '500'
+  },
+  addressText: {
+    fontSize: 14, color: Colors.text, marginBottom: 8
+  },
+  mapContainer: {
+    height: 150, borderRadius: 8, overflow: 'hidden', marginTop: 8
+  },
+  map: {
+    flex: 1
+  },
+  kycRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8
+  },
+  badge: {
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12
+  },
+  badgeApproved: {
+    backgroundColor: Colors.success + '20'
+  },
+  badgeText: {
+    fontSize: 12, fontWeight: 'bold'
+  },
+  linkText: {
+    color: Colors.primary, fontSize: 14, fontWeight: '600'
+  },
+  flagsContainer: {
+    marginTop: 12
+  },
+  flagChip: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.error + '10',
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignSelf: 'flex-start'
+  },
+  flagText: {
+    marginLeft: 6, color: Colors.error, fontSize: 12, fontWeight: '500'
+  },
+  successText: {
+    fontSize: 14, color: Colors.success, marginTop: 12
+  },
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    padding: 16, backgroundColor: Colors.white, borderRadius: 12,
+    marginTop: 8, marginBottom: 40, borderWidth: 1, borderColor: Colors.error + '40'
+  },
+  logoutBtnText: {
+    marginLeft: 8, color: Colors.error, fontSize: 16, fontWeight: 'bold'
+  },
+  version: { textAlign: 'center', color: Colors.subText, marginTop: 25, fontSize: 12, marginBottom: 10 },
+  devTools: {
+    marginTop: 20,
+    backgroundColor: Colors.white,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+  },
+  devToolsTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: Colors.subText,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  devToolsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  devBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  devBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: Colors.subText,
+    marginBottom: 20,
+    marginTop: -8,
+  },
+  commissionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: Colors.grey,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  commissionCardActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.primary,
+    elevation: 4,
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
     borderColor: Colors.subText,
     marginRight: 16,
     justifyContent: 'center',
@@ -1134,7 +1336,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   radioInner: {
-    width: 12, height: 12,
+    width: 12,
+    height: 12,
     borderRadius: 6,
     backgroundColor: Colors.primary,
   },
@@ -1150,51 +1353,77 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end'
-  },
-  modalContent: {
-    backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, height: '80%'
-  },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20
-  },
-  modalTitle: {
-    fontSize: 20, fontWeight: 'bold', color: Colors.black
-  },
-  formGroup: {
-    marginBottom: 16
-  },
-  formRow: {
-    flexDirection: 'row'
-  },
-  inputLabel: {
-    fontSize: 14, color: Colors.subText, marginBottom: 6
-  },
-  textInput: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 8,
-    padding: 12, fontSize: 16, color: Colors.black, backgroundColor: Colors.grey
-  },
-  textArea: {
-    height: 80, textAlignVertical: 'top'
-  },
-  saveButton: {
-    backgroundColor: Colors.primary, padding: 16, borderRadius: 12,
-    alignItems: 'center', marginTop: 20, marginBottom: 20
-  },
-  saveButtonText: {
-    color: Colors.white, fontSize: 16, fontWeight: 'bold'
-  },
-  disabledButton: {
-    opacity: 0.6
-  },
+  // ── Modal & Form Styles ──────────────────────────────────────────
   modalBg: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    height: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  formGroup: {
+    marginBottom: 16,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.black,
+    marginBottom: 6,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: Colors.black,
+    backgroundColor: Colors.grey,
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  saveButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   dayRow: {
     flexDirection: 'row',
@@ -1297,5 +1526,39 @@ const styles = StyleSheet.create({
     color: Colors.subText,
     marginTop: 4,
     fontWeight: '500',
-  }
+  },
+  logoPickerBox: {
+    width: '100%',
+    height: 140,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FAFAFA',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoPreviewImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+  },
+  logoEditOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  logoEditOverlayText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
 });

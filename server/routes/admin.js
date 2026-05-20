@@ -3,9 +3,22 @@ const router = express.Router();
 const { prisma } = require('../lib/prisma');
 const { emitAccountStatusUpdate, emitProductStatusUpdate } = require('../lib/socket');
 
-// Middleware to simulate admin check (in production, use roles)
+// Admin authentication middleware
+// Validates the X-Admin-Key header against ADMIN_SECRET env var
 const requireAdmin = (req, res, next) => {
-  // Simple check for now - can be expanded to check firebase token for admin claim
+  const adminSecret = process.env.ADMIN_SECRET;
+  const providedKey = req.headers['x-admin-key'];
+
+  // If no ADMIN_SECRET is set in env, allow access in dev (with warning)
+  if (!adminSecret) {
+    console.warn('[ADMIN] WARNING: ADMIN_SECRET not set. Admin routes are OPEN. Set ADMIN_SECRET in production.');
+    return next();
+  }
+
+  if (!providedKey || providedKey !== adminSecret) {
+    return res.status(403).json({ error: 'Forbidden: Invalid admin credentials.' });
+  }
+
   next();
 };
 
@@ -271,8 +284,8 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
         where: {
           role: 'VENDOR',
           OR: [
-            { fcmToken: { not: null, not: { startsWith: 'mock_' } } },
-            { pushToken: { not: null, not: { startsWith: 'mock_' } } }
+            { fcmToken: { not: null } },
+            { pushToken: { not: null } }
           ]
         }
       });
@@ -283,8 +296,8 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
         where: {
           role: 'CUSTOMER',
           OR: [
-            { fcmToken: { not: null, not: { startsWith: 'mock_' } } },
-            { pushToken: { not: null, not: { startsWith: 'mock_' } } }
+            { fcmToken: { not: null } },
+            { pushToken: { not: null } }
           ]
         }
       });
@@ -299,11 +312,12 @@ router.post('/broadcast-notification', requireAdmin, async (req, res) => {
     }
 
     const fcm = require('../lib/fcm');
+    // Use uppercase ADMIN_BROADCAST to match client-side notification handler type check
     const result = await fcm.broadcastToUsers(audience, {
       title,
       body: message,
-      type: 'admin_broadcast',
-      data: dataPayload || {}
+      type: 'ADMIN_BROADCAST',
+      data: { ...(dataPayload || {}), type: 'ADMIN_BROADCAST', channelId: 'admin' }
     });
 
     res.json({
@@ -434,6 +448,7 @@ router.post('/customer/:id/enable', requireAdmin, async (req, res) => {
 router.post('/vendor/:id/suspend', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params; // vendor ID
+    const { reason } = req.body;
     
     // Find vendor's profile
     const vendor = await prisma.vendor.findUnique({
@@ -450,9 +465,29 @@ router.post('/vendor/:id/suspend', requireAdmin, async (req, res) => {
       data: { profileStatus: 'SUSPENDED' }
     });
 
+    // Update vendor accountStatus too
+    await prisma.vendor.update({
+      where: { id },
+      data: { accountStatus: 'SUSPENDED' }
+    }).catch(e => console.warn('[ADMIN] Vendor accountStatus update failed:', e.message));
+
+    // Emit real-time update
+    try { emitAccountStatusUpdate(vendor.id, 'SUSPENDED'); } catch (_) {}
+
+    // Send FCM push notification to inform vendor
     try {
-      emitAccountStatusUpdate(vendor.id, 'SUSPENDED');
-    } catch (_) {}
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(vendor.id, {
+        title: 'Account Suspended',
+        body: reason
+          ? `Your vendor account has been suspended. Reason: ${reason}`
+          : 'Your vendor account has been permanently suspended. Please contact support.',
+        type: 'KYC_STATUS_UPDATED',
+        channelId: 'kyc'
+      });
+    } catch (notifErr) {
+      console.warn('[ADMIN] Suspend notification failed (non-fatal):', notifErr.message);
+    }
 
     res.json({ success: true, message: 'Vendor suspended forever', profile: updatedProfile });
   } catch (error) {
@@ -467,7 +502,7 @@ router.post('/vendor/:id/suspend', requireAdmin, async (req, res) => {
 router.post('/vendor/:id/disable', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { hours } = req.body;
+    const { hours, reason } = req.body;
     
     if (!hours || isNaN(hours) || Number(hours) <= 0) {
       return res.status(400).json({ error: 'Valid temporary duration (hours) is required' });
@@ -490,9 +525,23 @@ router.post('/vendor/:id/disable', requireAdmin, async (req, res) => {
       data: { profileStatus: statusString }
     });
 
+    // Emit real-time update
+    try { emitAccountStatusUpdate(vendor.id, statusString); } catch (_) {}
+
+    // Send FCM push notification
     try {
-      emitAccountStatusUpdate(vendor.id, statusString);
-    } catch (_) {}
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(vendor.id, {
+        title: 'Account Temporarily Disabled',
+        body: reason
+          ? `Your account has been temporarily disabled for ${hours} hours. Reason: ${reason}`
+          : `Your account has been temporarily disabled for ${hours} hours. Contact support for details.`,
+        type: 'KYC_STATUS_UPDATED',
+        channelId: 'kyc'
+      });
+    } catch (notifErr) {
+      console.warn('[ADMIN] Disable notification failed (non-fatal):', notifErr.message);
+    }
 
     res.json({ 
       success: true, 
@@ -527,9 +576,27 @@ router.post('/vendor/:id/enable', requireAdmin, async (req, res) => {
       data: { profileStatus: 'APPROVED' }
     });
 
+    // Restore vendor accountStatus to APPROVED
+    await prisma.vendor.update({
+      where: { id },
+      data: { accountStatus: 'APPROVED' }
+    }).catch(e => console.warn('[ADMIN] Vendor accountStatus restore failed:', e.message));
+
+    // Emit real-time update
+    try { emitAccountStatusUpdate(vendor.id, 'APPROVED'); } catch (_) {}
+
+    // Send FCM push notification to inform vendor
     try {
-      emitAccountStatusUpdate(vendor.id, 'APPROVED');
-    } catch (_) {}
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(vendor.id, {
+        title: 'Account Restored',
+        body: 'Your vendor account has been reactivated. You can now log in and manage your store.',
+        type: 'KYC_APPROVED',
+        channelId: 'kyc'
+      });
+    } catch (notifErr) {
+      console.warn('[ADMIN] Enable notification failed (non-fatal):', notifErr.message);
+    }
 
     res.json({ success: true, message: 'Vendor account enabled successfully', profile: updatedProfile });
   } catch (error) {

@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 
 
 import { useRouter } from 'expo-router';
@@ -432,7 +433,14 @@ const ActiveOrderCard = React.memo(({ order, router }) => {
   };
 
   return (
-    <TouchableOpacity style={styles.card} onPress={() => router.push(`/orders/${order.id}`)}>
+    <TouchableOpacity 
+      style={styles.card} 
+      onPress={() => {
+        // Use getState() for store access outside of React hook scope
+        useVendorStore.getState().markOrderAsViewed(order.id);
+        router.push(`/orders/${order.id}`);
+      }}
+    >
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
           <Text style={styles.orderId}>Order #{order.id.substring(0, 8)}</Text>
@@ -531,6 +539,15 @@ export default function VendorOrdersDashboard() {
   const removeIncomingOrder = useVendorStore(state => state.removeIncomingOrder);
   const addActiveOrder = useVendorStore(state => state.addActiveOrder);
   const updateOrder = useVendorStore(state => state.updateOrder);
+  const markAllIncomingAsViewed = useVendorStore(state => state.markAllIncomingAsViewed);
+  const markOrderAsViewed = useVendorStore(state => state.markOrderAsViewed);
+
+  // ── Clear badge when vendor opens the orders tab ────────────────────────────
+  useFocusEffect(
+    React.useCallback(() => {
+      markAllIncomingAsViewed();
+    }, [markAllIncomingAsViewed])
+  );
 
   const [activeTab, setActiveTab] = useState('ACTIVE'); // 'ACTIVE' or 'HISTORY'
   const [loading, setLoading] = useState(false);

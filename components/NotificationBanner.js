@@ -69,7 +69,7 @@ export default function NotificationBanner({ notification, onDismiss, onPress })
   const { type, senderName, timestamp } = notification.data || {};
 
   const getIconName = () => {
-    switch (type) {
+    switch (type ? type.toLowerCase() : '') {
       case 'new_order': return 'cart';
       case 'pickup_request': return 'bicycle';
       case 'kyc_approved': return 'checkmark-circle';

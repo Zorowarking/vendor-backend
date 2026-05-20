@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,15 +16,33 @@ export default function KYCIndex() {
   const setProfileStatus = useAuthStore((state) => state.setProfileStatus);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const registrationData = useAuthStore((state) => state.vendorRegistrationData);
+  const [vendorCategory, setVendorCategory] = useState(registrationData?.category || 'Food');
+
+  useEffect(() => {
+    // Dynamically retrieve latest category from vendor profile in background
+    vendorApi.getProfile()
+      .then((profile) => {
+        if (profile && profile.category) {
+          setVendorCategory(profile.category);
+        }
+      })
+      .catch((e) => console.log('[KYC] Background profile category fetch failed:', e.message));
+  }, []);
 
   // Debugging log to trace role issues
-  console.log('KYC Index - Current Role:', role);
+  console.log('KYC Index - Current Role:', role, 'Category:', vendorCategory);
 
   const vendorDocs = [
     { id: 'gov_id', title: 'Government ID', subtitle: 'Passport, License, or National ID', required: true },
     { id: 'biz_proof', title: 'Business Proof', subtitle: 'Registration, GST, or Trade License', required: true },
     { id: 'pan', title: 'PAN Card', subtitle: 'Optional for tax purposes', required: false },
     { id: 'address_proof', title: 'Address Proof', subtitle: 'Utility bill or Rent agreement', required: true },
+  ];
+
+  const docs = [
+    ...vendorDocs,
+    ...(vendorCategory === 'Food' ? [{ id: 'isfcsc', title: 'ISFCSC License (Food only)', subtitle: 'Mandatory Food Safety/FSSAI License Certificate', required: true }] : [])
   ];
 
   // Safety check: If role is missing, don't default to Rider
@@ -43,8 +61,6 @@ export default function KYCIndex() {
     );
   }
 
-  const docs = vendorDocs;
-
   const handleSubmitKYC = async () => {
     // Check required docs
     const missingDocs = docs.filter(doc => doc.required && !kycDocs[doc.id]);
@@ -61,7 +77,8 @@ export default function KYCIndex() {
       panUrl: kycDocs.pan?.url,
       addressProofUrl: kycDocs.address_proof?.url,
       drivingLicenseUrl: kycDocs.dl?.url,
-      vehicleRegUrl: kycDocs.rc?.url
+      vehicleRegUrl: kycDocs.rc?.url,
+      isfcscUrl: kycDocs.isfcsc?.url || null
     };
 
     setIsSubmitting(true);

@@ -285,6 +285,12 @@ class OrderService {
       } else if (cleanStatus === 'ready_for_pickup') {
         title = 'Order Ready!';
         body = 'Your order is ready for pickup or rider assignment.';
+      } else if (cleanStatus === 'out_for_delivery' || cleanStatus === 'picked_up' || cleanStatus === 'dispatched') {
+        title = 'Out for Delivery!';
+        body = 'Great news! Your order is out for delivery with our rider.';
+      } else if (cleanStatus === 'delivered') {
+        title = 'Order Delivered!';
+        body = 'Your order has been successfully delivered. Enjoy your meal!';
       } else if (cleanStatus === 'cancelled_by_vendor' || cleanStatus === 'cancelled') {
         title = 'Order Cancelled';
         body = 'We are sorry, your order was cancelled by the store.';

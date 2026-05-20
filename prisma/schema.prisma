@@ -261,6 +261,7 @@ model VendorKyc {
   businessProofUrl  String?   @map("business_proof_url")
   panUrl            String?   @map("pan_url")
   addressProofUrl   String?   @map("address_proof_url")
+  isfcscUrl         String?   @map("isfcsc_url")
   submissionRound   Int       @default(1) @map("submission_round")
   status            String    @default("submitted") @db.VarChar(30)
   reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz(6)

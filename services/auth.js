@@ -77,7 +77,7 @@ export const authService = {
   /**
    * Internal helper to sync user data with the backend
    */
-  _syncUser: async (user, sessionToken) => {
+  _syncUser: async (user, sessionToken, email) => {
     if (authService._syncInProgress) {
       console.log('[AUTH] Sync already in progress, skipping duplicate call.');
       const currentAuth = useAuthStore.getState();
@@ -90,8 +90,11 @@ export const authService = {
     let profileStatus = 'PENDING';
     let phoneVerified = false;
 
+    // Use passed email or fallback to firebase user email
+    const activeEmail = email || user.email;
+
     try {
-      const syncResponse = await axios.post(`${API_BASE_URL}/api/auth/sync`, {}, {
+      const syncResponse = await axios.post(`${API_BASE_URL}/api/auth/sync`, { email: activeEmail }, {
         headers: { Authorization: `Bearer ${sessionToken}` }
       });
       
@@ -106,7 +109,7 @@ export const authService = {
       if (syncResponse.data.success && !role) {
         console.log('--- AUTO-ASSIGNING VENDOR ROLE ---');
         try {
-          const roleResponse = await axios.post(`${API_BASE_URL}/api/auth/role`, { role: 'VENDOR' }, {
+          const roleResponse = await axios.post(`${API_BASE_URL}/api/auth/role`, { role: 'VENDOR', email: activeEmail }, {
             headers: { Authorization: `Bearer ${sessionToken}` }
           });
           if (roleResponse.data.success) {
@@ -129,7 +132,7 @@ export const authService = {
     }
 
     useAuthStore.getState().login({
-      user: { uid: user.uid, phoneNumber: user.phoneNumber, email: user.email },
+      user: { uid: user.uid, phoneNumber: user.phoneNumber, email: activeEmail || user.email },
       role,
       profileStatus,
       sessionToken,
@@ -333,7 +336,7 @@ export const authService = {
   /**
    * Verifies an OTP code using the confirmationResult
    */
-  verifyOTP: async (confirmationResult, code) => {
+  verifyOTP: async (confirmationResult, code, email) => {
     try {
       console.log('--- STARTING VERIFY_OTP ---');
       
@@ -346,7 +349,7 @@ export const authService = {
       const user = result.user;
       const sessionToken = await user.getIdToken();
 
-      return await authService._syncUser(user, sessionToken);
+      return await authService._syncUser(user, sessionToken, email);
 
     } catch (error) {
       console.error('--- VERIFY_OTP ERROR ---', error);

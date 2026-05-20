@@ -12,7 +12,7 @@ export default function OTPVerifyScreen() {
   const [loading, setLoading] = useState(false);
   
   const router = useRouter();
-  const { phone } = useLocalSearchParams();
+  const { phone, email } = useLocalSearchParams();
   const inputRefs = useRef([]);
 
 
@@ -81,7 +81,7 @@ export default function OTPVerifyScreen() {
         return;
       }
 
-      await authService.verifyOTP(confirmationResult, code);
+      await authService.verifyOTP(confirmationResult, code, email);
       console.log('UI: Verification successful!');
       setLoading(false); // Clear spinner
       hasSucceeded.current = true; // Mark as successful to block ANY future calls

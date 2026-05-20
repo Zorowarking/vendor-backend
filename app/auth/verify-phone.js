@@ -111,8 +111,8 @@ export default function VerifyPhoneScreen() {
       await confirmationResult.confirm(verificationCode);
       console.log('[VERIFY-PHONE] Firebase confirmation success. Updating database...');
 
-      // Notify backend that OTP verification succeeded and activate payout
-      const response = await vendorApi.verifyPhonePayout(phone);
+      // Notify backend that OTP verification succeeded and activate vendor status
+      const response = await vendorApi.verifyPhone(phone);
       
       if (response && response.success) {
         // Sync Zustand store state
@@ -173,20 +173,20 @@ export default function VerifyPhoneScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Text style={styles.title}>Activate Payouts</Text>
+          <Text style={styles.title}>Verify Your Phone</Text>
           <Text style={styles.subtitle}>
-            Your vendor profile is APPROVED. Please complete this one-time secure verification to link your registered phone number.
+            Your vendor profile is APPROVED. Please complete this one-time verification to confirm your registered phone number and access your dashboard.
           </Text>
         </View>
 
         {!otpSent ? (
           <View style={styles.content}>
             <View style={styles.numberCard}>
-              <Text style={styles.cardLabel}>Registered Payout Number</Text>
+              <Text style={styles.cardLabel}>Your Registered Phone Number</Text>
               {isPhoneEditable ? (
                 <View>
                   <Text style={{ fontSize: 13, color: Colors.subText, marginBottom: 8 }}>
-                    Your registered phone number was not found. Please enter your payout phone number:
+                    We could not find your registered number. Please enter it below:
                   </Text>
                   <TextInput
                     style={[styles.input, { fontSize: 18, fontWeight: 'bold', marginTop: 5, marginBottom: 10 }]}
@@ -202,8 +202,8 @@ export default function VerifyPhoneScreen() {
               )}
               <Text style={styles.cardDesc}>
                 {isPhoneEditable
-                  ? "Please enter your active phone number. You will receive an SMS containing your verification code here."
-                  : "This number was submitted during Step 2. You will receive an SMS containing your verification code here."}
+                  ? "Please enter your active phone number. You will receive a verification SMS here."
+                  : "This number was submitted during registration. You will receive a verification SMS here."}
               </Text>
             </View>
 
@@ -250,7 +250,7 @@ export default function VerifyPhoneScreen() {
               {loading ? (
                 <ActivityIndicator color={Colors.white} />
               ) : (
-                <Text style={styles.buttonText}>Verify OTP & Activate</Text>
+                <Text style={styles.buttonText}>Verify & Continue →</Text>
               )}
             </TouchableOpacity>
           </View>

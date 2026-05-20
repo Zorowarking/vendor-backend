@@ -1,278 +1,164 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator, NativeModules } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Image, KeyboardAvoidingView, Platform, ScrollView,
+  Alert, ActivityIndicator
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { authService } from '../../services/auth';
 
-let GoogleSignin = null;
-let statusCodes = {};
-
-const hasGoogleSigninModule = !!NativeModules.RNGoogleSignin;
-
-if (hasGoogleSigninModule) {
-  try {
-    const GoogleModule = require('@react-native-google-signin/google-signin');
-    GoogleSignin = GoogleModule.GoogleSignin;
-    statusCodes = GoogleModule.statusCodes;
-  } catch (e) {
-    console.warn('Google Sign-In module found but failed to load:', e.message);
-  }
-} else {
-  console.log('[AUTH] Running in Expo Go: Native Google Sign-In disabled.');
-}
+// ─── REMOVED: Google Sign-In ─────────────────────────────────────────────────
+// Google Sign-In has been intentionally removed from the vendor auth page.
+// All vendor authentication is now done exclusively via Phone OTP.
+// The authService.googleLogin() function is preserved on the backend
+// for any future re-introduction, but the UI entry point is removed.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(false);
-  const [hasNativeGoogle, setHasNativeGoogle] = useState(true);
-
-  // Tabbed Auth State
-  const [activeTab, setActiveTab] = useState('google'); // 'google' | 'email'
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState(null);
+  const [emailError, setEmailError] = useState(null);
 
-  const handleEmailAuth = async () => {
-    if (!email || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
-      return;
+  const validatePhone = (val) => {
+    if (!val || val.length !== 10 || !/^\d+$/.test(val)) {
+      return 'Please enter a valid 10-digit phone number.';
     }
-    if (!password || password.length < 6) {
-      Alert.alert('Invalid Password', 'Password must be at least 6 characters.');
-      return;
-    }
-    if (isSignUp && !fullName.trim()) {
-      Alert.alert('Missing Name', 'Please enter your full name.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      let result;
-      if (isSignUp) {
-        result = await authService.signUpWithEmail(email, password, fullName);
-      } else {
-        result = await authService.loginWithEmail(email, password);
-      }
-      console.log('Vendor UI Email Auth Success:', result);
-      // Automatic routing is handled globally in _layout.js via useAuthStore state update!
-    } catch (error) {
-      let errorMsg = error.message || 'An error occurred during authentication.';
-      if (error.code === 'auth/user-not-found' || error.message?.includes('user-not-found')) {
-        errorMsg = 'No account found with this email. Switch to "Sign Up" below to create one!';
-      } else if (error.code === 'auth/wrong-password' || error.message?.includes('wrong-password')) {
-        errorMsg = 'Incorrect password. Please try again.';
-      } else if (error.code === 'auth/email-already-in-use' || error.message?.includes('email-already-in-use')) {
-        errorMsg = 'This email is already registered. Switch to "Login" below!';
-      }
-      Alert.alert('Authentication Failed', errorMsg);
-    } finally {
-      setLoading(false);
-    }
+    return null;
   };
 
-  // Configure Google Sign-In
-  useEffect(() => {
-    if (!hasGoogleSigninModule) {
-      console.log('[AUTH] Native Google Sign-In module not found. Likely running in Expo Go.');
-      setHasNativeGoogle(false);
-      return;
+  const validateEmail = (val) => {
+    if (!val.trim()) return 'Email address is required.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim())) {
+      return 'Please enter a valid email address.';
     }
-
-    try {
-      GoogleSignin.configure({
-        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-        offlineAccess: false,
-      });
-      setHasNativeGoogle(true);
-    } catch (e) {
-      console.error('Error configuring Google Sign-In:', e);
-      setHasNativeGoogle(false);
-    }
-  }, []);
-
-  const handleGoogleLogin = async () => {
-    if (!hasNativeGoogle) {
-      Alert.alert(
-        'Feature Unavailable',
-        'Google Sign-In requires a custom APK build. It does not work inside the "Expo Go" app.'
-      );
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      const idToken = userInfo?.data?.idToken || userInfo?.idToken;
-
-      if (idToken) {
-        console.log('UI: Starting Google Login...');
-        await authService.googleLogin(idToken);
-        console.log('UI: Google Login Success');
-      }
-    } catch (error) {
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        console.log('User cancelled login flow');
-      } else if (error.code === statusCodes.IN_PROGRESS) {
-        console.log('Login in progress');
-      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-        Alert.alert('Error', 'Play services not available or outdated.');
-      } else {
-        console.error('UI: Google Login Failed', error);
-        Alert.alert('Login Failed', error.message || 'An error occurred during Google Sign-In.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    return null;
   };
 
   const handleSendOTP = async () => {
     if (loading) return;
 
-    if (phoneNumber.length !== 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit phone number');
-      return;
-    }
-    
+    const cleanPhone = phoneNumber.trim();
+    const cleanEmail = email.trim();
+
+    // Validate both fields and surface inline errors
+    const pErr = validatePhone(cleanPhone);
+    const eErr = validateEmail(cleanEmail);
+    setPhoneError(pErr);
+    setEmailError(eErr);
+
+    if (pErr || eErr) return;
+
     setLoading(true);
-    console.log('UI: Requesting OTP for', phoneNumber);
-    
+    console.log('[AUTH] Requesting OTP for', cleanPhone);
+
     try {
-      const fullPhone = `+91${phoneNumber}`;
-      
+      const fullPhone = `+91${cleanPhone}`;
+
+      // Native Firebase auth automatically handles APNs/Play Integrity silently
       const confirmationResult = await authService.sendOTP(fullPhone);
-      
+
       authService._confirmationResult = confirmationResult;
 
-      console.log('UI: OTP Request Success, Navigating...');
-      router.push({ pathname: '/auth/otp-verify', params: { phone: phoneNumber } });
+      console.log('[AUTH] OTP sent successfully. Navigating to verification...');
+      router.push({
+        pathname: '/auth/otp-verify',
+        params: { phone: cleanPhone, email: cleanEmail },
+      });
     } catch (err) {
-      console.error('UI: OTP Request Failed', err);
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+      console.error('[AUTH] OTP Request Failed:', err);
+      Alert.alert(
+        'Failed to Send OTP',
+        err.message || 'Could not send verification code. Please check your number and try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Header ──────────────────────────────────────────────── */}
         <View style={styles.header}>
-          <Image 
-            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1160/1160358.png' }} 
+          <Image
+            source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1160/1160358.png' }}
             style={styles.logo}
           />
-          <Text style={styles.title}>Vendors App</Text>
-          <Text style={styles.subtitle}>Sign in with your Google account to get started</Text>
+          <Text style={styles.title}>Vendor Portal</Text>
+          <Text style={styles.subtitle}>
+            Enter your mobile number and email to register or sign in
+          </Text>
         </View>
 
-        {/* Tab Switcher */}
-        <View style={styles.tabContainer}>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'google' && styles.activeTabButton]}
-            onPress={() => { setActiveTab('google'); setIsSignUp(false); }}
-          >
-            <Text style={[styles.tabText, activeTab === 'google' && styles.activeTabText]}>Google Account</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'email' && styles.activeTabButton]}
-            onPress={() => setActiveTab('email')}
-          >
-            <Text style={[styles.tabText, activeTab === 'email' && styles.activeTabText]}>Email & Password</Text>
-          </TouchableOpacity>
-        </View>
-
-        {activeTab === 'google' ? (
-          <TouchableOpacity 
-            style={[styles.googleButton, loading && { opacity: 0.5 }]}
-            onPress={handleGoogleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={Colors.primary} />
-            ) : (
-              <>
-                <Image 
-                  source={{ uri: 'https://cdn-icons-png.flaticon.com/512/300/300221.png' }} 
-                  style={styles.googleIcon} 
-                />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.emailContainer}>
-            {isSignUp && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Full Name</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Enter your full name"
-                  placeholderTextColor={Colors.subText}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  editable={!loading}
-                />
-              </View>
-            )}
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email Address</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter email (e.g. yahoo, college, gmail)"
-                placeholderTextColor={Colors.subText}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
-                editable={!loading}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Password</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter password"
-                placeholderTextColor={Colors.subText}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                editable={!loading}
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.actionButton, loading && styles.disabledButton]}
-              onPress={handleEmailAuth}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={Colors.white} />
-              ) : (
-                <Text style={styles.actionButtonText}>{isSignUp ? 'Create Vendor Account' : 'Login'}</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.toggleLink}
-              onPress={() => setIsSignUp(!isSignUp)}
-              disabled={loading}
-            >
-              <Text style={styles.toggleLinkText}>
-                {isSignUp ? 'Already have an account? Login' : "Don't have an account? Sign Up"}
-              </Text>
-            </TouchableOpacity>
+        {/* ── Phone Number ─────────────────────────────────────────── */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Mobile Number *</Text>
+          <View style={[styles.phoneInput, phoneError && styles.inputError]}>
+            <Text style={styles.countryCode}>+91</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter 10-digit number"
+              placeholderTextColor={Colors.darkGrey}
+              keyboardType="phone-pad"
+              maxLength={10}
+              value={phoneNumber}
+              onChangeText={(v) => {
+                setPhoneNumber(v);
+                if (phoneError) setPhoneError(validatePhone(v));
+              }}
+              onBlur={() => setPhoneError(validatePhone(phoneNumber))}
+              editable={!loading}
+            />
           </View>
-        )}
+          {phoneError ? <Text style={styles.fieldError}>⚠ {phoneError}</Text> : null}
+        </View>
+
+        {/* ── Email ────────────────────────────────────────────────── */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Email Address *</Text>
+          <TextInput
+            style={[styles.textInput, emailError && styles.inputError]}
+            placeholder="Enter email address"
+            placeholderTextColor={Colors.darkGrey}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={(v) => {
+              setEmail(v);
+              if (emailError) setEmailError(validateEmail(v));
+            }}
+            onBlur={() => setEmailError(validateEmail(email))}
+            editable={!loading}
+          />
+          {emailError ? <Text style={styles.fieldError}>⚠ {emailError}</Text> : null}
+        </View>
+
+        {/* ── Send OTP ──────────────────────────────────────────────── */}
+        <TouchableOpacity
+          style={[styles.actionButton, loading && styles.disabledButton]}
+          onPress={handleSendOTP}
+          disabled={loading}
+        >
+          {loading ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ActivityIndicator color={Colors.white} style={{ marginRight: 8 }} />
+              <Text style={styles.actionButtonText}>Sending OTP...</Text>
+            </View>
+          ) : (
+            <Text style={styles.actionButtonText}>Send OTP Verification</Text>
+          )}
+        </TouchableOpacity>
 
         <Text style={styles.footerText}>
           By continuing, you agree to our Terms of Service and Privacy Policy.
@@ -282,6 +168,7 @@ export default function LoginScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -289,170 +176,87 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     padding: 24,
-    paddingTop: 80,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 36,
   },
   logo: {
-    width: 100,
-    height: 100,
-    marginBottom: 20,
+    width: 90,
+    height: 90,
+    marginBottom: 16,
     tintColor: Colors.primary,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '900',
     color: Colors.black,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
     color: Colors.subText,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   inputContainer: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
     color: Colors.black,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginBottom: 8,
+    marginLeft: 2,
   },
   phoneInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    borderRadius: 12,
+    paddingHorizontal: 16,
     height: 56,
+    backgroundColor: '#F8F9FA',
   },
   countryCode: {
     fontSize: 16,
     fontWeight: 'bold',
     color: Colors.black,
-    marginRight: 8,
-    borderRightWidth: 1,
+    marginRight: 12,
+    borderRightWidth: 1.5,
     borderRightColor: Colors.border,
-    paddingRight: 8,
+    paddingRight: 12,
   },
   input: {
     flex: 1,
     fontSize: 16,
     color: Colors.black,
-  },
-  button: {
-    backgroundColor: Colors.primary,
-    height: 56,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  disabledButton: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  footerText: {
-    marginTop: 40,
-    textAlign: 'center',
-    color: Colors.subText,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 30,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    color: Colors.subText,
-    fontSize: 14,
     fontWeight: '600',
-  },
-  googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 56,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
-  },
-  googleIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 12,
-  },
-  googleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.black,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F3F5',
-    borderRadius: 12,
-    padding: 6,
-    marginBottom: 24,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  activeTabButton: {
-    backgroundColor: Colors.white,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: Colors.subText,
-  },
-  activeTabText: {
-    color: Colors.primary,
-  },
-  emailContainer: {
-    width: '100%',
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.black,
-    marginBottom: 8,
   },
   textInput: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 56,
     fontSize: 16,
     color: Colors.black,
+    fontWeight: '600',
     backgroundColor: '#F8F9FA',
+  },
+  inputError: {
+    borderColor: Colors.error,
+    backgroundColor: '#FFF5F5',
+  },
+  fieldError: {
+    fontSize: 12,
+    color: Colors.error,
+    marginTop: 5,
+    fontWeight: '500',
+    marginLeft: 2,
   },
   actionButton: {
     backgroundColor: Colors.primary,
@@ -460,7 +264,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 10,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -472,14 +276,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  toggleLink: {
-    alignSelf: 'center',
-    marginTop: 16,
-    paddingVertical: 8,
+  disabledButton: {
+    opacity: 0.7,
   },
-  toggleLinkText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: Colors.primary,
+  footerText: {
+    marginTop: 32,
+    textAlign: 'center',
+    color: Colors.subText,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

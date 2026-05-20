@@ -174,24 +174,34 @@ export default function KYCStatus() {
           <Text style={styles.statusTitle}>{getStatusTitle()}</Text>
           <Text style={styles.statusDescription}>{getStatusDescription()}</Text>
 
-          {(kycStatus === 'REJECTED' || kycStatus === 'UNDER_REVIEW') && (
-            <TouchableOpacity 
+          {/* ── Edit Documents: Only show when REJECTED ───────────────────── */}
+          {kycStatus === 'REJECTED' && (
+            <TouchableOpacity
               style={[styles.primaryButton, { marginTop: 16 }]}
-              onPress={() => {
-                router.push('/kyc');
-              }}
+              onPress={() => router.push('/kyc')}
             >
               <View style={[styles.gradientButton, { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.primary }]}>
                 <Ionicons name="create-outline" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
-                <Text style={[styles.primaryButtonText, { color: Colors.primary }]}>Edit Documents</Text>
+                <Text style={[styles.primaryButtonText, { color: Colors.primary }]}>Fix & Edit Documents</Text>
               </View>
             </TouchableOpacity>
           )}
 
+          {/* ── Locked notice: Show when UNDER_REVIEW ─────────────────────── */}
+          {(kycStatus === 'UNDER_REVIEW' || kycStatus === 'KYC_SUBMITTED') && (
+            <View style={styles.lockedNotice}>
+              <Ionicons name="lock-closed" size={16} color="#1E40AF" style={{ marginRight: 8 }} />
+              <Text style={styles.lockedNoticeText}>
+                Your documents are locked during review and cannot be edited. Our team will notify you once the review is complete.
+              </Text>
+            </View>
+          )}
+
           {kycStatus === 'REJECTED' && (
-            <View style={{ marginTop: 24, padding: 16, backgroundColor: Colors.error + '10', borderRadius: 12 }}>
-              <Text style={{ color: Colors.error, fontSize: 13, textAlign: 'center' }}>
-                Your documents were rejected. Please click "Edit Documents" above to fix the issues and resubmit.
+            <View style={styles.rejectionBox}>
+              <Ionicons name="alert-circle" size={16} color={Colors.error} style={{ marginRight: 8, marginTop: 1 }} />
+              <Text style={styles.rejectionText}>
+                Your documents were rejected. Please click "Fix &amp; Edit Documents" above to correct the issues and resubmit for review.
               </Text>
             </View>
           )}
@@ -438,6 +448,40 @@ const styles = StyleSheet.create({
   stepSubtext: {
     fontSize: 14,
     color: '#6C757D',
+  },
+  lockedNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  lockedNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1E40AF',
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  rejectionBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  rejectionText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#991B1B',
+    lineHeight: 18,
+    fontWeight: '500',
   },
   footer: {
     alignItems: 'center',

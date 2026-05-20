@@ -1,4 +1,4 @@
-import { Platform, NativeModules, AppState } from 'react-native';
+import { Platform, NativeModules, AppState, DeviceEventEmitter } from 'react-native';
 
 let FloatingBubble = null;
 try {
@@ -11,8 +11,11 @@ try {
 }
 
 let isInitialized = false;
+let isBubbleShown = false;
 
 export const systemBubbleService = {
+  isProgrammaticHide: false,
+
   /**
    * Check if overlay permission is granted
    */
@@ -50,6 +53,7 @@ export const systemBubbleService = {
   initialize: async () => {
     // Defensive check: Only run on Android and if the native module is actually linked
     if (Platform.OS !== 'android') return;
+    if (isInitialized) return;
     
     try {
       if (!FloatingBubble || typeof FloatingBubble.initialize !== 'function') {
@@ -66,6 +70,25 @@ export const systemBubbleService = {
 
       await FloatingBubble.initialize();
       isInitialized = true;
+      
+      // Clean up any pre-existing bubble from a previous crash or service launch
+      try {
+        await FloatingBubble.hideFloatingBubble();
+      } catch (err) {}
+      isBubbleShown = false;
+
+      // Sync state when user manually closes bubble
+      DeviceEventEmitter.addListener('floating-bubble-remove', () => {
+        console.log('[BUBBLE-SERVICE] Bubble removed by user, setting isBubbleShown = false');
+        isBubbleShown = false;
+      });
+
+      // Sync state when user presses bubble
+      DeviceEventEmitter.addListener('floating-bubble-press', () => {
+        console.log('[BUBBLE-SERVICE] Bubble pressed by user, setting isBubbleShown = false');
+        isBubbleShown = false;
+      });
+
       console.log('[BUBBLE] System bubble initialized successfully');
     } catch (e) {
       console.warn('[BUBBLE] Critical error during initialization:', e.message);
@@ -83,6 +106,12 @@ export const systemBubbleService = {
       console.log('[BUBBLE] Skipping show: App is active in foreground');
       return;
     }
+
+    // Singleton Enforcement: Prevent duplicate overlay creation
+    if (isBubbleShown) {
+      console.log('[BUBBLE] Skipping show: Bubble is already visible');
+      return;
+    }
     
     try {
       const hasPerm = await systemBubbleService.hasPermission();
@@ -97,6 +126,7 @@ export const systemBubbleService = {
       }
 
       await FloatingBubble.showFloatingBubble(10, 10);
+      isBubbleShown = true;
       console.log('[BUBBLE] Bubble shown');
     } catch (e) {
       console.warn('[BUBBLE] Error calling showFloatingBubble:', e.message);
@@ -111,9 +141,15 @@ export const systemBubbleService = {
     
     try {
       if (!isInitialized) return;
+      
+      systemBubbleService.isProgrammaticHide = true;
+      // Prevent redundant calls and clean up state safely
       await FloatingBubble.hideFloatingBubble();
+      isBubbleShown = false;
       console.log('[BUBBLE] Bubble hidden');
     } catch (e) {
+      // Even if native hide fails, reset the state to allow future recovery
+      isBubbleShown = false;
       console.warn('[BUBBLE] Error calling hideFloatingBubble:', e.message);
     }
   },
@@ -124,8 +160,12 @@ export const systemBubbleService = {
   reopen: async () => {
     if (Platform.OS !== 'android' || !FloatingBubble || typeof FloatingBubble.reopenApp !== 'function') return;
     try {
+      systemBubbleService.isProgrammaticHide = true;
       await FloatingBubble.reopenApp();
       console.log('[BUBBLE] App reopened successfully');
+      
+      // Clean up bubble when app is reopened
+      await systemBubbleService.hide();
     } catch (e) {
       console.warn('[BUBBLE] Error calling reopenApp:', e.message);
     }
@@ -135,8 +175,6 @@ export const systemBubbleService = {
    * Update the badge/count on the bubble
    */
   update: (count) => {
-    // Note: react-native-floating-bubble doesn't natively support dynamic badge counts in the simplest version,
-    // but we can re-show it or handle custom views if needed.
     if (count > 0) {
       systemBubbleService.show();
     } else {

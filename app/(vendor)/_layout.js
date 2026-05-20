@@ -10,7 +10,11 @@ import { useSegments } from 'expo-router';
 export default function VendorLayout() {
   const segments = useSegments();
   const incomingOrders = useVendorStore((state) => state.incomingOrders);
-  const hasUnreadActivity = useVendorStore((state) => state.hasUnreadActivity);
+  const viewedOrderIds = useVendorStore((state) => state.viewedOrderIds);
+
+  // Calculate unread badge: incoming orders the vendor hasn't opened yet
+  const viewedSet = new Set(viewedOrderIds);
+  const unreadCount = incomingOrders.filter(o => !viewedSet.has(o.id)).length;
   const pendingCount = incomingOrders.length;
 
   // Stricter check: Only show the main header on the 4 primary tabs.
@@ -39,7 +43,8 @@ export default function VendorLayout() {
           name="index"
           options={{
             title: 'Live Orders',
-            tabBarBadge: pendingCount > 0 ? pendingCount : (hasUnreadActivity ? '!' : undefined),
+            // Show unread badge when there are new orders not yet seen
+            tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
           }}
         />
         <MaterialTopTabs.Screen

@@ -10,6 +10,7 @@ const { prisma, withRetry } = require('../lib/prisma');
 router.post('/sync', firebaseAuth, async (req, res) => {
   try {
     const { uid, phoneNumber } = req.user;
+    const { email } = req.body;
     
     // Handle cases where social login has no phone number
     const safePhone = phoneNumber || null;
@@ -31,6 +32,19 @@ router.post('/sync', firebaseAuth, async (req, res) => {
         rider: true
       }
     }));
+
+    // If VENDOR profile exists and email is passed, keep vendor email updated
+    if (profile.role === 'VENDOR' && profile.vendor) {
+      const updateData = { phoneVerified: true };
+      if (email) {
+        updateData.email = email.trim().toLowerCase();
+      }
+      const updatedVendor = await prisma.vendor.update({
+        where: { id: profile.vendor.id },
+        data: updateData
+      });
+      profile.vendor = updatedVendor;
+    }
 
     // SELF-HEALING: Determine correct profileStatus based on vendor/rider records
     let currentStatus = profile.profileStatus;
@@ -84,7 +98,7 @@ router.post('/sync', firebaseAuth, async (req, res) => {
 router.post('/role', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
-    const { role } = req.body;
+    const { role, email } = req.body;
 
     if (!['VENDOR', 'RIDER'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
@@ -103,13 +117,17 @@ router.post('/role', firebaseAuth, async (req, res) => {
     if (role === 'VENDOR') {
       vendorRecord = await withRetry(() => prisma.vendor.upsert({
         where: { profileId: profile.id },
-        update: {},
+        update: {
+          phoneVerified: true,
+          email: email ? email.trim().toLowerCase() : undefined
+        },
         create: {
           profileId: profile.id,
           businessName: 'My Store', // Placeholder
           ownerName: 'Vendor Owner', // Placeholder
           businessAddress: 'Address Pending', // Placeholder
-          phoneVerified: false
+          phoneVerified: true, // Phone auth is FIRST
+          email: email ? email.trim().toLowerCase() : null
         }
       }));
     } else if (role === 'RIDER') {

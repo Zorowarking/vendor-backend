@@ -29,19 +29,30 @@ if (getApps().length === 0) {
 
 // Initialize Auth with Persistence using AsyncStorage, with robust crash protection
 let auth;
+let resolveAuthInit;
+const authInitialized = new Promise((resolve) => {
+  resolveAuthInit = resolve;
+});
+
 try {
-  // Check if already initialized first to avoid duplicate initialization error
-  auth = getAuth(app);
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
 } catch (e) {
-  try {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage)
-    });
-  } catch (initErr) {
-    console.warn('[FIREBASE] Failed to initializeAuth with persistence, falling back to standard getAuth:', initErr.message);
-    auth = getAuth(app);
-  }
+  console.log('[FIREBASE] Auth already initialized or persistence failed, using getAuth fallback.');
+  auth = getAuth(app);
 }
 
-export { app, auth };
+// One-time listener to resolve the startup initialization promise
+const unsubscribe = auth.onAuthStateChanged((user) => {
+  resolveAuthInit();
+  if (unsubscribe) unsubscribe();
+});
+
+// Safety timeout fallback (2 seconds)
+setTimeout(() => {
+  resolveAuthInit();
+}, 2000);
+
+export { app, auth, authInitialized };
 

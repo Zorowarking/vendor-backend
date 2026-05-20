@@ -1,10 +1,67 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import { useAuthStore } from '../../store/authStore';
 import { vendorApi } from '../../services/vendorApi';
 
+// ─── Validation Rules ─────────────────────────────────────────────────────────
+const VALIDATORS = {
+  holderName: (v) => {
+    if (!v.trim()) return 'Account holder name is required.';
+    if (v.trim().length < 3) return 'Name must be at least 3 characters.';
+    if (!/^[a-zA-Z\s.]+$/.test(v)) return 'Name must contain letters only (no numbers or special characters).';
+    return null;
+  },
+  bankName: (v) => {
+    if (!v.trim()) return 'Bank name is required.';
+    if (v.trim().length < 2) return 'Please enter a valid bank name.';
+    return null;
+  },
+  accountNumber: (v) => {
+    if (!v.trim()) return 'Account number is required.';
+    if (!/^\d+$/.test(v)) return 'Account number must contain digits only.';
+    if (v.length < 9 || v.length > 18) return 'Account number must be between 9 and 18 digits.';
+    return null;
+  },
+  ifscCode: (v) => {
+    if (!v.trim()) return 'IFSC code is required.';
+    if (v.length !== 11) return 'IFSC code must be exactly 11 characters.';
+    // RBI standard: 4 letters + 0 + 6 alphanumeric
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(v)) {
+      return 'Invalid IFSC format. Example: HDFC0001234 (4 letters + 0 + 6 alphanumeric).';
+    }
+    return null;
+  },
+  upiId: (v) => {
+    if (!v.trim()) return null; // Optional field
+    if (!/^[\w.\-_]{3,}@[a-zA-Z]{3,}$/.test(v)) {
+      return 'Invalid UPI ID format. Example: yourname@okaxis or name@upi';
+    }
+    return null;
+  },
+};
+
+// Validate all fields and return an errors object
+const validateAll = (data) => {
+  const errs = {};
+  Object.keys(VALIDATORS).forEach((key) => {
+    const err = VALIDATORS[key](data[key] || '');
+    if (err) errs[key] = err;
+  });
+  return errs;
+};
+
+// ─── Helper: Inline Error Text ────────────────────────────────────────────────
+const FieldError = ({ message }) => {
+  if (!message) return null;
+  return <Text style={styles.fieldError}>⚠ {message}</Text>;
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function VendorBankScreen() {
   const [bankData, setBankData] = useState({
     holderName: '',
@@ -13,19 +70,48 @@ export default function VendorBankScreen() {
     ifscCode: '',
     upiId: '',
   });
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
   const [isAccVisible, setIsAccVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const router = useRouter();
   const setProfileStatus = useAuthStore((state) => state.setProfileStatus);
   const vendorRegistrationData = useAuthStore((state) => state.vendorRegistrationData);
 
+  // Handle live input and immediately clear/set field error
   const handleInputChange = (name, value) => {
+    let processed = value;
+
     if (name === 'ifscCode') {
-      const cleaned = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 11);
-      setBankData({ ...bankData, [name]: cleaned });
-    } else {
-      setBankData({ ...bankData, [name]: value });
+      // Auto-uppercase, strip non-alphanumeric, max 11 chars
+      processed = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase().substring(0, 11);
     }
+
+    if (name === 'accountNumber') {
+      // Digits only
+      processed = value.replace(/\D/g, '').substring(0, 18);
+    }
+
+    if (name === 'holderName' || name === 'bankName') {
+      // Trim leading spaces
+      processed = value.replace(/^\s+/, '');
+    }
+
+    setBankData((prev) => ({ ...prev, [name]: processed }));
+
+    // Validate the changed field in real-time (only after it's been touched)
+    if (touched[name]) {
+      const err = VALIDATORS[name]?.(processed);
+      setErrors((prev) => ({ ...prev, [name]: err || undefined }));
+    }
+  };
+
+  // Mark field as touched on blur and run validation
+  const handleBlur = (name) => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+    const err = VALIDATORS[name]?.(bankData[name] || '');
+    setErrors((prev) => ({ ...prev, [name]: err || undefined }));
   };
 
   const handleSubmit = async () => {
@@ -35,43 +121,55 @@ export default function VendorBankScreen() {
       return;
     }
 
-    if (!bankData.holderName || !bankData.bankName || !bankData.accountNumber || !bankData.ifscCode) {
-      Alert.alert('Error', 'Please fill in all required fields');
-      return;
-    }
+    // Touch all fields so errors appear
+    const allTouched = Object.keys(bankData).reduce((acc, k) => ({ ...acc, [k]: true }), {});
+    setTouched(allTouched);
 
-    if (bankData.ifscCode.length !== 11) {
-      Alert.alert('Invalid IFSC Code', 'IFSC Code must be exactly 11 alphanumeric characters.');
+    const allErrors = validateAll(bankData);
+    setErrors(allErrors);
+
+    if (Object.keys(allErrors).length > 0) {
+      const firstError = Object.values(allErrors)[0];
+      Alert.alert('Please Fix Errors', firstError);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      // Combine vendor registration data with bank details and call PUT /api/vendor/profile
       const payload = {
         ...vendorRegistrationData,
-        bankData
+        bankData,
       };
 
       await vendorApi.updateProfile(payload);
-
-      // Stay as PENDING — KYC screen will handle the next step
       router.push('/kyc');
     } catch (error) {
       console.error('Vendor registration error:', error);
-      const serverMessage = error.response?.data?.error || error.response?.data?.details || error.message;
+      const serverMessage =
+        error.response?.data?.error ||
+        error.response?.data?.details ||
+        error.message;
       Alert.alert(
         'Submission Failed',
-        serverMessage ? `${serverMessage}` : 'Could not save details to server. Please try again.'
+        serverMessage
+          ? `${serverMessage}`
+          : 'Could not save details to the server. Please check your internet connection and try again.'
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Determine input border color
+  const inputStyle = (name) => [
+    styles.input,
+    touched[name] && errors[name] ? styles.inputError : null,
+    touched[name] && !errors[name] && bankData[name] ? styles.inputValid : null,
+  ];
+
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
@@ -81,94 +179,138 @@ export default function VendorBankScreen() {
             <Text style={styles.subtitle}>Where we'll send your earnings</Text>
           </View>
 
+          {/* ── Info Banner ─────────────────────────────────────────── */}
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerText}>
+              🔒 Your bank details are encrypted and used only for payout processing. Ensure all details exactly match your bank records.
+            </Text>
+          </View>
+
           <View style={styles.form}>
+
+            {/* ── Account Holder Name ──────────────────────────────── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Account Holder Name *</Text>
+              <Text style={styles.label}>Account Holder Name <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
-                placeholder="Full Name as per bank"
+                style={inputStyle('holderName')}
+                placeholder="Full name as per bank records"
                 value={bankData.holderName}
                 onChangeText={(text) => handleInputChange('holderName', text)}
+                onBlur={() => handleBlur('holderName')}
+                autoCapitalize="words"
               />
+              <FieldError message={touched.holderName && errors.holderName} />
+              {!errors.holderName && (
+                <Text style={styles.helperText}>Must match your bank account name exactly</Text>
+              )}
             </View>
 
+            {/* ── Bank Name ────────────────────────────────────────── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Bank Name *</Text>
+              <Text style={styles.label}>Bank Name <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. HDFC Bank"
+                style={inputStyle('bankName')}
+                placeholder="e.g. HDFC Bank, SBI, ICICI Bank"
                 value={bankData.bankName}
                 onChangeText={(text) => handleInputChange('bankName', text)}
+                onBlur={() => handleBlur('bankName')}
+                autoCapitalize="words"
               />
+              <FieldError message={touched.bankName && errors.bankName} />
             </View>
 
+            {/* ── Account Number ───────────────────────────────────── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Account Number *</Text>
+              <Text style={styles.label}>Account Number <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
-                placeholder="Enter Account Number"
+                style={inputStyle('accountNumber')}
+                placeholder="Enter 9–18 digit account number"
                 keyboardType="number-pad"
                 value={bankData.accountNumber}
                 onChangeText={(text) => handleInputChange('accountNumber', text)}
+                onBlur={() => handleBlur('accountNumber')}
                 secureTextEntry={!isAccVisible}
                 onFocus={() => setIsAccVisible(true)}
-                onBlur={() => setIsAccVisible(false)}
               />
+              <FieldError message={touched.accountNumber && errors.accountNumber} />
               <Text style={styles.helperText}>
-                {isAccVisible ? 'Showing number while typing' : 'Number is hidden for security'}
+                {isAccVisible
+                  ? `${bankData.accountNumber.length} digits entered (9–18 required)`
+                  : 'Number is hidden for security — tap to reveal while typing'}
               </Text>
             </View>
 
+            {/* ── IFSC Code ────────────────────────────────────────── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>IFSC Code *</Text>
+              <Text style={styles.label}>IFSC Code <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
+                style={inputStyle('ifscCode')}
                 placeholder="e.g. HDFC0001234"
                 autoCapitalize="characters"
                 maxLength={11}
                 value={bankData.ifscCode}
                 onChangeText={(text) => handleInputChange('ifscCode', text)}
+                onBlur={() => handleBlur('ifscCode')}
               />
+              <FieldError message={touched.ifscCode && errors.ifscCode} />
+              {!errors.ifscCode && (
+                <Text style={styles.helperText}>
+                  Format: 4 letters + 0 + 6 alphanumeric (e.g. HDFC0001234)
+                  {bankData.ifscCode.length > 0 ? ` · ${bankData.ifscCode.length}/11` : ''}
+                </Text>
+              )}
             </View>
 
+            {/* ── UPI ID ───────────────────────────────────────────── */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>UPI ID (Optional)</Text>
+              <Text style={styles.label}>UPI ID <Text style={styles.optional}>(Optional)</Text></Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. yourname@upi"
+                style={inputStyle('upiId')}
+                placeholder="e.g. yourname@okaxis"
+                autoCapitalize="none"
+                keyboardType="email-address"
                 value={bankData.upiId}
                 onChangeText={(text) => handleInputChange('upiId', text)}
+                onBlur={() => handleBlur('upiId')}
               />
+              <FieldError message={touched.upiId && errors.upiId} />
+              {!errors.upiId && (
+                <Text style={styles.helperText}>Format: name@bankhandle (e.g. john@okicici)</Text>
+              )}
             </View>
 
-            <TouchableOpacity 
+            {/* ── Submit ───────────────────────────────────────────── */}
+            <TouchableOpacity
               style={[styles.nextButton, isSubmitting && { opacity: 0.7 }]}
               onPress={handleSubmit}
               disabled={isSubmitting}
             >
               {isSubmitting ? (
-                <ActivityIndicator color="white" />
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <ActivityIndicator color="white" style={{ marginRight: 8 }} />
+                  <Text style={styles.nextButtonText}>Saving...</Text>
+                </View>
               ) : (
-                <Text style={styles.nextButtonText}>Submit & Proceed to KYC</Text>
+                <Text style={styles.nextButtonText}>Submit & Proceed to KYC →</Text>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.backButton}
               onPress={() => {
                 Alert.alert(
                   'Cancel Registration',
                   'Are you sure you want to go back to the login screen? Your progress will be lost.',
                   [
-                    { text: 'Cancel', style: 'cancel' },
-                    { 
-                      text: 'Go Back', 
-                      style: 'destructive', 
+                    { text: 'Stay', style: 'cancel' },
+                    {
+                      text: 'Go Back',
+                      style: 'destructive',
                       onPress: async () => {
                         await useAuthStore.getState().logout();
                         router.replace('/auth/login');
-                      } 
-                    }
+                      },
+                    },
                   ]
                 );
               }}
@@ -182,6 +324,7 @@ export default function VendorBankScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -190,9 +333,10 @@ const styles = StyleSheet.create({
   scrollContainer: {
     padding: 24,
     paddingTop: 60,
+    paddingBottom: 40,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   title: {
     fontSize: 28,
@@ -203,6 +347,19 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: Colors.subText,
+  },
+  infoBanner: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 24,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary,
+  },
+  infoBannerText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    lineHeight: 18,
   },
   form: {
     marginBottom: 20,
@@ -216,33 +373,62 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 8,
   },
+  required: {
+    color: Colors.error,
+  },
+  optional: {
+    color: Colors.subText,
+    fontWeight: 'normal',
+    fontSize: 12,
+  },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 16,
-    height: 50,
+    height: 52,
     fontSize: 16,
     color: Colors.black,
+    backgroundColor: '#FAFAFA',
+  },
+  inputError: {
+    borderColor: Colors.error,
+    backgroundColor: '#FFF5F5',
+  },
+  inputValid: {
+    borderColor: Colors.success,
+    backgroundColor: '#F0FFF4',
+  },
+  fieldError: {
+    fontSize: 12,
+    color: Colors.error,
+    marginTop: 5,
+    fontWeight: '500',
+  },
+  helperText: {
+    fontSize: 11,
+    color: Colors.subText,
+    marginTop: 4,
+    lineHeight: 16,
   },
   nextButton: {
     backgroundColor: Colors.primary,
     height: 56,
-    borderRadius: 8,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 20,
-    marginBottom: 40,
+    marginBottom: 16,
   },
   nextButtonText: {
     color: Colors.white,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
   },
   backButton: {
     paddingVertical: 12,
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 20,
   },
   backButtonText: {
     color: Colors.primary,

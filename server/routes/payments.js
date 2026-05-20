@@ -93,6 +93,32 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
       }
     }).catch(e => console.warn('[PAYMENT] Failed to log transaction record:', e.message));
 
+    // Send Payment Received notification to Vendor via push
+    try {
+      const fcm = require('../lib/fcm');
+      await fcm.sendToVendor(order.vendorId, {
+        title: 'Payment Received',
+        body: `Payment of ₹${order.totalAmount} received for order #${order.id.substring(0, 8)}.`,
+        type: 'PAYMENT_RECEIVED',
+        orderId: order.id
+      });
+    } catch (pushErr) {
+      console.error('[PAYMENT-NOTIFICATION] Failed to send payment push to vendor:', pushErr.message);
+    }
+
+    // Send Payment Successful notification to Customer via push
+    try {
+      const fcm = require('../lib/fcm');
+      await fcm.sendToCustomer(req.user.uid, {
+        title: 'Order Placed Successfully',
+        body: `Your payment of ₹${order.totalAmount} was processed successfully for order #${order.id.substring(0, 8)}.`,
+        type: 'PAYMENT_SUCCESSFUL',
+        orderId: order.id
+      });
+    } catch (pushErr) {
+      console.error('[PAYMENT-CUSTOMER-NOTIFICATION] Failed to send payment push to customer:', pushErr.message);
+    }
+
     // INITIATE SFX DELIVERY
     try {
       await deliveryService.initiateDelivery(order.id);

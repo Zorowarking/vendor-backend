@@ -12,6 +12,7 @@ if (!__DEV__) {
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, DeviceEventEmitter, Platform, Alert, AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../store/authStore';
@@ -19,7 +20,8 @@ import { authService } from '../services/auth';
 import { 
   registerForPushNotificationsAsync, 
   savePushTokenToBackend,
-  setupNotificationListeners 
+  setupNotificationListeners,
+  getInitialNotification
 } from '../services/notificationService';
 import * as Notifications from 'expo-notifications';
 import apiClient from '../services/api';
@@ -46,6 +48,55 @@ export default function Layout() {
   const navigationState = useRootNavigationState();
   const [isMounted, setIsMounted] = useState(false);
   const [navTick, setNavTick] = useState(0);
+
+  const checkBubbleClosedExternally = async () => {
+    try {
+      const flag = await AsyncStorage.getItem('@was_bubble_closed_externally');
+      if (flag === 'true') {
+        await AsyncStorage.removeItem('@was_bubble_closed_externally');
+        
+        Alert.alert(
+          "Stay Online?",
+          "You removed the floating shortcut. Would you like to stay online or go offline to stop receiving new orders?",
+          [
+            { 
+              text: "Stay Online", 
+              style: "default",
+              onPress: () => {
+                // Re-show the bubble if active orders exist
+                const count = useVendorStore.getState().incomingOrders.length + useVendorStore.getState().activeOrders.length;
+                if (count > 0) {
+                  systemBubbleService.show();
+                }
+              }
+            },
+            { 
+              text: "Go Offline", 
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await vendorApi.toggleStatus(false, true);
+                  useVendorStore.getState().setOnlineStatus('offline');
+                } catch (err) {
+                  Alert.alert("Error", "Failed to update status. Please try again from the dashboard.");
+                }
+              }
+            }
+          ],
+          { cancelable: false }
+        );
+      }
+    } catch (e) {
+      console.error('[BUBBLE] Error checking external close flag:', e);
+    }
+  };
+
+  // On mount or when authenticated as VENDOR, check if bubble was closed externally
+  useEffect(() => {
+    if (isAuthenticated && role === 'VENDOR') {
+      checkBubbleClosedExternally();
+    }
+  }, [isAuthenticated, role]);
 
   // Dynamic Navigation Polling (solves buggy Expo Router navigationState mounting)
   useEffect(() => {
@@ -116,28 +167,16 @@ export default function Layout() {
           try {
             const token = await firebaseUser.getIdToken();
             await authService._syncUser(firebaseUser, token);
+            // After sync, ensure push token is registered on the backend
+            registerForPushNotificationsAsync().then(pushTok => {
+              if (pushTok) savePushTokenToBackend(pushTok, apiClient);
+            });
           } catch (e) {
             console.error('[LAYOUT] Web onAuthStateChanged sync error:', e);
           }
         }
       } else {
-        if (authStore.isAuthenticated) {
-          const { NativeModules } = require('react-native');
-          let hasActiveNativeSession = false;
-          if (NativeModules.RNFBAuthModule || NativeModules.RNFBAppModule) {
-            try {
-              const nativeAuth = require('@react-native-firebase/auth').default;
-              if (nativeAuth().currentUser) {
-                hasActiveNativeSession = true;
-              }
-            } catch (err) {}
-          }
-          
-          if (!hasActiveNativeSession) {
-            console.log('[LAYOUT] Web onAuthStateChanged: No user, logging out locally...');
-            await authStore.logout();
-          }
-        }
+        console.log('[LAYOUT] Web onAuthStateChanged: No user session detected (safe).');
       }
     });
 
@@ -160,10 +199,7 @@ export default function Layout() {
               }
             }
           } else {
-            if (authStore.isAuthenticated && !auth.currentUser) {
-              console.log('[LAYOUT] Native onAuthStateChanged: No user, logging out locally...');
-              await authStore.logout();
-            }
+            console.log('[LAYOUT] Native onAuthStateChanged: No user session detected (safe).');
           }
         });
       }
@@ -189,6 +225,9 @@ export default function Layout() {
         if (nextAppState === 'active') {
           vendorStore.setHasUnreadActivity(false);
           systemBubbleService.hide();
+          if (isAuthenticated) {
+            checkBubbleClosedExternally();
+          }
         } else if (nextAppState === 'background' || nextAppState === 'inactive') {
           // Show floating bubble when app is backgrounded
           systemBubbleService.show();
@@ -228,33 +267,68 @@ export default function Layout() {
   useEffect(() => {
     if (!isMounted) return;
 
-    // Only register notifications when vendor is authenticated
-    const { isAuthenticated } = useAuthStore.getState();
-    if (!isAuthenticated) return;
-
-    // Register and save token
+    // 1. Register for push and save token to backend
     registerForPushNotificationsAsync().then(token => {
       if (token) {
-        savePushTokenToBackend(token, apiClient);
+        const { isAuthenticated: currentAuth } = useAuthStore.getState();
+        if (currentAuth) {
+          savePushTokenToBackend(token, apiClient);
+        }
       }
     });
 
-    // Setup listeners
+    // Helper: navigate based on notification type
+    const handleNavigationFromNotif = (data) => {
+      const type = (data?.type || data?.notifType || '').toUpperCase();
+      if (type === 'NEW_ORDER') {
+        router.push('/(vendor)');
+      } else if (
+        type === 'KYC_APPROVED' ||
+        type === 'KYC_REJECTED' ||
+        type === 'KYC_STATUS_UPDATED'
+      ) {
+        router.push('/kyc/status');
+      } else if (type === 'ADMIN_BROADCAST') {
+        // Navigate to profile/notifications tab for broadcast messages
+        router.push('/(vendor)/profile');
+      }
+    };
+
+    // 2. Handle tap on notification that LAUNCHED the app from KILLED state
+    getInitialNotification().then(response => {
+      if (response) {
+        const data = response.notification.request.content.data;
+        console.log('[NOTIF] App launched from killed state via notification:', data?.type);
+        handleNavigationFromNotif(data);
+      }
+    });
+
+    // 3. Setup foreground + background + token refresh listeners
     const cleanup = setupNotificationListeners(
-      // When notification arrives while app is open
+      // Foreground: notification received while app is OPEN
       (notification) => {
-        console.log('Notification received:', notification);
+        console.log('[NOTIF] Foreground notification:', notification.request.content.title);
         setActiveNotification(notification);
+
+        // If it's a new order, update unread badge even if they're on another tab
+        const data = notification.request.content.data;
+        const type = (data?.type || '').toUpperCase();
+        if (type === 'NEW_ORDER') {
+          useVendorStore.getState().setHasUnreadActivity(true);
+        }
       },
-      // When user taps notification
+      // Background/Foreground tap: user taps a notification
       (response) => {
         const data = response.notification.request.content.data;
-        
-        // Navigate based on notification type
-        if (data?.type === 'NEW_ORDER') {
-          router.push('/(vendor)/orders');
-        } else if (data?.type === 'KYC_APPROVED') {
-          router.push('/auth/verify-phone');
+        console.log('[NOTIF] Notification tapped (bg/fg):', data?.type);
+        handleNavigationFromNotif(data);
+      },
+      // Token refresh: FCM rotated the push token — update backend immediately
+      (newToken) => {
+        console.log('[NOTIF] Token refreshed. Saving to backend...');
+        const { isAuthenticated: currentAuth } = useAuthStore.getState();
+        if (currentAuth && newToken) {
+          savePushTokenToBackend(newToken, apiClient);
         }
       }
     );
@@ -295,39 +369,24 @@ export default function Layout() {
       });
 
       const removeSub = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
-        // ONLY show this alert if the bubble was closed outside the app (i.e., when AppState is NOT active)
-        // If AppState is active, it means the app is in the foreground, and we hid it programmatically, so skip the alert.
-        if (AppState.currentState === 'active') {
-          console.log('[BUBBLE] Bubble hidden programmatically in foreground. Skipping offline dialog.');
+        // 1. Check if the bubble was closed programmatically (e.g. from transition or active state)
+        if (systemBubbleService.isProgrammaticHide) {
+          console.log('[BUBBLE] Bubble hidden programmatically. Resetting flag and skipping offline dialog.');
+          systemBubbleService.isProgrammaticHide = false;
           return;
         }
 
-        Alert.alert(
-          "Bubble Hidden",
-          "You removed the floating bubble. Would you like to go offline as well to stop receiving new orders?",
-          [
-            { 
-              text: "Stay Online", 
-              style: "cancel",
-              onPress: () => {
-                // Optionally re-show the bubble if there are active orders
-                const count = useVendorStore.getState().incomingOrders.length + useVendorStore.getState().activeOrders.length;
-                if (count > 0) systemBubbleService.show();
-              }
-            },
-            { 
-              text: "Go Offline", 
-              onPress: async () => {
-                try {
-                  await vendorApi.toggleStatus(false, true);
-                  useVendorStore.getState().setOnlineStatus('offline');
-                } catch (err) {
-                  Alert.alert("Error", "Failed to update status. Please try again from the dashboard.");
-                }
-              }
-            }
-          ]
-        );
+        if (AppState.currentState === 'active') {
+          console.log('[BUBBLE] Bubble hidden programmatically in active state. Skipping offline dialog.');
+          return;
+        }
+
+        // 2. Closed externally (user dragged to remove zone). Since we are in the background, DO NOT reopen or alert.
+        // Instead, silently save a flag in AsyncStorage so we trigger the Alert when they open the app next time.
+        console.log('[BUBBLE] Bubble closed externally in background. Saving flag to AsyncStorage.');
+        AsyncStorage.setItem('@was_bubble_closed_externally', 'true').catch((err) => {
+          console.error('[BUBBLE] Failed to save external close flag:', err);
+        });
       });
 
       return () => {
@@ -420,10 +479,17 @@ export default function Layout() {
           onDismiss={clearNotification}
           onPress={(msg) => {
             const data = msg?.request?.content?.data || msg?.data;
-            if (data?.type === 'NEW_ORDER') {
-              router.push('/(vendor)/orders');
-            } else if (data?.type === 'KYC_APPROVED') {
-              router.push('/auth/verify-phone');
+            const type = (data?.type || data?.notifType || '').toUpperCase();
+            if (type === 'NEW_ORDER') {
+              router.push('/(vendor)');
+            } else if (
+              type === 'KYC_APPROVED' ||
+              type === 'KYC_REJECTED' ||
+              type === 'KYC_STATUS_UPDATED'
+            ) {
+              router.push('/kyc/status');
+            } else if (type === 'ADMIN_BROADCAST') {
+              router.push('/(vendor)/profile');
             }
           }}
         />

@@ -1,14 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, Modal, FlatList } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, Modal, FlatList, ActivityIndicator, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import Colors from '../../constants/Colors';
 import * as Location from 'expo-location';
 import { useAuthStore } from '../../store/authStore';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import MapModal from '../../components/MapModal';
+import * as ImagePicker from 'expo-image-picker';
+import { vendorApi } from '../../services/vendorApi';
+import { Ionicons } from '@expo/vector-icons';
 
 const CATEGORIES = ['Food', 'Grocery', 'Pharmacy', 'Other'];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// ─── Validation Rules ────────────────────────────────────────────────────────
+const FIELD_VALIDATORS = {
+  businessName: (v) => {
+    if (!v.trim()) return 'Business name is required.';
+    if (v.trim().length < 3) return 'Business name must be at least 3 characters.';
+    if (v.trim().length > 100) return 'Business name must be 100 characters or fewer.';
+    if (!/^[a-zA-Z0-9\s&'.,()|\-]+$/.test(v)) return 'Business name contains invalid characters.';
+    return null;
+  },
+  ownerName: (v) => {
+    if (!v.trim()) return 'Owner name is required.';
+    if (v.trim().length < 3) return 'Owner name must be at least 3 characters.';
+    if (!/^[a-zA-Z\s.]+$/.test(v)) return 'Owner name must contain letters only (no numbers or symbols).';
+    return null;
+  },
+  email: (v) => {
+    if (!v.trim()) return null; // Email might be pre-filled from auth
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Please enter a valid email address.';
+    return null;
+  },
+  address: (v) => {
+    if (!v.trim()) return 'Business address is required.';
+    if (v.trim().length < 10) return 'Please enter a more complete address (minimum 10 characters).';
+    return null;
+  },
+};
+
+// Convert HH:MM string to total minutes for comparison
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+};
+
+// Validate operating hours for a single day
+const validateDayHours = (open, close) => {
+  if (timeToMinutes(close) <= timeToMinutes(open)) {
+    return `Closing time must be after opening time.`;
+  }
+  return null;
+};
+
+// Inline error component
+const FieldError = ({ message }) => {
+  if (!message) return null;
+  return <Text style={fieldErrorStyle}>⚠ {message}</Text>;
+};
+const fieldErrorStyle = { fontSize: 12, color: '#DC2626', marginTop: 4, fontWeight: '500' };
 
 const formatTo12Hour = (timeStr) => {
   if (!timeStr) return '';
@@ -26,17 +78,113 @@ export default function VendorRegisterScreen() {
   const [formData, setFormData] = useState({
     businessName: '',
     ownerName: '',
-    phone: '+91',
+    phone: user?.phoneNumber || '+91',
     email: user?.email || '',
     address: '',
     category: 'Food',
     description: '',
     location: null,
+    logo: '',
     operatingHours: DAYS.reduce((acc, day) => ({
       ...acc,
       [day]: { isClosed: false, open: '09:00', close: '22:00' }
     }), {}),
   });
+
+  // Track which fields the user has interacted with
+  const [touched, setTouched] = useState({});
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [hoursErrors, setHoursErrors] = useState({});
+
+  useEffect(() => {
+    if (user?.phoneNumber) {
+      setFormData(prev => ({ ...prev, phone: user.phoneNumber }));
+    }
+    if (user?.email) {
+      setFormData(prev => ({ ...prev, email: user.email }));
+    }
+  }, [user]);
+
+  // Validate a single named field and update errors state
+  const validateField = (name, value) => {
+    if (!FIELD_VALIDATORS[name]) return;
+    const err = FIELD_VALIDATORS[name](value);
+    setFieldErrors(prev => ({ ...prev, [name]: err || undefined }));
+  };
+
+  // Mark field touched and validate on blur
+  const handleBlur = (name) => {
+    setTouched(prev => ({ ...prev, [name]: true }));
+    validateField(name, formData[name] || '');
+  };
+
+  // Determine input border style based on validation state
+  const inputStyle = (name) => [
+    styles.input,
+    touched[name] && fieldErrors[name] ? styles.inputError : null,
+    touched[name] && !fieldErrors[name] && formData[name] ? styles.inputValid : null,
+  ];
+
+  // Validate all hours and return true if valid
+  const validateAllHours = () => {
+    const newHoursErrors = {};
+    DAYS.forEach(day => {
+      const { open, close, isClosed } = formData.operatingHours[day];
+      if (!isClosed) {
+        const err = validateDayHours(open, close);
+        if (err) newHoursErrors[day] = err;
+      }
+    });
+    setHoursErrors(newHoursErrors);
+    return Object.keys(newHoursErrors).length === 0;
+  };
+
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const pickAndUploadLogo = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Media library permission is required to upload a logo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        setUploadingLogo(true);
+        console.log('[LOGO-UPLOAD] Picked image, starting upload...', asset.uri);
+
+        const uid = user?.uid || 'temp-vendor';
+        const extension = asset.uri.split('.').pop().toLowerCase();
+        const logoKey = `logos/${uid}_logo.${extension}`;
+
+        const uploadResult = await vendorApi.uploadImage(asset.uri, {
+          key: logoKey,
+          isDeterministic: true
+        });
+
+        if (uploadResult.success) {
+          console.log('[LOGO-UPLOAD] Success, URL:', uploadResult.url);
+          setFormData(prev => ({ ...prev, logo: uploadResult.url }));
+          Alert.alert('Success', 'Store logo uploaded successfully!');
+        } else {
+          throw new Error('Upload was not successful');
+        }
+      }
+    } catch (err) {
+      console.error('[LOGO-UPLOAD] Error:', err);
+      Alert.alert('Upload Failed', 'Failed to upload the logo. Please try again.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
   
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -63,39 +211,33 @@ export default function VendorRegisterScreen() {
         const digitsAfter = afterPrefix.replace(/\D/g, '');
         cleaned = '+91' + digitsAfter;
       }
-      
       if (cleaned.length > 13) {
         cleaned = cleaned.substring(0, 13);
       }
       setFormData({ ...formData, phone: cleaned });
     } else {
       setFormData({ ...formData, [name]: value });
+      // Real-time validation on change (only if already touched)
+      if (touched[name] && FIELD_VALIDATORS[name]) {
+        const err = FIELD_VALIDATORS[name](value);
+        setFieldErrors(prev => ({ ...prev, [name]: err || undefined }));
+      }
     }
   };
  
-  const handlePinLocation = async () => {
-    setLoadingLocation(true);
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission denied', 'Allow access to location to pin your store');
-      setLoadingLocation(false);
-      return;
-    }
- 
-    let location = await Location.getCurrentPositionAsync({});
-    setFormData({ 
-      ...formData, 
-      location: {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      }
-    });
-    setLoadingLocation(false);
+  const handlePinLocation = () => {
     setMapVisible(true);
   };
  
   const onConfirmLocation = (coords) => {
-    setFormData({ ...formData, location: coords });
+    setFormData(prev => ({
+      ...prev,
+      location: {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      },
+      address: coords.address || prev.address
+    }));
     setMapVisible(false);
     Alert.alert('Location Pinned', 'Map coordinates saved successfully!');
   };
@@ -106,34 +248,72 @@ export default function VendorRegisterScreen() {
       const hours = selectedDate.getHours().toString().padStart(2, '0');
       const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
       const timeString = `${hours}:${minutes}`;
-      
+
+      const updatedDay = {
+        ...formData.operatingHours[activeDay],
+        [timeMode]: timeString,
+      };
+
+      // Validate the updated open/close for this day immediately
+      const openTime  = timeMode === 'open'  ? timeString : updatedDay.open;
+      const closeTime = timeMode === 'close' ? timeString : updatedDay.close;
+      const hoursErr  = validateDayHours(openTime, closeTime);
+      setHoursErrors(prev => ({ ...prev, [activeDay]: hoursErr || undefined }));
+
       setFormData({
         ...formData,
         operatingHours: {
           ...formData.operatingHours,
-          [activeDay]: {
-            ...formData.operatingHours[activeDay],
-            [timeMode]: timeString
-          }
-        }
+          [activeDay]: updatedDay,
+        },
       });
     }
   };
  
   const handleNext = () => {
-    if (!formData.businessName || !formData.ownerName || !formData.phone || !formData.address || !formData.location) {
-      Alert.alert('Required Fields', 'Business Name, Owner Name, Phone Number, Address, and Location Pin are mandatory.');
+    // Touch all validated fields to surface errors
+    const allTouched = { businessName: true, ownerName: true, email: true, address: true };
+    setTouched(allTouched);
+
+    // Run all field validations
+    const newErrors = {};
+    Object.keys(FIELD_VALIDATORS).forEach(key => {
+      const err = FIELD_VALIDATORS[key](formData[key] || '');
+      if (err) newErrors[key] = err;
+    });
+    setFieldErrors(newErrors);
+
+    // Validate operating hours
+    const hoursValid = validateAllHours();
+
+    if (Object.keys(newErrors).length > 0) {
+      const firstError = Object.values(newErrors)[0];
+      Alert.alert('Please Fix Errors', firstError);
       return;
     }
 
-    if (formData.phone.length !== 13) {
+    if (!formData.phone || formData.phone.length !== 13) {
       Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number after +91.');
       return;
     }
-    
-    // Save to global state instead of URL params to avoid data loss due to string limits
+
+    if (!formData.location) {
+      Alert.alert('Location Required', 'Please pin your store location on the map.');
+      return;
+    }
+
+    if (!hoursValid) {
+      Alert.alert('Invalid Operating Hours', 'One or more days have closing time set before opening time. Please fix the highlighted days.');
+      return;
+    }
+
+    if (formData.category === 'Food' && !formData.logo) {
+      Alert.alert('Logo Required', 'As a Food category vendor, uploading a store logo is mandatory.');
+      return;
+    }
+
+    // Save to global state
     useAuthStore.getState().setVendorRegistrationData(formData);
- 
     router.push('/auth/vendor-bank');
   };
  
@@ -150,34 +330,70 @@ export default function VendorRegisterScreen() {
           </View>
  
           <View style={styles.form}>
+            {/* Logo Upload Section */}
+            <View style={styles.logoUploadSection}>
+              <Text style={styles.label}>Vendor Logo {formData.category === 'Food' && <Text style={styles.required}>*</Text>}</Text>
+              <TouchableOpacity 
+                style={[styles.logoUploader, formData.logo && styles.logoUploaded]} 
+                onPress={pickAndUploadLogo}
+                disabled={uploadingLogo}
+              >
+                {uploadingLogo ? (
+                  <View style={styles.uploaderPlaceholder}>
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                    <Text style={styles.uploaderText}>Uploading Logo...</Text>
+                  </View>
+                ) : formData.logo ? (
+                  <View style={styles.logoPreviewContainer}>
+                    <Image source={{ uri: formData.logo }} style={styles.logoImage} />
+                    <View style={styles.changeBadge}>
+                      <Ionicons name="camera" size={14} color="white" />
+                      <Text style={styles.changeBadgeText}>Change</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.uploaderPlaceholder}>
+                    <Ionicons name="cloud-upload" size={28} color={Colors.primary} />
+                    <Text style={styles.uploaderText}>Upload Store Logo</Text>
+                    <Text style={styles.uploaderSubtext}>Square image, max 5MB</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Business Name *</Text>
+              <Text style={styles.label}>Business Name <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
+                style={inputStyle('businessName')}
                 placeholder="e.g. Tasty Bites"
                 value={formData.businessName}
                 onChangeText={(text) => handleInputChange('businessName', text)}
+                onBlur={() => handleBlur('businessName')}
               />
+              <FieldError message={touched.businessName && fieldErrors.businessName} />
             </View>
- 
+
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Owner Name *</Text>
+              <Text style={styles.label}>Owner Name <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={styles.input}
-                placeholder="Full Name"
+                style={inputStyle('ownerName')}
+                placeholder="Full name (letters only)"
                 value={formData.ownerName}
                 onChangeText={(text) => handleInputChange('ownerName', text)}
+                onBlur={() => handleBlur('ownerName')}
               />
+              <FieldError message={touched.ownerName && fieldErrors.ownerName} />
             </View>
  
             <View style={styles.row}>
               <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
                 <Text style={styles.label}>Phone Number *</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, user?.phoneNumber ? { backgroundColor: '#F0F0F0', color: '#888' } : {}]}
                   placeholder="e.g. +919999999999"
                   keyboardType="phone-pad"
                   value={formData.phone}
+                  editable={!user?.phoneNumber}
                   onChangeText={(text) => handleInputChange('phone', text)}
                 />
               </View>
@@ -203,19 +419,23 @@ export default function VendorRegisterScreen() {
                 value={formData.email}
                 editable={!formData.email}
                 onChangeText={(text) => handleInputChange('email', text)}
+                onBlur={() => handleBlur('email')}
               />
+              <FieldError message={touched.email && fieldErrors.email} />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Business Address *</Text>
+              <Text style={styles.label}>Business Address <Text style={styles.required}>*</Text></Text>
               <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Full Address"
+                style={[inputStyle('address'), styles.textArea]}
+                placeholder="Full address (minimum 10 characters)"
                 multiline
                 numberOfLines={3}
                 value={formData.address}
                 onChangeText={(text) => handleInputChange('address', text)}
+                onBlur={() => handleBlur('address')}
               />
+              <FieldError message={touched.address && fieldErrors.address} />
             </View>
 
             <View style={styles.inputGroup}>
@@ -324,23 +544,32 @@ export default function VendorRegisterScreen() {
             <Text style={styles.modalTitle}>Weekly Operating Hours</Text>
             <ScrollView>
               {DAYS.map(day => (
-                <View key={day} style={styles.dayRow}>
-                  <Text style={styles.dayName}>{day}</Text>
-                  <View style={styles.timeControls}>
-                    <TouchableOpacity 
-                      onPress={() => { setActiveDay(day); setTimeMode('open'); setShowTimePicker(true); }}
-                      style={styles.timeBox}
-                    >
-                      <Text style={styles.timeText}>{formatTo12Hour(formData.operatingHours[day].open)}</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.timeSeparator}>-</Text>
-                    <TouchableOpacity 
-                      onPress={() => { setActiveDay(day); setTimeMode('close'); setShowTimePicker(true); }}
-                      style={styles.timeBox}
-                    >
-                      <Text style={styles.timeText}>{formatTo12Hour(formData.operatingHours[day].close)}</Text>
-                    </TouchableOpacity>
+                <View key={day}>
+                  <View style={[styles.dayRow, hoursErrors[day] && styles.dayRowError]}>
+                    <Text style={[styles.dayName, hoursErrors[day] && { color: Colors.error }]}>{day}</Text>
+                    <View style={styles.timeControls}>
+                      <TouchableOpacity
+                        onPress={() => { setActiveDay(day); setTimeMode('open'); setShowTimePicker(true); }}
+                        style={styles.timeBox}
+                      >
+                        <Text style={styles.timeText}>{formatTo12Hour(formData.operatingHours[day].open)}</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.timeSeparator}>–</Text>
+                      <TouchableOpacity
+                        onPress={() => { setActiveDay(day); setTimeMode('close'); setShowTimePicker(true); }}
+                        style={[styles.timeBox, hoursErrors[day] && { borderColor: Colors.error, backgroundColor: '#FFF5F5' }]}
+                      >
+                        <Text style={[styles.timeText, hoursErrors[day] && { color: Colors.error }]}>
+                          {formatTo12Hour(formData.operatingHours[day].close)}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
+                  {hoursErrors[day] && (
+                    <Text style={{ fontSize: 11, color: Colors.error, marginBottom: 6, marginLeft: 4 }}>
+                      ⚠ {hoursErrors[day]}
+                    </Text>
+                  )}
                 </View>
               ))}
             </ScrollView>
@@ -365,6 +594,72 @@ export default function VendorRegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+  logoUploadSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  logoUploader: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    overflow: 'hidden',
+  },
+  logoUploaded: {
+    borderStyle: 'solid',
+    borderColor: Colors.success,
+  },
+  uploaderPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  uploaderText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: Colors.black,
+    marginTop: 6,
+  },
+  uploaderSubtext: {
+    fontSize: 10,
+    color: Colors.subText,
+    marginTop: 2,
+  },
+  logoPreviewContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  changeBadge: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  changeBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  required: {
+    color: Colors.error,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.white,
@@ -402,14 +697,26 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 8,
   },
+  required: {
+    color: Colors.error,
+  },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: 10,
     paddingHorizontal: 16,
     height: 50,
     fontSize: 16,
     color: Colors.black,
+    backgroundColor: '#FAFAFA',
+  },
+  inputError: {
+    borderColor: Colors.error,
+    backgroundColor: '#FFF5F5',
+  },
+  inputValid: {
+    borderColor: Colors.success,
+    backgroundColor: '#F0FFF4',
   },
   disabledInput: {
     backgroundColor: Colors.grey,
@@ -537,6 +844,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+  },
+  dayRowError: {
+    backgroundColor: '#FFF5F5',
+    borderRadius: 6,
+    paddingHorizontal: 4,
   },
   dayName: {
     fontSize: 16,

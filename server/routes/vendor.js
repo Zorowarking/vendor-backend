@@ -25,23 +25,29 @@ router.get('/health-check', (req, res) => {
   });
 });
 
-// Save vendor push notification token
+// Save vendor push/FCM notification tokens
+// Accepts both Expo pushToken and native FCM fcmToken
 router.post('/push-token', firebaseAuth, async (req, res) => {
-  const { pushToken } = req.body;
+  const { pushToken, fcmToken } = req.body;
   const uid = req.user.uid;
 
-  if (!pushToken) {
-    return res.status(400).json({ error: 'Push token is required' });
+  if (!pushToken && !fcmToken) {
+    return res.status(400).json({ error: 'At least one of pushToken or fcmToken is required' });
   }
 
   try {
+    const updateData = {};
+    if (pushToken) updateData.pushToken = pushToken;
+    if (fcmToken) updateData.fcmToken = fcmToken;
+
     await prisma.profile.update({
       where: { firebaseUid: uid },
-      data: { pushToken: pushToken },
+      data: updateData,
     });
+    console.log(`[PUSH-TOKEN] Saved tokens for UID ${uid}: pushToken=${!!pushToken}, fcmToken=${!!fcmToken}`);
     res.json({ success: true });
   } catch (error) {
-    console.error('Failed to save push token:', error);
+    console.error('[PUSH-TOKEN] Failed to save tokens:', error);
     res.status(500).json({ error: 'Failed to save push token' });
   }
 });
@@ -195,7 +201,7 @@ function checkVendorOperatingHours(operatingHours) {
 router.post('/kyc', firebaseAuth, async (req, res) => {
   try {
     const { uid } = req.user;
-    const { govIdType, govIdUrl, businessProofType, businessProofUrl, panUrl, addressProofUrl } = req.body;
+    const { govIdType, govIdUrl, businessProofType, businessProofUrl, panUrl, addressProofUrl, isfcscUrl } = req.body;
 
     console.log(`[VENDOR] KYC Submission attempt for UID: ${uid}`);
     console.log('[VENDOR] Payload:', JSON.stringify(req.body, null, 2));
@@ -227,6 +233,7 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
           businessProofUrl: businessProofUrl || undefined,
           panUrl: panUrl || undefined,
           addressProofUrl: addressProofUrl || undefined,
+          isfcscUrl: isfcscUrl || undefined,
           status: 'submitted', // Reset status on re-submission
           submittedAt: new Date()
         }
@@ -242,6 +249,7 @@ router.post('/kyc', firebaseAuth, async (req, res) => {
           businessProofUrl, 
           panUrl, 
           addressProofUrl,
+          isfcscUrl,
           status: 'submitted'
         }
       }));
@@ -1751,6 +1759,28 @@ router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) 
     }
 
     emitAccountStatusUpdate(vendor.id, status || 'APPROVED');
+
+    // Trigger push notification to vendor for KYC status updates (Approved/Rejected)
+    try {
+      const fcm = require('../lib/fcm');
+      const currentStatus = (status || 'APPROVED').toUpperCase();
+      const isApproved = currentStatus === 'APPROVED' || currentStatus === 'ACTIVE';
+      const isRejected = currentStatus === 'REJECTED' || currentStatus === 'DISABLED';
+      
+      if (isApproved || isRejected) {
+        await fcm.sendToVendor(vendor.id, {
+          title: isApproved ? 'KYC Approved 🎉' : 'KYC Rejected ⚠️',
+          body: isApproved 
+            ? 'Your store registration has been approved. You are now ready to receive orders!' 
+            : 'Your KYC documents could not be verified. Please review and re-submit your documents.',
+          type: 'KYC_STATUS_UPDATE',
+        });
+        console.log(`[FCM] KYC status change notification sent to vendor ${vendor.id} (${currentStatus})`);
+      }
+    } catch (fcmErr) {
+      console.warn('[FCM] Failed to send KYC push notification:', fcmErr.message);
+    }
+
     res.json({ success: true, vendor });
   } catch (error) {
     res.status(500).json({ error: 'Dev approval failed', details: error.message });

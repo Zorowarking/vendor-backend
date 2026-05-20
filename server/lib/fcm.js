@@ -108,7 +108,7 @@ const sendToVendor = async (vendorId, payload) => {
         pushToken,
         payload.title,
         payload.body,
-        { ...payload, type: payload.type || 'new_order', channelId }
+        { ...payload, type: payload.type || 'NEW_ORDER', channelId }
       );
     }
     if (fcmToken && admin.apps.length) {
@@ -116,7 +116,7 @@ const sendToVendor = async (vendorId, payload) => {
         fcmToken, 
         payload.title, 
         payload.body, 
-        { ...payload, type: payload.type || 'new_order', channelId }
+        { ...payload, type: payload.type || 'NEW_ORDER', channelId }
       );
     }
   } catch (error) {

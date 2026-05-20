@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, FlatList } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator, Platform, TextInput, FlatList, Alert } from 'react-native';
 import Colors from '../constants/Colors';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
@@ -27,6 +27,9 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   const isNative = Constants.appOwnership !== 'expo';
   const canShowNativeMap = isNative && MapView;
 
+  const mapRef = useRef(null);
+  const webViewRef = useRef(null);
+
   const [region, setRegion] = useState({
     latitude: initialLocation?.latitude || 17.3850,
     longitude: initialLocation?.longitude || 78.4867,
@@ -39,6 +42,32 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
     longitude: initialLocation?.longitude || 78.4867,
   });
 
+  // Sync state whenever MapModal becomes visible or initialLocation updates
+  React.useEffect(() => {
+    if (visible && initialLocation) {
+      const coords = {
+        latitude: initialLocation.latitude || 17.3850,
+        longitude: initialLocation.longitude || 78.4867,
+      };
+      setMarker(coords);
+      setRegion({
+        ...coords,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+      // Allow a small delay for both MapView and WebView Leaflet map to mount and be ready
+      const timer = setTimeout(() => {
+        webViewRef.current?.postMessage(JSON.stringify(coords));
+        mapRef.current?.animateToRegion({
+          ...coords,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 300);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, initialLocation]);
+
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -46,6 +75,21 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
   const [searchTimeout, setSearchTimeout] = useState(null);
 
   const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyDEUqPA15poXPNybxUcDYiM3XdfoiJ_suk";
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}`
+      );
+      const data = await response.json();
+      if (data.status === 'OK' && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      }
+    } catch (error) {
+      console.error('Reverse geocode error:', error);
+    }
+    return '';
+  };
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -100,6 +144,15 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
           latitudeDelta: 0.005,
           longitudeDelta: 0.005,
         });
+
+        // Synchronize Map Camera (Native & WebView Fallback)
+        mapRef.current?.animateToRegion({
+          ...newCoords,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 1000);
+
+        webViewRef.current?.postMessage(JSON.stringify(newCoords));
       }
     } catch (error) {
       console.error('Select place error:', error);
@@ -108,8 +161,11 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
     }
   };
 
-  // HTML for the Leaflet Map Fallback
-  const mapHtml = `
+  // Static HTML for Leaflet Map Fallback (decoupled from 'marker' state to prevent WebView reloads/flashing)
+  const mapHtml = React.useMemo(() => {
+    const initLat = initialLocation?.latitude || 17.3850;
+    const initLng = initialLocation?.longitude || 78.4867;
+    return `
     <!DOCTYPE html>
     <html>
       <head>
@@ -125,13 +181,13 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
       <body>
         <div id="map"></div>
         <script>
-          var map = L.map('map', { zoomControl: false }).setView([${marker.latitude}, ${marker.longitude}], 15);
+          var map = L.map('map', { zoomControl: false }).setView([${initLat}, ${initLng}], 15);
           
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
           }).addTo(map);
 
-          var marker = L.marker([${marker.latitude}, ${marker.longitude}], {
+          var marker = L.marker([${initLat}, ${initLng}], {
             draggable: true
           }).addTo(map);
 
@@ -151,17 +207,24 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
             }));
           });
 
-          document.addEventListener('message', function(e) {
-            var data = JSON.parse(e.data);
-            if (data.latitude && data.longitude) {
-              map.setView([data.latitude, data.longitude], 15);
-              marker.setLatLng([data.latitude, data.longitude]);
-            }
-          });
+          function handleMessage(e) {
+            try {
+              var data = JSON.parse(e.data);
+              if (data.latitude && data.longitude) {
+                map.setView([data.latitude, data.longitude], 15);
+                marker.setLatLng([data.latitude, data.longitude]);
+              }
+            } catch (err) {}
+          }
+          window.addEventListener('message', handleMessage);
+          document.addEventListener('message', handleMessage);
         </script>
       </body>
     </html>
-  `;
+    `;
+  }, [initialLocation?.latitude, initialLocation?.longitude]);
+
+  const webViewSource = React.useMemo(() => ({ html: mapHtml }), [mapHtml]);
 
   const onWebMessage = (event) => {
     try {
@@ -177,13 +240,26 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        alert('Permission to access location was denied');
+        Alert.alert('Permission Denied', 'Permission to access location was denied. Please enable it in system settings.');
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      // Robust fallback handling: 5-second timeout, falling back to getLastKnownPositionAsync
+      let location = null;
+      try {
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeout: 5000,
+        });
+      } catch (err) {
+        console.warn('[MAP] getCurrentPositionAsync failed/timeout, trying getLastKnownPositionAsync...', err);
+        location = await Location.getLastKnownPositionAsync();
+      }
+
+      if (!location) {
+        Alert.alert('Location Error', 'Could not retrieve current location. Please ensure GPS is active.');
+        return;
+      }
       
       const newCoords = {
         latitude: location.coords.latitude,
@@ -197,15 +273,17 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
         longitudeDelta: 0.005,
       });
 
-      // Update WebView if it's visible
-      if (!canShowNativeMap) {
-        // We'd need a ref to the webview to send messages, but simple state updates 
-        // to the HTML string (by including marker in it) will cause a reload.
-        // For smoother experience, we'll just let the state update the HTML.
-      }
+      // Synchronize Map Camera (Native & WebView Fallback)
+      mapRef.current?.animateToRegion({
+        ...newCoords,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      }, 1000);
+
+      webViewRef.current?.postMessage(JSON.stringify(newCoords));
     } catch (error) {
       console.error('Error fetching location:', error);
-      alert('Could not fetch current location');
+      Alert.alert('Location Error', 'Could not fetch current location.');
     } finally {
       setLoadingLocation(false);
     }
@@ -217,7 +295,13 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
 
   const handleMapPress = (e) => {
     if (e.nativeEvent && e.nativeEvent.coordinate) {
-      setMarker(e.nativeEvent.coordinate);
+      const newCoords = e.nativeEvent.coordinate;
+      setMarker(newCoords);
+      mapRef.current?.animateToRegion({
+        ...newCoords,
+        latitudeDelta: region.latitudeDelta || 0.005,
+        longitudeDelta: region.longitudeDelta || 0.005,
+      }, 500);
     }
   };
 
@@ -226,6 +310,7 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
       <View style={styles.container}>
         {canShowNativeMap ? (
           <MapView
+            ref={mapRef}
             provider={PROVIDER_GOOGLE}
             style={styles.map}
             initialRegion={region}
@@ -235,14 +320,23 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
             <Marker 
               coordinate={marker} 
               draggable
-              onDragEnd={(e) => setMarker(e.nativeEvent.coordinate)}
+              onDragEnd={(e) => {
+                const newCoords = e.nativeEvent.coordinate;
+                setMarker(newCoords);
+                mapRef.current?.animateToRegion({
+                  ...newCoords,
+                  latitudeDelta: region.latitudeDelta || 0.005,
+                  longitudeDelta: region.longitudeDelta || 0.005,
+                }, 500);
+              }}
             />
           </MapView>
         ) : (
           <WebView
+            ref={webViewRef}
             style={styles.map}
             originWhitelist={['*']}
-            source={{ html: mapHtml }}
+            source={webViewSource}
             onMessage={onWebMessage}
             scrollEnabled={false}
           />
@@ -305,10 +399,25 @@ export default function MapModal({ visible, onClose, onConfirm, initialLocation 
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.confirmButton} 
-              onPress={() => onConfirm(marker)}
+              style={[styles.confirmButton, loadingLocation && { opacity: 0.6 }]} 
+              onPress={async () => {
+                setLoadingLocation(true);
+                try {
+                  const address = await reverseGeocode(marker.latitude, marker.longitude);
+                  onConfirm({ ...marker, address });
+                } catch (err) {
+                  onConfirm(marker);
+                } finally {
+                  setLoadingLocation(false);
+                }
+              }}
+              disabled={loadingLocation}
             >
-              <Text style={styles.confirmText}>Confirm Location</Text>
+              {loadingLocation ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Text style={styles.confirmText}>Confirm Location</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>

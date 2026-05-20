@@ -19,7 +19,7 @@ const apiClient = axios.create({
   },
 });
 
-import { auth as webAuth } from './firebase';
+import { auth as webAuth, authInitialized } from './firebase';
 import { NativeModules } from 'react-native';
 
 // Safely require native firebase auth
@@ -32,6 +32,11 @@ try {
 
 const getFreshToken = async () => {
   try {
+    // Wait for Firebase Auth to finish its initial restore of session
+    if (authInitialized) {
+      await authInitialized;
+    }
+
     // 1. Try Native Auth current user
     if (nativeAuth) {
       const user = nativeAuth().currentUser;
