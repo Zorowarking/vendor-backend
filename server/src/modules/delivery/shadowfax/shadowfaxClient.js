@@ -3,7 +3,7 @@ const axiosRetry = require('axios-retry').default || require('axios-retry');
 const env = require('../../../config/env');
 const logger = require('../../../../lib/logger');
 
-const activeBaseUrl = env.NODE_ENV === 'production' ? env.SFX_PROD_BASE_URL : env.SFX_STAGING_BASE_URL;
+const activeBaseUrl = env.NODE_ENV === 'production' ? 'https://flash-api.shadowfax.in' : 'https://hlbackend.staging.shadowfax.in';
 const activeToken = env.NODE_ENV === 'production' ? env.SFX_PROD_TOKEN : env.SFX_STAGING_TOKEN;
 
 const shadowfaxClient = axios.create({
@@ -18,7 +18,8 @@ const shadowfaxClient = axios.create({
 shadowfaxClient.interceptors.request.use(
   (config) => {
     if (activeToken) {
-      config.headers['Authorization'] = `Token ${activeToken}`;
+      // In Shadowfax Flash, the token is passed directly as the Authorization header value without prefixes
+      config.headers['Authorization'] = activeToken;
     }
     logger.info(`[Shadowfax API Request] ${config.method.toUpperCase()} ${config.baseURL}${config.url}`);
     return config;
@@ -36,7 +37,7 @@ shadowfaxClient.interceptors.response.use(
   },
   (error) => {
     if (error.response) {
-      logger.error(`[Shadowfax API Error] ${error.config.method.toUpperCase()} ${error.config.url} - Status: ${error.response.status}`);
+      logger.error(`[Shadowfax API Error] ${error.config.method.toUpperCase()} ${error.config.url} - Status: ${error.response.status} - Data: ${JSON.stringify(error.response.data)}`);
     } else {
       logger.error(`[Shadowfax API Error] Network/Timeout error: ${error.message}`);
     }

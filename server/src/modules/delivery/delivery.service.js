@@ -15,10 +15,40 @@ class DeliveryService {
    * @returns {Promise<void>}
    */
   async initiateDelivery(orderId) {
-    if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
-      logger.info(`[DeliveryService] Sandbox mode detected. Skipping auto-simulation for ${orderId}. Waiting for Vendor.`);
+    if (process.env.USE_SANDBOX_PAYMENTS === 'true' || env.USE_SANDBOX_PAYMENTS) {
+      logger.info(`[DeliveryService] Sandbox mode detected. Creating mock SFX Order and waiting for Vendor.`);
+      
+      const mockSfxId = BigInt(Math.floor(Math.random() * 90000000) + 10000000);
+      const mockCoid = `SFX-MOCK-${orderId.substring(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+      
+      try {
+        await prisma.sfxOrder.upsert({
+          where: { internalOrderId: orderId },
+          update: {
+            sfxOrderId: mockSfxId,
+            sfxStatus: 'ACCEPTED',
+            clientOrderId: mockCoid
+          },
+          create: {
+            internalOrderId: orderId,
+            sfxOrderId: mockSfxId,
+            storeCode: 'DYNAMIC_PICKUP',
+            clientOrderId: mockCoid,
+            sfxStatus: 'ACCEPTED'
+          }
+        });
+        
+        await prisma.order.update({
+          where: { id: orderId },
+          data: { sfxOrderId: mockSfxId }
+        });
+        logger.info(`[DeliveryService] Mock SFX order registered for ${orderId}`);
+      } catch (err) {
+        logger.error(`[DeliveryService] Failed to create mock SfxOrder: ${err.message}`);
+      }
       return;
     }
+
     logger.info(`[DeliveryService] initiateDelivery called for order ${orderId}`);
     try {
       const order = await prisma.order.findUnique({
@@ -31,16 +61,11 @@ class DeliveryService {
         try {
           const payload = mapper.buildPlaceOrderPayload(order, order.vendor, order.customer);
           if (retryCount > 0) {
-             payload.orderDetails.client_order_id = `${payload.orderDetails.client_order_id}-R${retryCount}`;
+             payload.order_details.order_id = `${payload.order_details.order_id}-R${retryCount}`;
           }
           
-          const sfxResponse = await shadowfaxService.placeOrder({
-            storeCode: order.vendor.sfxStoreCode || env.SFX_STORE_CODE,
-            orderDetails: payload.orderDetails,
-            customerDetails: payload.customerDetails,
-            productDetails: payload.productDetails
-          });
-          return { sfxResponse, clientOrderId: payload.orderDetails.client_order_id };
+          const sfxResponse = await shadowfaxService.placeOrder(payload);
+          return { sfxResponse, clientOrderId: payload.order_details.order_id };
         } catch (error) {
            if (error.code === 'SFX_DUPLICATE_COID' && retryCount === 0) {
              const existing = await prisma.sfxOrder.findUnique({ where: { internalOrderId: orderId }});
@@ -55,7 +80,7 @@ class DeliveryService {
              return await placeWithRetry(1);
            }
            throw error;
-        }
+         }
       };
 
       const { sfxResponse, clientOrderId } = await placeWithRetry();
@@ -72,7 +97,7 @@ class DeliveryService {
           create: {
             internalOrderId: order.id,
             sfxOrderId: BigInt(sfxResponse.sfx_order_id),
-            storeCode: order.vendor.sfxStoreCode || env.SFX_STORE_CODE,
+            storeCode: 'DYNAMIC_PICKUP',
             clientOrderId: clientOrderId,
             sfxStatus: sfxResponse.status,
             trackUrl: sfxResponse.track_url || null
@@ -119,7 +144,6 @@ class DeliveryService {
     } catch (error) {
       logger.warn(`[DeliveryService] Failed to cancel delivery for order ${orderId} on SFX: ${error.message}`);
       this._emitAdminError(orderId, error);
-      // We don't throw, we just log and allow internal cancellation to proceed.
     }
   }
 
@@ -130,6 +154,13 @@ class DeliveryService {
    */
   async onVendorReadyForPickup(orderId) {
     logger.info(`[DeliveryService] onVendorReadyForPickup called for order ${orderId}`);
+    
+    if (process.env.USE_SANDBOX_PAYMENTS === 'true' || env.USE_SANDBOX_PAYMENTS) {
+      logger.info(`[DeliveryService] Sandbox mode: Simulating rider pickup and delivery for ${orderId}`);
+      this.startSandboxRiderSimulation(orderId);
+      return;
+    }
+
     try {
       const sfxOrder = await prisma.sfxOrder.findUnique({ where: { internalOrderId: orderId } });
       if (!sfxOrder) {
@@ -144,11 +175,6 @@ class DeliveryService {
       });
       logger.info(`[DeliveryService] successfully sent dispatch ready signal for order ${orderId}`);
     } catch (error) {
-      if (process.env.USE_SANDBOX_PAYMENTS === 'true') {
-        logger.info(`[DeliveryService] Sandbox mode: Simulating rider pickup and delivery for ${orderId}`);
-        this.startSandboxRiderSimulation(orderId);
-        return;
-      }
       logger.warn(`[DeliveryService] Failed to send dispatch ready signal for order ${orderId}: ${error.message}`);
       this._emitAdminError(orderId, error);
     }
@@ -211,32 +237,117 @@ class DeliveryService {
 
   /**
    * Simulates rider progress for sandbox testing.
-   * Only covers steps AFTER the vendor is ready.
+   * Generates a progressive coordinates path and status changes.
    */
   async startSandboxRiderSimulation(orderId) {
-    const transitions = [
-      { status: 'picked_up', delay: 10000 }, // Rider arrives and picks up in 10s
-      { status: 'delivered', delay: 25000 }, // Delivered 15s after pickup
-    ];
+    logger.info(`[SandboxRider] Initializing high-fidelity GPS simulation for order ${orderId}`);
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { vendor: true }
+      });
+      if (!order) {
+        logger.error(`[SandboxRider] Order ${orderId} not found for simulation`);
+        return;
+      }
 
-    for (const t of transitions) {
-      setTimeout(async () => {
-        try {
-          const currentOrder = await prisma.order.findUnique({ where: { id: orderId } });
-          if (!currentOrder || ['CANCELLED', 'ORDER_CANCELLED', 'CANCELLED_BY_VENDOR'].includes(currentOrder.status.toUpperCase())) {
-             return;
+      const sfxOrder = await prisma.sfxOrder.findUnique({
+        where: { internalOrderId: orderId }
+      });
+      const sfxOrderId = sfxOrder ? sfxOrder.sfxOrderId : BigInt(Math.floor(Math.random() * 90000000) + 10000000);
+
+      const vendor = order.vendor;
+      const vendorId = order.vendorId;
+
+      // Extract coordinates (default to Delhi coordinates if missing)
+      const vendorLat = Number(vendor?.latitude) || 28.6304;
+      const vendorLng = Number(vendor?.longitude) || 77.2177;
+
+      const addressSnapshot = order.addressSnapshot || {};
+      const dropLat = Number(addressSnapshot.latitude) || 28.6448;
+      const dropLng = Number(addressSnapshot.longitude) || 77.1873;
+
+      // Spawn Rider starting location (~1.5 km away from Store)
+      const riderStartLat = vendorLat + 0.011;
+      const riderStartLng = vendorLng - 0.011;
+
+      const simulationSteps = [
+        // PHASE 1: Rider assigned and moving to store
+        { status: 'RIDER_ASSIGNED', lat: riderStartLat, lng: riderStartLng, pickupEta: 8, dropEta: null, delay: 0 },
+        { status: 'RIDER_ASSIGNED', lat: riderStartLat * 0.75 + vendorLat * 0.25, lng: riderStartLng * 0.75 + vendorLng * 0.25, pickupEta: 6, dropEta: null, delay: 4000 },
+        { status: 'RIDER_ASSIGNED', lat: riderStartLat * 0.50 + vendorLat * 0.50, lng: riderStartLng * 0.50 + vendorLng * 0.50, pickupEta: 4, dropEta: null, delay: 8000 },
+        { status: 'RIDER_ASSIGNED', lat: riderStartLat * 0.25 + vendorLat * 0.75, lng: riderStartLng * 0.25 + vendorLng * 0.75, pickupEta: 2, dropEta: null, delay: 12000 },
+        
+        // PHASE 2: Rider arrived at store
+        { status: 'RIDER_AT_STORE', lat: vendorLat, lng: vendorLng, pickupEta: 0, dropEta: null, delay: 16000 },
+        
+        // PHASE 3: Rider picks up product and goes towards customer
+        { status: 'picked_up', lat: vendorLat, lng: vendorLng, pickupEta: null, dropEta: 12, delay: 22000 },
+        { status: 'picked_up', lat: vendorLat * 0.66 + dropLat * 0.34, lng: vendorLng * 0.66 + dropLng * 0.34, pickupEta: null, dropEta: 8, delay: 26000 },
+        { status: 'picked_up', lat: vendorLat * 0.33 + dropLat * 0.67, lng: vendorLng * 0.33 + dropLng * 0.67, pickupEta: null, dropEta: 4, delay: 30000 },
+        
+        // PHASE 4: Rider arrives at customer doorstep
+        { status: 'arrived_at_customer', lat: dropLat, lng: dropLng, pickupEta: null, dropEta: 1, delay: 34000 },
+        
+        // PHASE 5: Order delivered
+        { status: 'delivered', lat: dropLat, lng: dropLng, pickupEta: null, dropEta: 0, delay: 38000 }
+      ];
+
+      for (const step of simulationSteps) {
+        setTimeout(async () => {
+          try {
+            // Check if order has been cancelled mid-simulation
+            const currentOrder = await prisma.order.findUnique({ where: { id: orderId } });
+            if (!currentOrder || ['CANCELLED', 'ORDER_CANCELLED', 'CANCELLED_BY_VENDOR'].includes(currentOrder.status.toUpperCase())) {
+              logger.info(`[SandboxRider] Order ${orderId} cancelled. Stopping simulation.`);
+              return;
+            }
+
+            logger.info(`[SandboxRider] Order ${orderId} - Step Status: ${step.status}, Location: [${step.lat.toFixed(5)}, ${step.lng.toFixed(5)}], ETA: P:${step.pickupEta} D:${step.dropEta}`);
+
+            // 1. Log Location in DB
+            try {
+              await prisma.sfxRiderLocationLog.create({
+                data: {
+                  sfxOrderId: sfxOrderId,
+                  lat: step.lat,
+                  lng: step.lng,
+                  pickupEta: step.pickupEta,
+                  dropEta: step.dropEta
+                }
+              });
+            } catch (dbErr) {
+              logger.error(`[SandboxRider] Failed to log coordinates: ${dbErr.message}`);
+            }
+
+            // 2. If status changes, update database and emit updates
+            const statusChanged = currentOrder.status !== step.status;
+            if (statusChanged) {
+              const OrderService = require('../../../services/orderService');
+              await OrderService.updateOrderStatus(orderId, step.status, 'SYSTEM');
+
+              await prisma.sfxOrder.updateMany({
+                where: { internalOrderId: orderId },
+                data: { sfxStatus: step.status }
+              });
+            }
+
+            // 3. Emit live coordinate updates to all customer and vendor clients via Socket.io namespaces
+            const { emitLocationUpdate } = require('../../../lib/socket');
+            emitLocationUpdate(orderId, step.lat, step.lng, step.pickupEta, step.dropEta, vendorId);
+
+          } catch (stepErr) {
+            logger.error(`[SandboxRider] Error in step execution for ${orderId}: ${stepErr.message}`);
           }
+        }, step.delay);
+      }
 
-          logger.info(`[SandboxRider] Transitioning order ${orderId} to ${t.status}`);
-          const OrderService = require('../../../services/orderService');
-          await OrderService.updateOrderStatus(orderId, t.status, 'SYSTEM');
-        } catch (err) {
-          logger.error(`[SandboxRider] Failed transition to ${t.status}: ${err.message}`);
-        }
-      }, t.delay);
+    } catch (err) {
+      logger.error(`[SandboxRider] Simulation failure for order ${orderId}: ${err.message}`);
     }
   }
 }
 
 module.exports = new DeliveryService();
+
 

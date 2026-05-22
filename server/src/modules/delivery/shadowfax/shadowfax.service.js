@@ -9,8 +9,7 @@ const ERROR_CODES = {
   SFX_SERVICE_UNAVAILABLE: 'SFX_SERVICE_UNAVAILABLE',
   SFX_TIMEOUT: 'SFX_TIMEOUT',
   SFX_VALIDATION_ERROR: 'SFX_VALIDATION_ERROR',
-  SFX_INVALID_RESPONSE: 'SFX_INVALID_RESPONSE',
-  SFX_STORE_CREATE_FAILED: 'SFX_STORE_CREATE_FAILED'
+  SFX_INVALID_RESPONSE: 'SFX_INVALID_RESPONSE'
 };
 
 class AppError extends Error {
@@ -56,50 +55,73 @@ function handleSfxError(error, context) {
 // Validation Helpers
 const isValidLat = (lat) => typeof lat === 'number' && lat >= -90 && lat <= 90;
 const isValidLng = (lng) => typeof lng === 'number' && lng >= -180 && lng <= 180;
-const isSafeString = (str) => typeof str === 'string' && str.trim().length > 0 && /^[a-zA-Z0-9-_]+$/.test(str);
 
 class ShadowfaxService {
   /**
    * Check if Shadowfax is serviceable for a given location and value.
-   * @param {Object} params
-   * @param {string} params.storeCode - The shadowfax store code.
-   * @param {number} params.orderValue - Total order amount.
-   * @param {boolean} params.paid - Whether the order is prepaid.
-   * @param {number} [params.dropLat] - Drop latitude (optional).
-   * @param {number} [params.dropLng] - Drop longitude (optional).
-   * @param {string} [params.coid] - Client order ID (optional).
-   * @returns {Promise<Object>} Response object containing available_rider_count and delivery_cost
+   * Flash Endpoint: POST /order/serviceability/
    */
-  async checkServiceability({ storeCode, orderValue, paid, dropLat, dropLng, coid }) {
-    if (!storeCode || typeof orderValue !== 'number' || orderValue < 0 || typeof paid !== 'boolean') {
-      throw new AppError('Invalid or missing required fields for serviceability check', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
+  async checkServiceability({ pickupDetails, dropDetails, storeCode, orderValue, paid, dropLat, dropLng, coid }) {
+    // Determine dynamic inputs with compatibility checks
+    const pickup = pickupDetails || {
+      building_name: 'Store Vendor',
+      latitude: 0,
+      longitude: 0,
+      address: 'Store Address'
+    };
+
+    const drop = dropDetails || {
+      building_name: 'Customer Apartment',
+      latitude: dropLat || 0,
+      longitude: dropLng || 0,
+      address: 'Customer Address'
+    };
+
+    if (!isValidLat(pickup.latitude) || !isValidLng(pickup.longitude)) {
+      throw new AppError('Invalid pickup coordinates', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
     }
-    if (dropLat !== undefined && !isValidLat(dropLat)) {
-      throw new AppError('Invalid drop_latitude', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-    if (dropLng !== undefined && !isValidLng(dropLng)) {
-      throw new AppError('Invalid drop_longitude', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
+    if (!isValidLat(drop.latitude) || !isValidLng(drop.longitude)) {
+      throw new AppError('Invalid drop coordinates', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
     }
 
     try {
       const payload = {
-        store_code: storeCode,
-        order_value: orderValue,
-        paid: paid ? "true" : "false"
+        pickup_details: {
+          building_name: pickup.building_name || pickup.name || 'Store Vendor',
+          latitude: Number(pickup.latitude),
+          longitude: Number(pickup.longitude),
+          address: pickup.address || 'Store Vendor Address'
+        },
+        drop_details: {
+          building_name: drop.building_name || drop.name || 'Customer Apartment',
+          latitude: Number(drop.latitude),
+          longitude: Number(drop.longitude),
+          address: drop.address || 'Customer Delivery Address'
+        }
       };
-      if (dropLat) payload.drop_latitude = dropLat;
-      if (dropLng) payload.drop_longitude = dropLng;
-      if (coid) payload.COID = coid;
 
-      logger.info(`[Shadowfax Service] Checking serviceability for store: ${storeCode}, orderValue: ${orderValue}`);
-      const response = await shadowfaxClient.put('/api/v2/store_serviceability/', payload);
+      logger.info(`[Shadowfax Service] Checking serviceability from [${payload.pickup_details.latitude}, ${payload.pickup_details.longitude}] to [${payload.drop_details.latitude}, ${payload.drop_details.longitude}]`);
+      const response = await shadowfaxClient.post('/order/serviceability/', payload);
       
-      if (response.data && typeof response.data.available_rider_count !== 'number') {
-        throw new AppError('Invalid response: missing available_rider_count', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
+      if (!response.data || typeof response.data.is_serviceable === 'undefined') {
+        throw new AppError('Invalid response: missing is_serviceable key', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
       }
       
-      logger.info(`[Shadowfax Service] Serviceability check passed. Riders available: ${response.data.available_rider_count}`);
-      return response.data;
+      logger.info(`[Shadowfax Service] Serviceability check passed. is_serviceable: ${response.data.is_serviceable}`);
+      
+      // Map to backward compatible and full response formats
+      return {
+        is_serviceable: response.data.is_serviceable,
+        isServiceable: response.data.is_serviceable,
+        total_amount: Number(response.data.total_amount || 0),
+        delivery_cost: Number(response.data.total_amount || 0),
+        rain_rider_incentive: Number(response.data.rain_rider_incentive || 0),
+        high_demand_surge: Number(response.data.high_demand_surge || 0),
+        pickup_eta: response.data.pickup_eta || '15 Mins',
+        eta: response.data.pickup_eta || '15 Mins',
+        available_rider_count: response.data.is_serviceable ? 5 : 0, // compatibility override
+        message: response.data.message
+      };
     } catch (error) {
       if (error instanceof AppError) throw error;
       handleSfxError(error, 'checkServiceability');
@@ -108,49 +130,29 @@ class ShadowfaxService {
 
   /**
    * Place an order with Shadowfax.
-   * @param {Object} params
-   * @param {string} params.storeCode - The shadowfax store code.
-   * @param {Object} params.orderDetails - The order details payload.
-   * @param {Object} params.customerDetails - The customer details payload.
-   * @param {Array} params.productDetails - The product details payload array.
-   * @param {Object} [params.misc] - Additional miscellaneous metadata.
-   * @returns {Promise<Object>} Response containing sfx_order_id and track_url
+   * Flash Endpoint: POST /order/create/
    */
-  async placeOrder({ storeCode, orderDetails, customerDetails, productDetails, misc }) {
-    if (!storeCode || typeof orderDetails?.order_value !== 'number' || orderDetails.order_value <= 0) {
-      throw new AppError('Invalid store code or order value', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-    if (!isSafeString(orderDetails?.client_order_id)) {
-      throw new AppError('Invalid client_order_id', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-    if (!Array.isArray(productDetails) || productDetails.length === 0) {
-      throw new AppError('product_details must be a non-empty array', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-    for (const p of productDetails) {
-      if (typeof p.id !== 'string' && typeof p.id !== 'number') throw new AppError('Invalid product id', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-      if (!p.name || typeof p.price !== 'number') throw new AppError('Invalid product name or price', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-
+  async placeOrder(payload) {
     try {
-      orderDetails.paid = orderDetails.paid === true || orderDetails.paid === "true" ? "true" : "false";
-
-      const payload = {
-        store_code: storeCode,
-        order_details: orderDetails,
-        customer_details: customerDetails,
-        product_details: productDetails
-      };
-      if (misc) payload.misc = misc;
-
-      logger.info(`[Shadowfax Service] Placing order COID: ${orderDetails.client_order_id} for store ${storeCode}`);
-      const response = await shadowfaxClient.post('/api/v2/stores/orders/', payload);
+      logger.info(`[Shadowfax Service] Placing Flash order.`);
+      const response = await shadowfaxClient.post('/order/create/', payload);
       
-      if (!response.data || typeof response.data.sfx_order_id === 'undefined') {
-        throw new AppError('Invalid response: missing sfx_order_id', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
+      if (!response.data || !response.data.is_order_created) {
+        throw new AppError('Order placement was not marked created in response', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
       }
       
-      logger.info(`[Shadowfax Service] Order placed successfully. SFX ID: ${response.data.sfx_order_id}`);
-      return response.data;
+      logger.info(`[Shadowfax Service] Order placed successfully. Flash ID: ${response.data.flash_order_id}`);
+      
+      // Map response to match system expectations
+      return {
+        sfx_order_id: response.data.flash_order_id,
+        status: 'ALLOTTED',
+        pickup_otp: response.data.pickup_otp,
+        drop_otp: response.data.drop_otp,
+        total_amount: response.data.total_amount,
+        track_url: null,
+        message: response.data.message
+      };
     } catch (error) {
       if (error instanceof AppError) throw error;
       handleSfxError(error, 'placeOrder');
@@ -159,21 +161,19 @@ class ShadowfaxService {
 
   /**
    * Cancel an existing Shadowfax order.
-   * @param {Object} params
-   * @param {string} params.sfxOrderId - The shadowfax order ID.
-   * @param {string} params.reason - Cancellation reason.
-   * @param {string} params.user - The user executing cancel (e.g., 'Seller').
-   * @returns {Promise<Object>} API response object
+   * Flash Endpoint: POST /order/cancel/
    */
   async cancelOrder({ sfxOrderId, reason, user }) {
-    if (!sfxOrderId || !reason || !user) {
-      throw new AppError('Missing required fields for cancellation', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
+    if (!sfxOrderId) {
+      throw new AppError('sfxOrderId is required for cancellation', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
     }
 
     try {
-      const payload = { reason, user };
-      logger.info(`[Shadowfax Service] Cancelling order ${sfxOrderId} due to: ${reason}`);
-      const response = await shadowfaxClient.put(`/api/v2/orders/${sfxOrderId}/cancel/`, payload);
+      const payload = {
+        order_id: sfxOrderId.toString()
+      };
+      logger.info(`[Shadowfax Service] Cancelling Flash order ${sfxOrderId}`);
+      const response = await shadowfaxClient.post('/order/cancel/', payload);
       logger.info(`[Shadowfax Service] Order ${sfxOrderId} cancelled successfully.`);
       return response.data;
     } catch (error) {
@@ -182,40 +182,19 @@ class ShadowfaxService {
   }
 
   /**
-   * Mark an order as dispatch ready.
-   * @param {Object} params
-   * @param {string} params.coid - Client Order ID.
-   * @param {string} params.shipmentReadyTimestamp - ISO timestamp.
-   * @returns {Promise<Object>} API response object
+   * Get real-time order tracking details.
+   * Flash Endpoint: GET /order/track/{order_id}/
    */
-  async markDispatchReady({ coid, shipmentReadyTimestamp }) {
-    if (!coid || !shipmentReadyTimestamp) {
-      throw new AppError('Missing required fields for dispatch ready', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
+  async getOrderStatus({ coid, sfxOrderId }) {
+    // Flash uses client order ID (coid) for tracking. Accept both for compatibility.
+    const trackingId = coid || sfxOrderId;
+    if (!trackingId) {
+      throw new AppError('coid or sfxOrderId is required for tracking', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
     }
 
     try {
-      const payload = { shipment_ready_timestamp: shipmentReadyTimestamp };
-      logger.info(`[Shadowfax Service] Marking COID ${coid} as dispatch ready.`);
-      const response = await shadowfaxClient.put(`/api/v2/orders/${coid}/dispatch-ready/`, payload);
-      return response.data;
-    } catch (error) {
-      handleSfxError(error, 'markDispatchReady');
-    }
-  }
-
-  /**
-   * Get the status of an existing order.
-   * @param {Object} params
-   * @param {string} params.sfxOrderId - The shadowfax order ID.
-   * @returns {Promise<Object>} API response object with status
-   */
-  async getOrderStatus({ sfxOrderId }) {
-    if (!sfxOrderId) {
-      throw new AppError('sfxOrderId is required', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
-
-    try {
-      const response = await shadowfaxClient.get(`/api/v2/orders/${sfxOrderId}/status/`);
+      logger.info(`[Shadowfax Service] Tracking Flash order: ${trackingId}`);
+      const response = await shadowfaxClient.get(`/order/track/${trackingId}/`);
       return response.data;
     } catch (error) {
       handleSfxError(error, 'getOrderStatus');
@@ -223,49 +202,21 @@ class ShadowfaxService {
   }
 
   /**
-   * Create a new store (vendor location) in Shadowfax.
-   * @param {Object} params
-   * @param {string} params.name - Store name.
-   * @param {string} params.contactName - Contact person name.
-   * @param {string} params.contactNumber - Contact phone number.
-   * @param {string} params.address - Full address.
-   * @param {string} params.pincode - 6-digit pincode.
-   * @param {string} params.city - City name.
-   * @param {number} params.latitude - Latitude.
-   * @param {number} params.longitude - Longitude.
-   * @returns {Promise<Object>} Response containing store_code
+   * Dynamic Flow deprecates static Store registration.
    */
-  async createStore({ name, contactName, contactNumber, address, pincode, city, latitude, longitude }) {
-    if (!name || !contactNumber || !address || !pincode || !latitude || !longitude) {
-      throw new AppError('Missing required fields for store creation', ERROR_CODES.SFX_VALIDATION_ERROR, 400);
-    }
+  async createStore() {
+    logger.warn('[Shadowfax Service] createStore is deprecated in Flash Hyperlocal dynamic pickup model.');
+    return { store_code: 'DYNAMIC_PICKUP' };
+  }
 
-    try {
-      const payload = {
-        name,
-        contact_name: contactName || name,
-        contact_number: contactNumber,
-        address_line_1: address,
-        pincode,
-        city: city || 'Default',
-        latitude: Number(latitude),
-        longitude: Number(longitude)
-      };
-
-      logger.info(`[Shadowfax Service] Creating store: ${name} at ${address}`);
-      const response = await shadowfaxClient.post('/api/v2/stores/', payload);
-      
-      if (!response.data || !response.data.store_code) {
-        throw new AppError('Invalid response: missing store_code', ERROR_CODES.SFX_INVALID_RESPONSE, 502);
-      }
-      
-      logger.info(`[Shadowfax Service] Store created successfully. Code: ${response.data.store_code}`);
-      return response.data;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      handleSfxError(error, 'createStore');
-    }
+  /**
+   * Mark an order as dispatch ready (Deprecated/Stubbed out in dynamic Flash model).
+   */
+  async markDispatchReady() {
+    logger.info('[Shadowfax Service] markDispatchReady stubbed out for Flash.');
+    return { success: true };
   }
 }
 
 module.exports = new ShadowfaxService();
+

@@ -81,7 +81,22 @@ router.post('/verify', firebaseAuth, requireCustomer, guestSession, async (req, 
 
     console.log('[PAYMENT] Order created successfully:', order.id);
     
-    // 4. Log the transaction in the database
+    // If order was cancelled by system (e.g. suspicious high-value order), log transaction and return early.
+    if (order.status === 'CANCELLED') {
+      console.log('[PAYMENT] Order was auto-cancelled by system (suspicious order). Logging transaction and returning early.');
+      await prisma.paymentTransaction.create({
+        data: {
+          orderId: order.id,
+          gateway: paymentIntentId.startsWith('pi_sandbox_') ? 'SANDBOX' : 'RAZORPAY', // Auto-detect
+          txnId: paymentIntentId,
+          status: 'SUCCESS',
+          amount: order.totalAmount,
+          webhookPayload: { paymentIntentId, deliveryPreference, addressId, deliveryFee: req.body.deliveryFee }
+        }
+      }).catch(e => console.warn('[PAYMENT] Failed to log transaction record:', e.message));
+
+      return res.json({ success: true, orderId: order.id });
+    }
     await prisma.paymentTransaction.create({
       data: {
         orderId: order.id,

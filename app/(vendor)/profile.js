@@ -226,7 +226,7 @@ export default function VendorProfile() {
       Alert.alert('Error', 'Account number, holder name, and IFSC code are required to update bank details.');
       return;
     }
-    if (bankForm.ifscCode.length !== 11) {
+    if (!/^[A-Z0-9]{11}$/i.test(bankForm.ifscCode)) {
       Alert.alert('Invalid IFSC Code', 'IFSC Code must be exactly 11 alphanumeric characters.');
       return;
     }
@@ -277,8 +277,7 @@ export default function VendorProfile() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: type === 'logo' ? [1, 1] : [16, 9],
+      allowsEditing: false,
       quality: 1,
     });
 

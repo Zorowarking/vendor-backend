@@ -96,7 +96,7 @@ class OrderService {
     const orderTotal = Number(order.totalAmount);
     if (orderTotal > 50000) {
       console.log(`[ORDER-SERVICE] Suspicious high-value order detected: ₹${orderTotal}. Flagging and cancelling.`);
-      await prisma.order.update({
+      const cancelledOrder = await prisma.order.update({
         where: { id: order.id },
         data: { 
           status: 'CANCELLED',
@@ -110,6 +110,12 @@ class OrderService {
               notes: 'Auto-cancelled: High value suspicious order detected.'
             }
           }
+        },
+        include: {
+          customer: {
+            include: { profile: true }
+          },
+          items: true
         }
       });
 
@@ -126,6 +132,37 @@ class OrderService {
       } catch (err) {
         console.error(`[ORDER-SERVICE] FAILED to create breach record: ${err.message}`);
       }
+
+      // Emit real-time status update to client sockets:
+      emitOrderStatusUpdate(order.id, 'CANCELLED', 'SYSTEM', cart.vendorId);
+
+      // Send emoji-free push notification:
+      if (cancelledOrder.customer?.profile?.firebaseUid) {
+        try {
+          await fcm.sendToCustomer(cancelledOrder.customer.profile.firebaseUid, {
+            title: 'Order Cancelled',
+            body: 'Order was automatically cancelled by the system due to security verification.',
+            orderId: order.id
+          });
+        } catch (fcmErr) {
+          console.error(`[ORDER-SERVICE] Failed to send customer push: ${fcmErr.message}`);
+        }
+      }
+
+      // Send push notification to vendor:
+      try {
+        await fcm.sendToVendor(cart.vendorId, {
+          title: 'Order Cancelled',
+          body: 'Order was automatically cancelled by the system due to security verification.',
+          orderId: order.id,
+          type: 'SYSTEM_CANCELLATION'
+        });
+      } catch (fcmErr) {
+        console.error(`[ORDER-SERVICE] Failed to send vendor push: ${fcmErr.message}`);
+      }
+
+      // Return early, bypassing vendor notifications, floating bubble updates, BullMQ SLA queueing, and Shadowfax delivery.
+      return cancelledOrder;
     }
 
     // 3. Fire Notifications

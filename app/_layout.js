@@ -291,6 +291,14 @@ export default function Layout() {
       } else if (type === 'ADMIN_BROADCAST') {
         // Navigate to profile/notifications tab for broadcast messages
         router.push('/(vendor)/profile');
+      } else if (type === 'BUBBLE_CLOSED_EXTERNALLY') {
+        checkBubbleClosedExternally();
+      } else if (type === 'SYSTEM_CANCELLATION' || type === 'ORDER_CANCELLED') {
+        if (data?.orderId) {
+          router.push(`/(vendor)/orders/${data.orderId}`);
+        } else {
+          router.push('/(vendor)');
+        }
       }
     };
 
@@ -368,7 +376,7 @@ export default function Layout() {
         systemBubbleService.reopen();
       });
 
-      const removeSub = DeviceEventEmitter.addListener("floating-bubble-remove", (e) => {
+      const removeSub = DeviceEventEmitter.addListener("floating-bubble-remove", async (e) => {
         // 1. Check if the bubble was closed programmatically (e.g. from transition or active state)
         if (systemBubbleService.isProgrammaticHide) {
           console.log('[BUBBLE] Bubble hidden programmatically. Resetting flag and skipping offline dialog.');
@@ -376,21 +384,35 @@ export default function Layout() {
           return;
         }
 
-        if (AppState.currentState === 'active') {
-          console.log('[BUBBLE] Bubble hidden programmatically in active state. Skipping offline dialog.');
-          return;
+        // 2. Closed externally (user dragged to remove zone). Save flag in AsyncStorage.
+        console.log('[BUBBLE] Bubble closed externally. Saving flag...');
+        try {
+          await AsyncStorage.setItem('@was_bubble_closed_externally', 'true');
+          
+          if (AppState.currentState === 'active') {
+            console.log('[BUBBLE] App is in active state. Displaying alert immediately.');
+            checkBubbleClosedExternally();
+          } else {
+            console.log('[BUBBLE] App is in background/minimized. Scheduling high-priority local notification fallback.');
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: "Offline Confirmation",
+                body: "You removed the floating bubble. Would you like to go offline and stop receiving new orders?",
+                data: { type: 'BUBBLE_CLOSED_EXTERNALLY' },
+                sound: 'default',
+                priority: Notifications.AndroidNotificationPriority.MAX,
+              },
+              trigger: null,
+            });
+            
+            // Best effort reopen
+            systemBubbleService.reopen().catch(err => {
+              console.log('[BUBBLE] Best effort reopen failed or blocked:', err.message);
+            });
+          }
+        } catch (err) {
+          console.error('[BUBBLE] Failed to handle external close:', err);
         }
-
-        // 2. Closed externally (user dragged to remove zone). Since we are in the background,
-        // instantly set the storage flag and call reopen() to bring the app to the foreground.
-        console.log('[BUBBLE] Bubble closed externally. Saving flag and reopening app...');
-        AsyncStorage.setItem('@was_bubble_closed_externally', 'true')
-          .then(() => {
-            systemBubbleService.reopen();
-          })
-          .catch((err) => {
-            console.error('[BUBBLE] Failed to save external close flag:', err);
-          });
       });
 
       return () => {
@@ -494,6 +516,12 @@ export default function Layout() {
               router.push('/kyc/status');
             } else if (type === 'ADMIN_BROADCAST') {
               router.push('/(vendor)/profile');
+            } else if (type === 'SYSTEM_CANCELLATION' || type === 'ORDER_CANCELLED') {
+              if (data?.orderId) {
+                router.push(`/(vendor)/orders/${data.orderId}`);
+              } else {
+                router.push('/(vendor)');
+              }
             }
           }}
         />

@@ -38,6 +38,16 @@ class CartService {
             throw { status: 400, message: 'This product does not belong to the selected restaurant.' };
         }
 
+        // 0.5 Check Age Restrictions for Restricted Items
+        if (targetProduct.isRestricted && customerId) {
+          const ageVerification = await prisma.ageVerification.findUnique({
+            where: { customerId }
+          });
+          if (ageVerification && ageVerification.isVerified === false && ageVerification.verificationId === 'UNDERAGE_ACKNOWLEDGED') {
+            throw { status: 403, message: 'You are under 18. Restricted items cannot be purchased.' };
+          }
+        }
+
         let queryWhere = customerId ? { customerId, vendorId } : { guestId, vendorId };
 
         // 1. Enforce Vendor Limits
@@ -250,7 +260,8 @@ class CartService {
           name: product.name,
           price: basePrice,
           unitPrice: basePrice + itemAddonCharge,
-          total: itemSubtotal + totalLineAddonCharge
+          total: itemSubtotal + totalLineAddonCharge,
+          isRestricted: product.isRestricted || false
         };
       }).filter(Boolean);
 

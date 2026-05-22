@@ -154,7 +154,14 @@ export default function OrderDetailScreen() {
 
       const handleStatusUpdate = (data) => {
         if (data.orderId === orderId) {
-          useVendorStore.getState().updateOrder(orderId, { status: data.status });
+          const currentOrder = useVendorStore.getState().activeOrders.find(o => o.id === orderId) ||
+                               useVendorStore.getState().orderHistory.find(o => o.id === orderId) ||
+                               useVendorStore.getState().incomingOrders.find(o => o.id === orderId);
+          let newHistory = currentOrder?.statusHistory || [];
+          if (data.updatedBy && !newHistory.some(h => h.status === data.status && h.changedBy === data.updatedBy)) {
+            newHistory = [...newHistory, { status: data.status, changedBy: data.updatedBy, changedAt: new Date().toISOString() }];
+          }
+          useVendorStore.getState().updateOrder(orderId, { status: data.status, statusHistory: newHistory });
         }
       };
 
@@ -198,6 +205,16 @@ export default function OrderDetailScreen() {
 
   const sfxOrder = order.sfxOrder; // Assuming this comes from the API include
 
+  const formatStatus = (status, statusHistory) => {
+    if (status?.toLowerCase() === 'cancelled') {
+      const cancelledBySystem = statusHistory?.some(h => h.changedBy === 'SYSTEM');
+      if (cancelledBySystem) {
+        return 'Cancelled by System';
+      }
+    }
+    return status;
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {isFlagged && (
@@ -216,7 +233,7 @@ export default function OrderDetailScreen() {
               </View>
             )}
           </View>
-          <Text style={[styles.statusBadge, { backgroundColor: Colors.primary + '15', color: Colors.primary }]}>{order.status}</Text>
+          <Text style={[styles.statusBadge, { backgroundColor: Colors.primary + '15', color: Colors.primary }]}>{formatStatus(order.status, order.statusHistory)}</Text>
         </View>
         <View style={styles.customerCard}>
           <View style={styles.row}>

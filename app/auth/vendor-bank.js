@@ -30,9 +30,8 @@ const VALIDATORS = {
   ifscCode: (v) => {
     if (!v.trim()) return 'IFSC code is required.';
     if (v.length !== 11) return 'IFSC code must be exactly 11 characters.';
-    // RBI standard: 4 letters + 0 + 6 alphanumeric
-    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(v)) {
-      return 'Invalid IFSC format. Example: HDFC0001234 (4 letters + 0 + 6 alphanumeric).';
+    if (!/^[A-Z0-9]{11}$/i.test(v)) {
+      return 'IFSC code must be exactly 11 alphanumeric characters.';
     }
     return null;
   },
@@ -255,7 +254,7 @@ export default function VendorBankScreen() {
               <FieldError message={touched.ifscCode && errors.ifscCode} />
               {!errors.ifscCode && (
                 <Text style={styles.helperText}>
-                  Format: 4 letters + 0 + 6 alphanumeric (e.g. HDFC0001234)
+                  Format: Exactly 11 alphanumeric characters (e.g. HDFC0001234)
                   {bankData.ifscCode.length > 0 ? ` · ${bankData.ifscCode.length}/11` : ''}
                 </Text>
               )}

@@ -53,21 +53,25 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     }
 
     // 4. Validate Age Verification for restricted products
-    const hasRestrictedProducts = cart.items.some(item => {
-        // We'd need to check the product record or the flag on cart item
-        return item.ageVerified === false; // If any item marked as restricted but missing verification in cart
-    });
+    const hasRestrictedProducts = cart.items.some(item => item.isRestricted === true);
 
     if (hasRestrictedProducts) {
-        // Check profile verification (Synchronized with 30-day window stored in DB)
         const verification = req.customer.ageVerification;
         const now = new Date();
 
-        if (!verification || new Date(verification.expiresAt) < now) {
-            console.log(`[CHECKOUT] Age verification failed for ${req.customer.id}. Record: ${!!verification}`);
+        if (verification && verification.isVerified === false && verification.verificationId === 'UNDERAGE_ACKNOWLEDGED') {
+            console.log(`[CHECKOUT] Age verification failed: user is verified minor for ${req.customer.id}.`);
+            return res.status(403).json({ 
+                error: 'UNDERAGE_RESTRICTION', 
+                message: 'You are under 18. Restricted items cannot be purchased.' 
+            });
+        }
+
+        if (!verification || verification.isVerified === false || new Date(verification.expiresAt) < now) {
+            console.log(`[CHECKOUT] Age verification failed/required for ${req.customer.id}.`);
             return res.status(403).json({ 
                 error: 'AGE_VERIFICATION_REQUIRED', 
-                message: 'Age verification expired or missing. Please verify to purchase restricted products.' 
+                message: 'Age verification required.' 
             });
         }
     }
@@ -89,31 +93,44 @@ router.post('/checkout', firebaseAuth, requireCustomer, async (req, res) => {
     console.log(`[CHECKOUT] Sandbox Check: ${isSandbox} (env: ${env.USE_SANDBOX_PAYMENTS}, process: ${process.env.USE_SANDBOX_PAYMENTS})`);
 
     if (isSandbox) {
-      console.log('[CHECKOUT] Sandbox mode active: Applying mock delivery fee.');
-      deliveryCost = 40.00; 
+      console.log('[CHECKOUT] Sandbox mode active: Applying mock delivery fee with dynamic weather/demand surges.');
+      const mockRainIncentive = 15.00;
+      const mockDemandSurge = 20.00;
+      const mockBaseCharge = 40.00;
+      deliveryCost = mockBaseCharge + mockRainIncentive + mockDemandSurge;
     } else {
       try {
         const sfxResponse = await shadowfaxService.checkServiceability({
-          storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
+          pickupDetails: {
+            building_name: vendor.businessName || 'Store Vendor',
+            latitude: vendor.latitude ? Number(vendor.latitude) : 28.6304,
+            longitude: vendor.longitude ? Number(vendor.longitude) : 77.2177,
+            address: vendor.businessAddress || 'Store Address'
+          },
+          dropDetails: {
+            building_name: address.addressType || 'Customer Residence',
+            latitude: address.latitude ? Number(address.latitude) : 28.6448,
+            longitude: address.longitude ? Number(address.longitude) : 77.1873,
+            address: address.addressLine1 || 'Customer Address'
+          },
           orderValue: cart.total,
-          paid: true,
-          dropLat: address.latitude ? Number(address.latitude) : undefined,
-          dropLng: address.longitude ? Number(address.longitude) : undefined
+          paid: true
         });
         
-        if (sfxResponse && sfxResponse.available_rider_count === 0) {
+        if (sfxResponse && !sfxResponse.isServiceable) {
           return res.status(422).json({ 
             error: 'DELIVERY_UNAVAILABLE', 
-            message: 'Shadowfax has no available riders in this area right now.' 
+            message: 'Delivery is currently unavailable in your area.' 
           });
         }
         
-        if (sfxResponse && sfxResponse.delivery_cost) {
-          deliveryCost = sfxResponse.delivery_cost;
+        if (sfxResponse) {
+          // Dynamic weather and surge charges are added dynamically to the delivery charges
+          deliveryCost = Number(sfxResponse.total_amount || 0) + Number(sfxResponse.rain_rider_incentive || 0) + Number(sfxResponse.high_demand_surge || 0);
         }
       } catch (error) {
-        console.warn('[CHECKOUT-DEMO] Shadowfax check failed, forcing mock delivery cost of 40 for stability:', error.message);
-        deliveryCost = 40.00;
+        console.warn('[CHECKOUT-DEMO] Serviceability check failed, forcing mock delivery cost of 75 for stability:', error.message);
+        deliveryCost = 75.00;
       }
     }
 
@@ -167,26 +184,53 @@ router.post('/validate-delivery', firebaseAuth, requireCustomer, async (req, res
 
     if (!vendor || !address) return res.status(400).json({ error: 'Invalid vendor or address' });
 
+    const isSandbox = env.USE_SANDBOX_PAYMENTS || process.env.USE_SANDBOX_PAYMENTS === 'true';
+    if (isSandbox) {
+      const mockRainIncentive = 15.00;
+      const mockDemandSurge = 20.00;
+      const mockBaseCharge = 40.00;
+      const totalDeliveryFee = mockBaseCharge + mockRainIncentive + mockDemandSurge;
+      return res.json({
+        success: true,
+        isServiceable: true,
+        riderCount: 5,
+        deliveryFee: totalDeliveryFee,
+        eta: '15 Mins'
+      });
+    }
+
     try {
       const sfxResponse = await shadowfaxService.checkServiceability({
-        storeCode: vendor.sfxStoreCode || env.SFX_STORE_CODE,
+        pickupDetails: {
+          building_name: vendor.businessName || 'Store Vendor',
+          latitude: vendor.latitude ? Number(vendor.latitude) : 28.6304,
+          longitude: vendor.longitude ? Number(vendor.longitude) : 77.2177,
+          address: vendor.businessAddress || 'Store Address'
+        },
+        dropDetails: {
+          building_name: address.addressType || 'Customer Residence',
+          latitude: address.latitude ? Number(address.latitude) : 28.6448,
+          longitude: address.longitude ? Number(address.longitude) : 77.1873,
+          address: address.addressLine1 || 'Customer Address'
+        },
         orderValue: cart.total,
-        dropLat: Number(address.latitude),
-        dropLng: Number(address.longitude)
+        paid: true
       });
+
+      const totalDeliveryFee = Number(sfxResponse.total_amount || 0) + Number(sfxResponse.rain_rider_incentive || 0) + Number(sfxResponse.high_demand_surge || 0);
 
       res.json({
         success: true,
-        isServiceable: sfxResponse.available_rider_count > 0,
-        riderCount: sfxResponse.available_rider_count,
-        deliveryFee: sfxResponse.delivery_cost || 0,
+        isServiceable: sfxResponse.isServiceable,
+        riderCount: sfxResponse.isServiceable ? 5 : 0,
+        deliveryFee: totalDeliveryFee,
         eta: sfxResponse.eta || null
       });
     } catch (sfxErr) {
       res.status(422).json({ 
         success: false, 
-        error: 'SFX_CHECK_FAILED', 
-        message: sfxErr.message 
+        error: 'DELIVERY_CHECK_FAILED', 
+        message: 'Delivery serviceability validation failed at this time.' 
       });
     }
   } catch (error) {

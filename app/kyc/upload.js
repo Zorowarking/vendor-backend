@@ -83,7 +83,7 @@ export default function KYCUpload() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.85,
       });
 

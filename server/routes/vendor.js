@@ -1031,7 +1031,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
       include: { 
         items: true,
         customer: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
-        rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } }
+        rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
+        statusHistory: { orderBy: { changedAt: 'asc' } }
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -1092,7 +1093,8 @@ router.get('/orders', firebaseAuth, requireKyc, async (req, res) => {
         include: { 
           items: true,
           customer: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
-          rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } }
+          rider: { select: { fullName: true, profile: { select: { phoneNumber: true } } } },
+          statusHistory: { orderBy: { changedAt: 'asc' } }
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -1769,7 +1771,7 @@ router.put('/admin-simulate/approve-vendor/:id', firebaseAuth, async (req, res) 
       
       if (isApproved || isRejected) {
         await fcm.sendToVendor(vendor.id, {
-          title: isApproved ? 'KYC Approved 🎉' : 'KYC Rejected ⚠️',
+          title: isApproved ? 'KYC Approved' : 'KYC Rejected',
           body: isApproved 
             ? 'Your store registration has been approved. You are now ready to receive orders!' 
             : 'Your KYC documents could not be verified. Please review and re-submit your documents.',

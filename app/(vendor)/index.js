@@ -638,10 +638,21 @@ export default function VendorOrdersDashboard() {
 
 
       const handleOrderUpdate = (data) => {
-        if (data.status === 'cancelled_by_vendor' || data.status === 'delivered') {
+        const statusUpper = (data.status || '').toUpperCase();
+        if (statusUpper === 'CANCELLED_BY_VENDOR' || statusUpper === 'DELIVERED' || statusUpper === 'CANCELLED') {
           useVendorStore.getState().moveToHistory(data.id);
         }
-        updateOrder(data.id, { status: data.status });
+
+        // Dynamically find order and rebuild its statusHistory to include this socket update
+        const currentOrder = useVendorStore.getState().activeOrders.find(o => o.id === data.id) ||
+                             useVendorStore.getState().orderHistory.find(o => o.id === data.id) ||
+                             useVendorStore.getState().incomingOrders.find(o => o.id === data.id);
+        let newHistory = currentOrder?.statusHistory || [];
+        if (data.updatedBy && !newHistory.some(h => h.status === data.status && h.changedBy === data.updatedBy)) {
+          newHistory = [...newHistory, { status: data.status, changedBy: data.updatedBy, changedAt: new Date().toISOString() }];
+        }
+
+        updateOrder(data.id, { status: data.status, statusHistory: newHistory });
         
         // Track unread activity for background notifications
         if (useVendorStore.getState().appState !== 'active') {
