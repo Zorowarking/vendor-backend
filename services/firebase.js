@@ -43,16 +43,29 @@ try {
   auth = getAuth(app);
 }
 
-// One-time listener to resolve the startup initialization promise
+// One-time listener to resolve the startup initialization promise safely
+let isResolved = false;
 const unsubscribe = auth.onAuthStateChanged((user) => {
-  resolveAuthInit();
-  if (unsubscribe) unsubscribe();
+  if (!isResolved) {
+    isResolved = true;
+    resolveAuthInit();
+  }
+  // Safe unsubscribe invocation (avoid race condition if synchronous)
+  setTimeout(() => {
+    if (typeof unsubscribe === 'function') {
+      unsubscribe();
+    }
+  }, 0);
 });
 
-// Safety timeout fallback (2 seconds)
+// Safety timeout fallback (6 seconds for poor network resilience)
 setTimeout(() => {
-  resolveAuthInit();
-}, 2000);
+  if (!isResolved) {
+    isResolved = true;
+    resolveAuthInit();
+    console.log('[FIREBASE] Auth initialization safety fallback triggered after 6 seconds');
+  }
+}, 6000);
 
 export { app, auth, authInitialized };
 

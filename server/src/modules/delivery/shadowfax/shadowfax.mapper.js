@@ -42,7 +42,7 @@ function buildPlaceOrderPayload(internalOrder, vendor, customer) {
     },
     user_details: {
       contact_number: vendor.phone ? vendor.phone.replace(/[^0-9]/g, '').slice(-10) : '9999999999',
-      credits_key: env.NODE_ENV === 'production' ? env.SFX_PROD_TOKEN : env.SFX_STAGING_TOKEN
+      credits_key: env.SFX_CLIENT_CODE || (env.NODE_ENV === 'production' ? env.SFX_PROD_TOKEN : env.SFX_STAGING_TOKEN)
     },
     validations: {
       pickup: {

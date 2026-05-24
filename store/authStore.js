@@ -194,4 +194,19 @@ export const useAuthStore = create((set) => ({
 
   setRole: (role) => set({ role }),
   setKycDoc: (docId, data) => set((state) => ({ kycDocs: { ...state.kycDocs, [docId]: data } })),
+
+  updateSessionToken: async (freshToken) => {
+    set({ sessionToken: freshToken });
+    try {
+      const session = await AsyncStorage.getItem('auth_session');
+      if (session) {
+        const userData = JSON.parse(session);
+        userData.sessionToken = freshToken;
+        await AsyncStorage.setItem('auth_session', JSON.stringify(userData));
+        console.log('[STORE] Dynamic session token persisted to AsyncStorage successfully');
+      }
+    } catch (e) {
+      console.warn('[STORE] Failed to persist refreshed session token:', e.message);
+    }
+  },
 }));

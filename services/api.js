@@ -65,9 +65,9 @@ apiClient.interceptors.request.use(
       const dynamicToken = await getFreshToken();
       if (dynamicToken) {
         config.headers.Authorization = `Bearer ${dynamicToken}`;
-        // Update store with fresh token if changed
+        // Update store with fresh token and persist if changed
         if (dynamicToken !== sessionToken) {
-          useAuthStore.setState({ sessionToken: dynamicToken });
+          useAuthStore.getState().updateSessionToken(dynamicToken);
         }
       } else if (sessionToken) {
         config.headers.Authorization = `Bearer ${sessionToken}`;
@@ -78,28 +78,47 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Handle Global Errors (Suspension/Disable) and Retries
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+// Response Interceptor: Handle Global Errors (Suspension/Disable), Auto-Refresh & Retry Queue
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const { config, response } = error;
+    const originalRequest = config;
+
+    if (!originalRequest) {
+      return Promise.reject(error);
+    }
     
     // Retry logic for transient errors (503, 504, or network timeout)
-    if (!config || !config.retry) config.retry = 0;
+    if (!originalRequest.retry) originalRequest.retry = 0;
     
     const MAX_RETRIES = 3;
     const shouldRetry = (error.code === 'ECONNABORTED' || (response && [503, 504].includes(response.status)));
 
-    if (shouldRetry && config.retry < MAX_RETRIES) {
-      config.retry += 1;
-      const delay = Math.pow(2, config.retry) * 1000; // Exponential backoff
-      console.warn(`[API] Retrying request (${config.retry}/${MAX_RETRIES}) in ${delay}ms...`);
+    if (shouldRetry && originalRequest.retry < MAX_RETRIES) {
+      originalRequest.retry += 1;
+      const delay = Math.pow(2, originalRequest.retry) * 1000; // Exponential backoff
+      console.warn(`[API] Retrying request (${originalRequest.retry}/${MAX_RETRIES}) in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return apiClient(config);
+      return apiClient(originalRequest);
     }
 
     if (response && response.status === 403) {
-      const { code, reason } = error.response.data || {};
+      const { code, reason } = response.data || {};
       const { setProfileStatus } = useAuthStore.getState();
 
       if (code === 'account_suspended') {
@@ -107,13 +126,69 @@ apiClient.interceptors.response.use(
         setProfileStatus('SUSPENDED', reason || 'Policy Violation');
       } else if (code === 'account_disabled') {
         console.warn('Account temporarily disabled. Redirecting...');
-        setProfileStatus(error.response.data.status || 'DISABLED');
+        setProfileStatus(response.data.status || 'DISABLED');
       }
     }
     
-    // Auto-logout on 401 Unauthorized
-    if (error.response && error.response.status === 401) {
-      useAuthStore.getState().logout();
+    // SECURE TOKEN REFRESH ON 401 UNAUTHORIZED
+    if (response && response.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Queue this request while token is refreshing
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then((token) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            return apiClient(originalRequest);
+          })
+          .catch((err) => Promise.reject(err));
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      return new Promise(async (resolve, reject) => {
+        try {
+          console.log('[VENDOR-API-REFRESH] Expiry detected. Fetching fresh Firebase Token...');
+          let freshToken = null;
+
+          // Perform force refresh from Firebase SDK
+          if (nativeAuth && nativeAuth().currentUser) {
+            freshToken = await nativeAuth().currentUser.getIdToken(true);
+          } else if (webAuth && webAuth.currentUser) {
+            freshToken = await webAuth.currentUser.getIdToken(true);
+          }
+
+          if (freshToken) {
+            console.log('[VENDOR-API-REFRESH] Token refresh successful. Updating store & storage...');
+            
+            // Update Zustand Store State and AsyncStorage via updateSessionToken action
+            await useAuthStore.getState().updateSessionToken(freshToken);
+
+            processQueue(null, freshToken);
+            originalRequest.headers.Authorization = `Bearer ${freshToken}`;
+            resolve(apiClient(originalRequest));
+          } else {
+            throw new Error('No active Firebase user session to refresh.');
+          }
+        } catch (refreshError) {
+          console.error('[VENDOR-API-REFRESH] Permanent token refresh failure:', refreshError.message);
+          processQueue(refreshError, null);
+          
+          // Only force logout if the user is truly unauthenticated on Firebase
+          const isUserLoggedOut = refreshError.code === 'auth/user-token-expired' || 
+                              refreshError.code === 'auth/user-not-found' ||
+                              refreshError.message.includes('no active session') ||
+                              refreshError.message.includes('No active Firebase user session');
+          
+          if (isUserLoggedOut) {
+            useAuthStore.getState().logout();
+          }
+          reject(refreshError);
+        } finally {
+          isRefreshing = false;
+        }
+      });
     }
 
     return Promise.reject(error);

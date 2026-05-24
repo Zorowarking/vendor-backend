@@ -7,6 +7,7 @@ const config = {
   SFX_PROD_TOKEN: process.env.SFX_PROD_TOKEN,
   SFX_STORE_CODE: process.env.SFX_STORE_CODE,
   SFX_WEBHOOK_SECRET: process.env.SFX_WEBHOOK_SECRET,
+  SFX_CLIENT_CODE: process.env.SFX_CLIENT_CODE,
   SFX_REQUEST_TIMEOUT_MS: parseInt(process.env.SFX_REQUEST_TIMEOUT_MS || '10000', 10),
   SFX_RETRY_ATTEMPTS: parseInt(process.env.SFX_RETRY_ATTEMPTS || '3', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',
