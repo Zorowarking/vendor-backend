@@ -153,7 +153,6 @@ model Profile {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   fcmToken      String?   @map("fcm_token")
-  pushToken     String?   @map("push_token")
   customer      Customer?
   rider         Rider?
   vendor        Vendor?
@@ -261,7 +260,6 @@ model VendorKyc {
   businessProofUrl  String?   @map("business_proof_url")
   panUrl            String?   @map("pan_url")
   addressProofUrl   String?   @map("address_proof_url")
-  isfcscUrl         String?   @map("isfcsc_url")
   submissionRound   Int       @default(1) @map("submission_round")
   status            String    @default("submitted") @db.VarChar(30)
   reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz(6)
@@ -444,18 +442,15 @@ model Cart {
   id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   customerId   String?    @map("customer_id") @db.Uuid
   vendorId     String     @map("vendor_id") @db.Uuid
-  isGuest      Boolean    @default(false) @map("is_guest")
   isActive     Boolean    @default(true) @map("is_active")
   expiresAt    DateTime?  @map("expires_at") @db.Timestamptz(6)
   checkedOutAt DateTime?  @map("checked_out_at") @db.Timestamptz(6)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  guestId      String?    @map("guest_id") @db.VarChar(255)
   items        CartItem[]
   customer     Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@unique([customerId, vendorId])
-  @@unique([guestId, vendorId])
   @@map("carts")
   @@schema("customer")
 }
@@ -478,9 +473,7 @@ model Customer {
   id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email            String?           @unique @db.VarChar(255)
   fullName         String?           @map("full_name") @db.VarChar(255)
-  isGuest          Boolean           @default(false) @map("is_guest")
   sessionToken     String?           @map("session_token")
-  guestExpiresAt   DateTime?         @map("guest_expires_at") @db.Timestamptz(6)
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   profileId        String?           @unique @map("profile_id") @db.Uuid
@@ -531,16 +524,6 @@ model Feedback {
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("feedback")
-  @@schema("customer")
-}
-
-model GuestSession {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  guestId   String   @unique @map("guest_id") @db.VarChar(255)
-  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  @@map("guest_sessions")
   @@schema("customer")
 }
 
